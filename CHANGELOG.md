@@ -62,3 +62,5 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added regression tests for variable assignment, temporary command assignments, and prefix PATH ordering.
 - Isolated variable state, export attributes, and working-directory changes between sequentially executed pipeline stages.
 - Applied temporary command-prefix assignments within pipeline stages without leaking them into the parent shell.
+- Added `$?` and `${?}` expansion for the last command status.
+- Preserved assignments preceding the implemented POSIX special built-ins `export`, `unset`, and `exit`.
