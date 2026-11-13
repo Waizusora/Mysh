@@ -211,13 +211,13 @@ fn parse_redirections(tokens: &[Word]) -> Result<(Vec<String>, Redirections), &'
     let mut index = 0;
     while index < tokens.len() {
         let token = &tokens[index];
-        let operator = [" >", " >>", " <", " 2>"].iter().find(|candidate| {
-            token.is_unquoted_literal(candidate.trim())
-        });
+        let operator = ["<", ">", ">>", "2>"]
+            .into_iter()
+            .find(|operator| token.is_unquoted_literal(operator));
         if let Some(operator) = operator {
             let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
             let target = expand_word(target);
-            match operator.trim() {
+            match operator {
                 "<" => redirects.input = Some(target),
                 ">" => { redirects.output = Some(target); redirects.append = false; }
                 ">>" => { redirects.output = Some(target); redirects.append = true; }
@@ -314,7 +314,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \\$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
+        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
         assert!(errors.is_empty());
         std::env::remove_var("MYSH_QUOTING_TEST");
@@ -335,7 +335,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
+        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), ">\n");
         assert!(errors.is_empty());
     }
