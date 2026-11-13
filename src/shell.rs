@@ -118,8 +118,10 @@ impl Shell {
                 Ok(_) => input = Some(contents),
                 Err(error) => {
                     let _ = writeln!(stderr, "mysh: {path}: {error}");
-                    self.variables = saved_variables;
-                    self.exported = saved_exported;
+                    if !assignments.is_empty() {
+                        self.variables = saved_variables;
+                        self.exported = saved_exported;
+                    }
                     self.last_status = 1;
                     return true;
                 }
@@ -128,8 +130,10 @@ impl Shell {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
-        self.variables = saved_variables;
-        self.exported = saved_exported;
+        if !assignments.is_empty() {
+            self.variables = saved_variables;
+            self.exported = saved_exported;
+        }
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
             match opened.and_then(|mut file| file.write_all(&output)) {
