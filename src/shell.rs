@@ -1,5 +1,6 @@
 //! Interactive input loop, shell parsing, command dispatch, and process execution.
 use crate::builtins::{self, BuiltinOutcome};
+use crate::command::resolve_command;
 use crate::lexer::{self, Word};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
@@ -125,7 +126,19 @@ impl Shell {
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
             };
         }
-        let mut process = Command::new(&command[0]);
+        let search_path = std::env::var_os("PATH").unwrap_or_default();
+        let executable = match resolve_command(&command[0], &search_path) {
+            Ok(path) => path,
+            Err(error) => {
+                let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                return StageOutcome::Continue(if error.kind() == io::ErrorKind::NotFound {
+                    127
+                } else {
+                    126
+                });
+            }
+        };
+        let mut process = Command::new(executable);
         process.args(&command[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
         if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
