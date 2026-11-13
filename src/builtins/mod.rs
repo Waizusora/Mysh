@@ -291,7 +291,10 @@ fn copy_path(source: &Path, destination: &Path, recursive: bool) -> io::Result<(
         }
 
         let source_absolute = fs::canonicalize(source)?;
-        let destination_parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let destination_parent = destination
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
         let parent_absolute = fs::canonicalize(destination_parent)?;
         let destination_name = destination.file_name().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "invalid destination directory")
