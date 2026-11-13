@@ -11,11 +11,20 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new() -> Self { Self::default() }
-    pub fn last_status(&self) -> i32 { self.last_status }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn last_status(&self) -> i32 {
+        self.last_status
+    }
 
     /// Execute one command line. Returns false when an exit command is accepted.
-    pub fn execute_line(&mut self, line: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+    pub fn execute_line(
+        &mut self,
+        line: &str,
+        stdout: &mut dyn Write,
+        stderr: &mut dyn Write,
+    ) -> bool {
         let tokens = match lexer::lex(line) {
             Ok(tokens) => tokens,
             Err(error) => {
@@ -24,13 +33,23 @@ impl Shell {
                 return true;
             }
         };
-        if tokens.is_empty() { return true; }
+        if tokens.is_empty() {
+            return true;
+        }
         self.history.push(line.to_owned());
 
-        if let Some(outcome) = builtins::run(&tokens[0], &tokens[1..], &self.history, stdout, stderr) {
+        if let Some(outcome) =
+            builtins::run(&tokens[0], &tokens[1..], &self.history, stdout, stderr)
+        {
             match outcome {
-                BuiltinOutcome::Continue(status) => { self.last_status = status; true }
-                BuiltinOutcome::Exit(status) => { self.last_status = status; false }
+                BuiltinOutcome::Continue(status) => {
+                    self.last_status = status;
+                    true
+                }
+                BuiltinOutcome::Exit(status) => {
+                    self.last_status = status;
+                    false
+                }
             }
         } else {
             self.execute_external(&tokens, stderr);
@@ -39,19 +58,32 @@ impl Shell {
     }
 
     /// Read and execute commands until end-of-input or an exit command.
-    pub fn run<R: BufRead, W: Write>(&mut self, reader: &mut R, writer: &mut W, interactive: bool) -> io::Result<i32> {
+    pub fn run<R: BufRead, W: Write>(
+        &mut self,
+        reader: &mut R,
+        writer: &mut W,
+        interactive: bool,
+    ) -> io::Result<i32> {
         let mut line = String::new();
         loop {
             if interactive {
-                let current = std::env::current_dir().map(|path| path.display().to_string()).unwrap_or_else(|_| "?".to_owned());
+                let current = std::env::current_dir()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|_| "?".to_owned());
                 write!(writer, "mysh:{current}$ ")?;
                 writer.flush()?;
             }
             line.clear();
-            if reader.read_line(&mut line)? == 0 { break; }
-            while line.ends_with('\n') || line.ends_with('\r') { line.pop(); }
+            if reader.read_line(&mut line)? == 0 {
+                break;
+            }
+            while line.ends_with('\n') || line.ends_with('\r') {
+                line.pop();
+            }
             let mut stderr = io::stderr().lock();
-            if !self.execute_line(&line, writer, &mut stderr) { break; }
+            if !self.execute_line(&line, writer, &mut stderr) {
+                break;
+            }
         }
         Ok(self.last_status)
     }
@@ -61,7 +93,11 @@ impl Shell {
             Ok(status) => status.code().unwrap_or(128),
             Err(error) => {
                 let _ = writeln!(stderr, "mysh: {}: {error}", tokens[0]);
-                if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 }
+                if error.kind() == io::ErrorKind::NotFound {
+                    127
+                } else {
+                    126
+                }
             }
         };
     }

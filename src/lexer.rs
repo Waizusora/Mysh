@@ -28,7 +28,11 @@ pub fn lex(input: &str) -> Result<Vec<String>, LexError> {
         }
         match quote {
             Some('\'') => {
-                if character == '\'' { quote = None; } else { token.push(character); }
+                if character == '\'' {
+                    quote = None;
+                } else {
+                    token.push(character);
+                }
             }
             Some('"') => match character {
                 '"' => quote = None,
@@ -37,8 +41,14 @@ pub fn lex(input: &str) -> Result<Vec<String>, LexError> {
             },
             Some(_) => token.push(character),
             None => match character {
-                '\'' | '"' => { quote = Some(character); started = true; }
-                '\\' => { escaped = true; started = true; }
+                '\'' | '"' => {
+                    quote = Some(character);
+                    started = true;
+                }
+                '\\' => {
+                    escaped = true;
+                    started = true;
+                }
                 '#' if !started => break,
                 value if value.is_whitespace() => {
                     if started {
@@ -46,13 +56,22 @@ pub fn lex(input: &str) -> Result<Vec<String>, LexError> {
                         started = false;
                     }
                 }
-                _ => { token.push(character); started = true; }
+                _ => {
+                    token.push(character);
+                    started = true;
+                }
             },
         }
     }
-    if escaped { return Err(LexError("trailing escape character")); }
-    if quote.is_some() { return Err(LexError("unterminated quoted string")); }
-    if started { tokens.push(token); }
+    if escaped {
+        return Err(LexError("trailing escape character"));
+    }
+    if quote.is_some() {
+        return Err(LexError("unterminated quoted string"));
+    }
+    if started {
+        tokens.push(token);
+    }
     Ok(tokens)
 }
 
@@ -66,7 +85,10 @@ mod tests {
     }
     #[test]
     fn groups_single_and_double_quoted_arguments() {
-        assert_eq!(lex("echo 'one two' \"three four\"").unwrap(), ["echo", "one two", "three four"]);
+        assert_eq!(
+            lex("echo 'one two' \"three four\"").unwrap(),
+            ["echo", "one two", "three four"]
+        );
     }
     #[test]
     fn preserves_empty_quoted_arguments() {
