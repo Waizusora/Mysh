@@ -16,6 +16,10 @@ path = "src/main.rs"
 name = "mysh"
 path = "src/lib.rs"
 
+[workspace]
+members = ["crates/mypk"]
+resolver = "2"
+
 [profile.release]
 lto = true
 codegen-units = 1

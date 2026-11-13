@@ -26,9 +26,11 @@ jobs:
       - name: Verify formatting
         run: cargo fmt --all -- --check
       - name: Run tests
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
       - name: Run Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build MYPK for host
+        run: cargo build -p my-pkg-keeper --release
 
   android:
     name: Build Android (${{ matrix.abi }})
@@ -64,11 +66,19 @@ jobs:
         run: |
           NDK_TOOLCHAIN="${ANDROID_HOME}/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
           echo "${{ matrix.linker_env }}=${NDK_TOOLCHAIN}/${{ matrix.linker }}" >> "$GITHUB_ENV"
-      - name: Build standalone executable
-        run: cargo build --target "${{ matrix.rust_target }}" --release
-      - name: Upload executable
+      - name: Build Mysh executable
+        run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      - name: Build MYPK executable
+        run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
+      - name: Upload Mysh executable
         uses: actions/upload-artifact@v4
         with:
           name: mysh-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mysh
+          if-no-files-found: error
+      - name: Upload MYPK executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypk-${{ matrix.abi }}
+          path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error

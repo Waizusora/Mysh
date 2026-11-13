@@ -15,6 +15,12 @@ The project is progressing through its native shell implementation milestones. M
 
 POSIX shell compatibility is distinct from implementing every POSIX utility. Mysh's shell-language target does not by itself promise to bundle the complete POSIX utility suite.
 
+## MYPK — My Package Keeper
+
+MYPK is the independent Rust package manager for the Mysh environment. It is built as a separate mypk executable and uses the native .mypk package format. Its commands, aliases, package format, repository model, runtime identifiers, and security requirements are specified in [the MYPK specification](docs/mypk-specification.md).
+
+Canonical commands are sync, upgrade, find, install, delete, reinstall, list, info, clean, and clear. Compatibility aliases are update for sync, search for find, and remove for delete. Package operations are under development and are not yet functional.
+
 ## Platform roadmap
 
 Mysh follows this platform order:
@@ -61,8 +67,9 @@ Install the stable Rust toolchain, then run:
 
 ```sh
 cargo fmt --check
-cargo test
-cargo clippy --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build -p my-pkg-keeper --release
 cargo build --release
 ```
 
@@ -114,6 +121,7 @@ External commands are resolved using the current `PATH`. Mysh does not provide r
 
 - [Architecture](docs/architecture.md)
 - [Command reference](docs/command-reference.md)
+- [MYPK specification](docs/mypk-specification.md)
 - [Changelog](CHANGELOG.md)
 - [Security policy](SECURITY.md)
 

@@ -15,6 +15,12 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ### Added
 
+- Initial MYPK (My Package Keeper) Rust workspace crate and standalone mypk executable.
+- Canonical MYPK commands: sync, upgrade, find, install, delete, reinstall, list, info, clean, and clear.
+- Compatibility aliases: update for sync, search for find, and remove for delete.
+- MYPK command-resolution unit tests and help/version output.
+- Initial MYPK package-format, repository, runtime, dependency, transaction, and security specification.
+
 - Explicit external-command resolution through `PATH`, including ordered directory search, explicit slash-containing paths, executable-permission checks, and command-not-found (127) versus not-executable (126) status handling.
 - Unit tests for PATH lookup, search order, explicit paths, missing commands, and non-executable files.
 

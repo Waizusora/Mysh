@@ -1,0 +1,16 @@
+[package]
+name = "my-pkg-keeper"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "My Package Keeper, the independent package manager for Mysh"
+license = "BSD-3-Clause"
+repository = "https://github.com/Waizusora/Mysh"
+
+[lib]
+name = "mypk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mypk"
+path = "src/main.rs"

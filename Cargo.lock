@@ -3,5 +3,9 @@
 version = 3
 
 [[package]]
+name = "my-pkg-keeper"
+version = "0.1.0"
+
+[[package]]
 name = "mysh"
 version = "0.1.0"
