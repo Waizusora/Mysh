@@ -1,0 +1,23 @@
+[package]
+name = "mysh"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "A standalone native command-line shell for Android"
+license = "BSD-3-Clause"
+repository = "https://github.com/Waizusora/Mysh"
+readme = "README.md"
+
+[[bin]]
+name = "mysh"
+path = "src/main.rs"
+
+[lib]
+name = "mysh"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
