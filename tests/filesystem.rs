@@ -301,3 +301,47 @@ fn filesystem_commands_honor_option_termination_and_reject_unknown_options() {
 
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn rm_refuses_to_remove_working_directory_ancestors_and_filesystem_root() {
+    let directory = temporary_directory();
+    let child = directory.join("child");
+    fs::create_dir(&child).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_mysh"))
+        .args(["-c", "rm -rf .."])
+        .current_dir(&child)
+        .output()
+        .expect("Mysh process should start");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(directory.exists());
+    assert!(child.exists());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_mysh"))
+        .args(["-c", "rm -rf /"])
+        .current_dir(&child)
+        .output()
+        .expect("Mysh process should start");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(directory.exists());
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn recursive_copy_rejects_symbolic_links_without_following_them() {
+    use std::os::unix::fs::symlink;
+
+    let directory = temporary_directory();
+    fs::create_dir(directory.join("source")).unwrap();
+    fs::write(directory.join("outside"), b"do not copy").unwrap();
+    symlink(directory.join("outside"), directory.join("source/link")).unwrap();
+
+    let output = run_in(&directory, "cp -r source copied");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!directory.join("copied").join("link").exists());
+    assert!(directory.join("outside").is_file());
+
+    fs::remove_dir_all(directory).unwrap();
+}
