@@ -29,7 +29,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
 2. The shell reads one command line.
 3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input.
-4. The parser identifies unquoted pipeline, redirection, and command-list operators. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported.
+4. The parser identifies unquoted pipeline, redirection, and command-list operators. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. An initial, single-level `if` compound command supports `if`, `then`, optional `else`, and `fi` on one input line.
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
 7. Built-ins execute in the current process. This is required for stateful operations such as `cd`, `export`, and `unset`.
@@ -72,7 +72,7 @@ The lexer currently supports unquoted words, single quotes, double quotes, backs
 
 The shell maintains an environment map initialized from inherited process variables. `export NAME=value` changes the shell environment, and `unset NAME` removes a variable. These changes affect later expansion, `PATH` lookup, and the environment passed to external children. Assignment-only commands persist shell variables without exporting them. Command-prefix assignments are temporary and are exported only for the command invocation. The implementation does not yet cover all POSIX assignment and special-builtin rules. Basic parameter substitution for environment-variable names and the last-exit-status parameter (`$?` and `${?}`) is performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. Other POSIX special and positional parameters, parameter operators, field splitting, and pathname expansion remain incomplete.
 
-The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion, control-flow syntax, here-documents, and job control are not implemented.
+The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion beyond the initial single-level `if` form, loops, functions, here-documents, and job control are not implemented. Nested `if` statements and multiline compound commands are not yet supported.
 
 ## Process and Filesystem Model
 
