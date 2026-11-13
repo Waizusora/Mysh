@@ -118,9 +118,11 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
     }
 }
 
+/// Convert a child-process status into the conventional shell exit-code range.
+
 #[cfg(test)]
 mod tests {
-    use super::Shell;
+    use super::{external_status_code, Shell};
 
     #[test]
     fn executes_builtin_commands() {
@@ -151,7 +153,14 @@ mod tests {
         assert!(!shell.execute_line("exit 23", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 23);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_signal_termination_to_conventional_shell_status() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let status = std::process::ExitStatus::from_raw(9);
+        assert_eq!(external_status_code(status), 137);
+    }
+
 }
-
-/// Convert a child-process status into the conventional shell exit-code range.
-
