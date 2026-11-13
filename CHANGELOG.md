@@ -60,3 +60,5 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added separate shell-variable and exported-variable state, persistent assignment-only commands, and temporary command-prefix assignments.
 - Added startup PATH priority for `$MYSH_PREFIX/bin` when the directory exists.
 - Added regression tests for variable assignment, temporary command assignments, and prefix PATH ordering.
+- Isolated variable state, export attributes, and working-directory changes between sequentially executed pipeline stages.
+- Applied temporary command-prefix assignments within pipeline stages without leaking them into the parent shell.
