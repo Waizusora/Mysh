@@ -60,7 +60,7 @@ Child-process exit codes are returned unchanged when the process exits normally.
 
 ## Command lists, pipelines, and redirections
 
-The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. A single-level `if condition; then commands; else commands; fi` compound command is supported on one input line; `else` is optional. The condition's final status selects the branch (zero selects `then`, nonzero selects `else`). Nested `if` statements and multiline forms are not supported yet. `&&` runs its right-hand command only when the preceding command succeeds; `||` runs its right-hand command only when the preceding command fails. A trailing `;` is accepted. Background execution with `&` is not implemented and is reported as a syntax error.
+The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. An `if condition; then commands; elif condition; then commands; else commands; fi` compound command is supported on one input line. Any number of `elif` clauses and an optional `else` are accepted. Conditions are evaluated in order; the first condition with status zero selects its branch. A nested `if` is supported when it is the only command in the selected branch. Compound commands mixed with other commands in one branch and multiline forms are not supported yet. `&&` runs its right-hand command only when the preceding command succeeds; `||` runs its right-hand command only when the preceding command fails. A trailing `;` is accepted. Background execution with `&` is not implemented and is reported as a syntax error.
 
 The current implementation supports basic sequential pipelines, for example `echo hello | cat` or `echo hello|cat`. Pipeline output is buffered between stages rather than streamed through concurrently connected operating-system pipes. The `cat` built-in accepts pipeline input and input-redirection data.
 
@@ -70,4 +70,4 @@ The shell tracks shell variables separately from exported variables. `NAME=value
 
 ## Limitations
 
-Mysh is not yet POSIX-conformant. Concurrent pipelines, complete POSIX quoting and expansion phases, field splitting, pathname expansion, command substitution, loop constructs, nested or multiline compound commands, job control, and persistent history remain unimplemented.
+Mysh is not yet POSIX-conformant. Concurrent pipelines, complete POSIX quoting and expansion phases, field splitting, pathname expansion, command substitution, loop constructs, multiline compound commands, compound commands mixed with other commands in a branch, job control, and persistent history remain unimplemented.
