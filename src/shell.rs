@@ -436,6 +436,18 @@ mod tests {
     }
 
     #[test]
+    fn last_exit_status_parameter_expands_in_command_arguments() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("mysh_command_that_does_not_exist_9f31", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 127);
+        assert!(shell.execute_line("echo status=$? braced=${?}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "status=127 braced=127\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
     fn variable_expansion_respects_single_quotes_and_escapes() {
         let mut shell = Shell::new();
         shell.variables.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
