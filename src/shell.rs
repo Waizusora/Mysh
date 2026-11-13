@@ -5,17 +5,20 @@ use crate::lexer::{self, Word};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct Shell {
     history: Vec<String>,
     last_status: i32,
-    environment: BTreeMap<String, String>,
+    variables: BTreeMap<String, String>,
+    exported: BTreeSet<String>,
 }
 
 impl Default for Shell {
     fn default() -> Self {
-        Self { history: Vec::new(), last_status: 0, environment: std::env::vars().collect() }
+        let variables: BTreeMap<String, String> = std::env::vars().collect();
+        let exported = variables.keys().cloned().collect();
+        Self { history: Vec::new(), last_status: 0, variables, exported }
     }
 }
 
@@ -52,7 +55,7 @@ impl Shell {
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
-            let (command, redirections) = match parse_redirections(stage, &self.environment) {
+            let (command, redirections) = match parse_redirections(stage, &self.variables) {
                 Ok(value) => value,
                 Err(message) => {
                     let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -90,7 +93,12 @@ impl Shell {
                 return true;
             }
         };
-        if command.is_empty() { return true; }
+        while command.first().is_some_and(|word| assignment(word).is_some()) {
+            let word = command.remove(0);
+            let (name, value) = assignment(&word).expect("assignment was checked");
+            self.variables.insert(name.to_owned(), value.to_owned());
+        }
+        if command.is_empty() { self.last_status = 0; return true; }
         let mut input = None;
         if let Some(path) = redirections.input.as_deref() {
             let mut contents = Vec::new();
@@ -127,7 +135,7 @@ impl Shell {
 
     fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
-        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.environment, input, out, err) {
+        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.variables, &mut self.exported, input, out, err) {
             return match outcome {
                 BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
@@ -146,7 +154,7 @@ impl Shell {
             }
         };
         let mut process = Command::new(executable);
-        process.args(&command[1..]).env_clear().envs(&self.environment).stdout(Stdio::piped()).stderr(Stdio::piped());
+        process.args(&command[1..]).env_clear().envs(self.exported.iter().filter_map(|name| self.variables.get(name).map(|value| (name, value)))).stdout(Stdio::piped()).stderr(Stdio::piped());
         if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
         }
@@ -200,6 +208,17 @@ impl Shell {
 #[derive(Default)]
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
+
+fn assignment(value: &str) -> Option<(&str, &str)> {
+    let (name, assigned) = value.split_once('=')?;
+    let mut chars = name.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return None;
+    }
+    Some((name, assigned))
+}
 
 fn expand_word(word: &Word, environment: &BTreeMap<String, String>) -> String {
     let mut expanded = String::new();
@@ -331,7 +350,7 @@ mod tests {
     #[test]
     fn variable_expansion_respects_single_quotes_and_escapes() {
         let mut shell = Shell::new();
-        shell.environment.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
+        shell.variables.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
