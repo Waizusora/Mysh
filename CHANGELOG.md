@@ -64,3 +64,5 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Applied temporary command-prefix assignments within pipeline stages without leaking them into the parent shell.
 - Added `$?` and `${?}` expansion for the last command status.
 - Preserved assignments preceding the implemented POSIX special built-ins `export`, `unset`, and `exit`.
+- Added `$?` and `${?}` expansion regression coverage and external-child environment inheritance tests.
+- Added sequential `;` command lists and left-associative `&&` / `||` short-circuit execution with regression tests.
