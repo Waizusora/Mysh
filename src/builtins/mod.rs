@@ -477,7 +477,7 @@ fn cat(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutc
             paths.push(value);
         }
     }
-    if paths.is_empty() || paths == ["-"] {
+    if paths.is_empty() || (paths.len() == 1 && paths[0] == "-") {
         let mut input = io::stdin().lock();
         return match io::copy(&mut input, out) {
             Ok(_) => ok(),
