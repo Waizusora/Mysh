@@ -399,7 +399,7 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
             continue;
         }
         if let (Some(current), Ok(target)) = (current.as_ref(), fs::canonicalize(path)) {
-            if target == *current || target.parent().is_none() {
+            if current.starts_with(&target) || target.parent().is_none() {
                 status = 1;
                 let _ = writeln!(err, "mysh: rm: refusing to remove the current directory or filesystem root: {value}");
                 continue;
