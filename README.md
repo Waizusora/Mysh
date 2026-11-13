@@ -56,6 +56,8 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Command exit-status reporting.
 - Basic sequential pipelines with buffered input between stages; supported operators may be adjacent to words.
 - Basic input, output, append, and standard-error redirection.
+- Shell-managed environment variables initialized from the inherited process environment.
+- `export` and `unset` built-ins, with exported values inherited by external commands.
 - Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
 - Unit and integration tests.
 
