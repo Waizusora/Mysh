@@ -105,7 +105,11 @@ impl Shell {
             return true;
         }
         let saved_variables = self.variables.clone();
-        for (name, value) in assignments { self.variables.insert(name, value); }
+        let saved_exported = self.exported.clone();
+        for (name, value) in assignments.iter() {
+            self.variables.insert(name.clone(), value.clone());
+            self.exported.insert(name.clone());
+        }
         let mut input = None;
         if let Some(path) = redirections.input.as_deref() {
             let mut contents = Vec::new();
@@ -122,6 +126,7 @@ impl Shell {
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
         self.variables = saved_variables;
+        self.exported = saved_exported;
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
             match opened.and_then(|mut file| file.write_all(&output)) {
