@@ -6,6 +6,15 @@ Mysh (My Shell) is an independent, native command-line shell written in Rust for
 
 The project is progressing through its native shell implementation milestones. Milestone 1 established the command loop, lexer, built-in commands, external process execution, tests, and Android build automation. Milestone 2 strengthens filesystem command semantics and child-process status handling. The official compatibility strategy is POSIX-first: establish portable shell behavior before adding operating-system-specific support.
 
+## Compatibility principles
+
+- **POSIX is the shell-language compatibility baseline.** Mysh aims to implement the portable command language and behavior expected from a POSIX-conforming `sh`.
+- **Mysh is an independent implementation.** Its lexer, parser, expansion engine, execution model, and built-ins are implemented in Rust. It does not delegate shell-script interpretation to the host's `/bin/sh`, Bash, Zsh, or BusyBox.
+- **The host supplies operating-system services.** Mysh may use platform APIs and launch external executables available on the host; this does not make another shell its interpreter.
+- **Compatibility is not yet complete.** The current implementation is partial and must not be described as POSIX-conformant until the required behavior has been implemented and validated.
+
+POSIX shell compatibility is distinct from implementing every POSIX utility. Mysh's shell-language target does not by itself promise to bundle the complete POSIX utility suite.
+
 ## Platform roadmap
 
 Mysh follows this platform order:
