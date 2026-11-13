@@ -335,7 +335,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("echo \">\\\"", &mut output, &mut errors));
+        assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), ">\n");
         assert!(errors.is_empty());
     }
