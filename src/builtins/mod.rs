@@ -410,7 +410,7 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
             Ok(metadata) if metadata.is_dir() && recursive => fs::remove_dir_all(path),
             Ok(metadata) if metadata.is_dir() && directories => fs::remove_dir(path),
             Ok(metadata) if metadata.is_dir() => Err(io::Error::new(
-                io::ErrorKind::IsADirectory,
+                io::ErrorKind::InvalidInput,
                 "is a directory; use -r to remove directories",
             )),
             Ok(_) => fs::remove_file(path),
