@@ -42,21 +42,29 @@ The resulting host executable is located at `target/release/mysh`.
 
 ## Build for Android
 
-Install the Android SDK and NDK, configure the NDK toolchain, and install `cargo-ndk`:
+Install the Android SDK and NDK. Add the Rust standard-library targets required by the Android ABIs:
 
 ```sh
-cargo install cargo-ndk
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 ```
 
-Build each ABI:
+Set the NDK toolchain location and build each standalone executable. The linker names below select Android API level 21:
 
 ```sh
-cargo ndk -t arm64-v8a --platform 21 -o dist build --release
-cargo ndk -t armeabi-v7a --platform 21 -o dist build --release
-cargo ndk -t x86_64 --platform 21 -o dist build --release
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+NDK_TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/aarch64-linux-android21-clang" \
+  cargo build --target aarch64-linux-android --release
+
+CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_TOOLCHAIN/armv7a-linux-androideabi21-clang" \
+  cargo build --target armv7-linux-androideabi --release
+
+CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/x86_64-linux-android21-clang" \
+  cargo build --target x86_64-linux-android --release
 ```
 
-The executable is emitted under the corresponding ABI directory in `dist`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
+Each executable is emitted under its Rust target directory in `target/<target-triple>/release/mysh`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
 
 ## Usage
 
