@@ -240,6 +240,35 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
     }
 }
 
+fn configure_prefix_path(
+    variables: &mut BTreeMap<String, String>,
+    exported: &mut BTreeSet<String>,
+) {
+    let Some(prefix) = variables.get("MYSH_PREFIX") else {
+        return;
+    };
+    let bin = std::path::PathBuf::from(prefix).join("bin");
+    if !bin.is_dir() {
+        return;
+    }
+
+    let mut paths: Vec<std::path::PathBuf> = variables
+        .get("PATH")
+        .map(|value| std::env::split_paths(value).collect())
+        .unwrap_or_default();
+    if paths.iter().any(|path| path == &bin) {
+        return;
+    }
+
+    paths.insert(0, bin);
+    if let Ok(path_value) = std::env::join_paths(paths) {
+        if let Some(value) = path_value.to_str() {
+            variables.insert("PATH".to_owned(), value.to_owned());
+            exported.insert("PATH".to_owned());
+        }
+    }
+}
+
 fn assignment(value: &str) -> Option<(&str, &str)> {
     let (name, assigned) = value.split_once('=')?;
     let mut chars = name.chars();
