@@ -64,16 +64,30 @@ impl Shell {
                     return true;
                 }
             };
-            if command.is_empty() {
-                let _ = writeln!(stderr, "mysh: syntax error: empty pipeline stage");
-                self.last_status = 2;
-                return true;
+            let saved_variables = self.variables.clone();
+            let saved_exported = self.exported.clone();
+            let saved_directory = std::env::current_dir().ok();
+            let mut stage_command = command;
+            while stage_command.first().is_some_and(|word| assignment(word).is_some()) {
+                let word = stage_command.remove(0);
+                let (name, value) = assignment(&word).expect("assignment was checked");
+                self.variables.insert(name.to_owned(), value.to_owned());
+                self.exported.insert(name.to_owned());
             }
             let mut stage_output = Vec::new();
             let mut stage_error = Vec::new();
-            final_status = match self.run_stage(&command, &redirections, input.as_deref(), &mut stage_output, &mut stage_error) {
-                StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+            final_status = if stage_command.is_empty() {
+                0
+            } else {
+                match self.run_stage(&stage_command, &redirections, input.as_deref(), &mut stage_output, &mut stage_error) {
+                    StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+                }
             };
+            self.variables = saved_variables;
+            self.exported = saved_exported;
+            if let Some(directory) = saved_directory {
+                let _ = std::env::set_current_dir(directory);
+            }
             if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
             if is_last {
                 if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
