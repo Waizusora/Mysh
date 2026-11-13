@@ -38,9 +38,9 @@ This document describes the commands implemented in the current Mysh source tree
 
 ## External Commands
 
-Commands not recognized as built-ins are launched as external executables. Mysh uses the inherited process environment and standard process lookup rules for `PATH`. A command containing a path separator is resolved as the supplied path.
+Commands not recognized as built-ins are launched as external executables. Mysh searches the inherited `PATH` value from left to right. An empty `PATH` component denotes the current directory. A command containing `/` is treated as an explicit relative or absolute path and is not searched through `PATH`. Mysh checks that a PATH candidate is a regular executable file before launching it.
 
-External command availability depends on executable permissions, ABI compatibility, dynamic linker availability, and application sandbox restrictions. For example, `ping` is not a built-in command; it runs only when a compatible executable is available through `PATH`.
+An unresolved command returns status 127. A command found in `PATH` but lacking executable permission returns status 126. External command availability also depends on ABI compatibility, dynamic linker availability, and application sandbox restrictions. For example, `ping` is not a built-in command; it runs only when a compatible executable is available through `PATH`.
 
 Child-process exit codes are returned unchanged when the process exits normally. On Unix-like systems, a process terminated by signal N is represented as status 128 + N.
 
