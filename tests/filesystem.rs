@@ -1,14 +1,21 @@
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static NEXT_TEMPORARY_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
 
 fn temporary_directory() -> std::path::PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock should be after the Unix epoch")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("mysh-test-{}-{nonce}", std::process::id()));
+    let sequence = NEXT_TEMPORARY_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "mysh-test-{}-{nonce}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir(&path).expect("temporary directory should be created");
     path
 }
