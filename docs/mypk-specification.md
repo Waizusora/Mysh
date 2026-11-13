@@ -2,157 +2,101 @@
 
 ## Identity and Scope
 
-MYPK (My Package Keeper) is the independent package-management system for the Mysh environment. It is implemented as a separate Rust crate and produces a separate executable named mypk. It is not a wrapper around APT, APK, DNF, or another package manager.
+MYPK is the independent Rust package manager for Mysh. It produces a separate mypk executable and uses the native .mypk package format. It is not a wrapper around APT, APK, DNF, or another package manager.
 
 - Executable: mypk
 - Package extension: .mypk
-- Initial package format version: 1
-- Implementation language: Rust
+- Package format: version 1
 - Installation prefix: /data/data/com.waizusora.terminal/files/
-
-Mysh interprets commands and scripts. MYPK manages package repositories, metadata, archives, dependencies, installed files, and package transactions.
 
 ## Command Interface
 
-All command names are lowercase.
-
-| Canonical command | Purpose | Compatibility alias |
+| Canonical command | Purpose | Alias |
 | --- | --- | --- |
 | mypk sync | Synchronize repository indexes | mypk update |
 | mypk upgrade | Upgrade installed packages | — |
 | mypk find | Search package metadata | mypk search |
 | mypk install | Install packages and dependencies | — |
 | mypk delete | Delete installed packages | mypk remove |
-| mypk reinstall | Reinstall an installed package | — |
+| mypk reinstall | Reinstall a package | — |
 | mypk list | List installed packages | — |
-| mypk info | Display package metadata and installation state | — |
+| mypk info | Display package metadata and state | — |
 | mypk clean | Remove cached archives and temporary files | — |
 | mypk clear | Remove unused automatically installed dependencies | — |
 
-Aliases resolve to the same internal handler as their canonical command. Canonical names are used in documentation and help output.
+clean removes cache data only. clear implements autoremove, preserving explicitly installed and protected base packages. It must show a removal plan and require confirmation.
 
-### clean and clear
+## Runtime and ABI
 
-clean removes package-manager cache data and abandoned temporary files. It must not remove installed package files or installed-package records.
-
-clear implements autoremove behavior. It identifies packages marked as automatically installed that are no longer required by any installed package. It must preserve packages explicitly installed by the user and protected base packages. The initial implementation must display a removal plan and require confirmation before changing the installed system.
-
-## Runtime and ABI Model
-
-Every package must declare its CPU architecture and userspace runtime ABI. Matching CPU architecture alone is insufficient.
-
-Recognized runtime identifiers:
-
-- bionic: Android native userspace.
-- musl: Linux userspace linked against musl.
-- glibc: Linux userspace linked against GNU libc.
-
-The installer must reject packages whose architecture, runtime ABI, or declared dependencies are not supported by the active environment. Listing an identifier in the format does not mean that runtime is already implemented or available.
-
-The MYPK executable must be built for the same Android ABI matrix as Mysh: ARM64 (aarch64-linux-android), ARMv7 (armv7-linux-androideabi), and x86-64 (x86_64-linux-android).
+Every package declares its CPU architecture and userspace runtime. Supported identifiers are aarch64, armv7, x86_64 and bionic, musl, glibc. The installer must reject incompatible architecture or runtime combinations. Listing a runtime identifier does not mean that runtime is already installed.
 
 ## Package Format Version 1
 
-A .mypk file is a TAR archive with a MYPK-defined member layout. The initial layout contains:
+A .mypk file is a TAR archive containing:
 
 - manifest.json: UTF-8 package metadata.
-- checksums.txt: SHA-256 checksums for the manifest and every payload member.
-- signature.ed25519: detached Ed25519 signature over the exact bytes of checksums.txt.
-- payload/<relative-path>: files installed beneath the configured prefix.
+- checksums.txt: SHA-256 checksums for the manifest and every regular payload file.
+- signature.ed25519: detached 64-byte Ed25519 signature over the exact checksums.txt bytes.
+- payload/<relative-path>: package files installed beneath the configured prefix.
 
-The archive is a transport container, not permission to extract arbitrary paths. The installer must validate every member before writing any file. Absolute paths, parent-directory traversal, duplicate paths, unsupported entry types, and paths escaping the installation prefix must be rejected. Symbolic-link and hard-link entries require explicit policy and validation; extraction must never follow an untrusted link.
+Only regular files and directories under payload/ are accepted. Symbolic links, hard links, devices, FIFOs, sparse files, and other TAR entry types are rejected. Absolute paths, traversal components, duplicate paths, backslashes, and members outside the defined layout are rejected. The reader does not extract files to disk.
 
-The signature must be checked against a trusted repository key before installation. A checksum detects content changes only when the checksum source is trusted; it does not replace signature verification. Unknown signing keys and invalid signatures must fail closed.
+### Manifest schema
 
-### Manifest fields
+The version 1 JSON manifest has exactly these fields:
 
-The version 1 manifest is JSON and must include:
-
-| Field | Meaning |
+| Field | Type |
 | --- | --- |
-| format | Literal identifier MYPK |
-| format_version | Integer package format version |
-| name | Canonical package name |
-| version | Package version |
-| architecture | Target CPU architecture |
-| runtime | Required userspace runtime ABI |
-| dependencies | Dependency names and version constraints |
-| description | Short package description |
-| license | Package license identifier |
+| format | string; literal MYPK |
+| format_version | integer; 1 |
+| name | lowercase package identifier |
+| version | string |
+| architecture | aarch64, armv7, or x86_64 |
+| runtime | bionic, musl, or glibc |
+| dependencies | array of name and version objects |
+| description | string |
+| license | string |
 
-The manifest schema is versioned. Unknown required fields and unsupported format versions must be rejected rather than guessed.
+Unknown fields are rejected. Package names are limited to 128 lowercase ASCII letters, digits, plus signs, periods, underscores, and hyphens, beginning with a lowercase letter. Self-dependencies and duplicate dependencies are rejected.
 
-## Repository Design
+### Checksums
 
-A repository publishes a signed package index and package archives. The index contains package names, versions, architectures, runtime identifiers, dependency constraints, archive sizes, checksums, and signing metadata. Index signatures are verified against configured trusted keys before package selection.
+Each non-empty checksums.txt line has this format:
 
-Repository configuration:
-etc/mypk/repositories.conf
+    <64-character SHA-256 hex digest><two spaces><archive-relative path>
 
-Trusted repository keys:
-etc/mypk/keys/
+Paths are manifest.json and payload/<relative-path>. Every manifest and payload file must have exactly one checksum. Missing, duplicate, malformed, or extra entries are rejected. The signature member is excluded from the checksum list.
 
-Repository URLs must use authenticated TLS. Redirects, archive sizes, index sizes, and decompressed data sizes must be bounded to reduce downgrade and resource-exhaustion risks.
+### Resource limits
 
-## Filesystem Layout
+- Manifest: 1 MiB.
+- Checksum list: 4 MiB.
+- TAR entries: 20,000.
+- Individual payload file: 128 MiB.
+- Total payload: 512 MiB.
 
-All paths are relative to the configured Mysh prefix:
+## Signature Verification Boundary
 
-    bin/mypk
-    etc/mypk/config
-    etc/mypk/repositories.conf
-    etc/mypk/keys/
-    lib/mypk/
-    var/cache/mypk/packages/
-    var/lib/mypk/installed.db
-    var/lib/mypk/package-files.db
-    var/lib/mypk/history.db
-    share/mypk/
+The archive reader validates signature length and returns the signature and exact checksum bytes. SHA-256 verifies integrity relative to checksums.txt; it does not authenticate the publisher. Trusted-key Ed25519 verification is mandatory before installation and is a separate next milestone. The current archive reader is not an installer and does not make a trust decision.
 
-MYPK must not require root privileges or bypass Android application sandbox restrictions.
+## Repository and State
 
-## Installed Package State
+Repository configuration is stored at etc/mypk/repositories.conf and trusted keys at etc/mypk/keys/. Repository indexes must be signed and verified before package selection. Repository downloads require authenticated TLS and bounded redirects, sizes, and decompression.
 
-The installed-package database must record package name, version, architecture, runtime ABI, installation reason, and installation state. Installation reason distinguishes:
-
-- explicit: requested directly by the user.
-- automatic: installed only to satisfy another package dependency.
-
-A file ownership index records which package owns each installed path. Conflicting file ownership must be rejected unless a future replacement policy explicitly permits it.
-
-The database format is an implementation detail and must be versioned with a migration strategy. A partially written database must never be treated as a completed transaction.
-
-## Dependency Resolution
-
-Dependencies are resolved before modifying the installed prefix. The resolver must:
-
-1. Select candidates compatible with the active architecture and runtime.
-2. Enforce declared version constraints.
-3. Detect missing dependencies and dependency cycles.
-4. Detect file ownership conflicts.
-5. Produce a complete install, upgrade, delete, or autoremove plan.
-6. Refuse to proceed when the plan cannot be satisfied safely.
-
-Packages explicitly requested by the user are marked explicit. Dependencies added only to satisfy the plan are marked automatic. An automatic package later requested directly must be promoted to explicit.
-
-## Transaction and Recovery Requirements
-
-Package operations must be planned and validated before installation or deletion begins. Downloads and extraction occur in a staging area. Every archive is verified before its payload is applied. The manager records enough transaction state to detect and recover from an interrupted operation.
-
-The implementation must not report success until filesystem changes and installed-package state are committed consistently. On failure, it must restore the previous state where possible and report any recovery action that could not be completed. Package scripts are excluded from format version 1; packages must not execute arbitrary installation or removal hooks.
+Installed state will record package version, architecture, runtime, installation reason, and owned files. Explicit user packages must be distinguished from automatically installed dependencies. Database writes and package file changes must be transactional and recoverable.
 
 ## Security Requirements
 
 - Verify repository metadata and package signatures before installation.
-- Verify all SHA-256 checksums before applying payload files.
-- Reject path traversal, absolute paths, duplicate archive members, and unsafe archive entry types.
+- Verify SHA-256 checksums before applying payload files.
+- Reject traversal, absolute paths, duplicate members, and unsafe TAR entry types.
 - Enforce archive, file-count, and expanded-size limits.
-- Avoid following symbolic links while validating or writing package paths.
-- Prevent untrusted packages from overwriting MYPK state, trust keys, or protected files.
-- Keep package operations within the configured prefix.
-- Never run package payloads or scripts during installation.
+- Keep operations within the configured prefix.
+- Never execute package scripts in format version 1.
 - Preserve explicitly installed packages during autoremove.
 
 ## Implementation Status
 
-The initial Rust crate provides a separate executable, canonical command parsing, compatibility aliases, help/version output, and unit tests for command resolution. Package operations are not functional until repository access, archive parsing, verification, dependency resolution, transactions, and installed-state management are implemented.
+Implemented: strict JSON manifest parsing, metadata validation, bounded TAR reading, path and entry validation, required-member validation, SHA-256 verification, and unit tests.
+
+Not implemented: Ed25519 trusted-key verification, repository indexes, dependency resolution, installed-state database, transaction engine, and filesystem installation.

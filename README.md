@@ -19,7 +19,7 @@ POSIX shell compatibility is distinct from implementing every POSIX utility. Mys
 
 MYPK is the independent Rust package manager for the Mysh environment. It is built as a separate mypk executable and uses the native .mypk package format. Its commands, aliases, package format, repository model, runtime identifiers, and security requirements are specified in [the MYPK specification](docs/mypk-specification.md).
 
-Canonical commands are sync, upgrade, find, install, delete, reinstall, list, info, clean, and clear. Compatibility aliases are update for sync, search for find, and remove for delete. Package operations are under development and are not yet functional.
+Canonical commands are sync, upgrade, find, install, delete, reinstall, list, info, clean, and clear. Compatibility aliases are update for sync, search for find, and remove for delete. MYPK includes strict version 1 manifest parsing, bounded TAR archive reading, path and entry validation, and SHA-256 payload integrity checks. Repository operations, signature authentication, dependency resolution, and installation are not yet implemented.
 
 ## Platform roadmap
 
