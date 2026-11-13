@@ -17,7 +17,8 @@ pub struct Shell {
 impl Default for Shell {
     fn default() -> Self {
         let variables: BTreeMap<String, String> = std::env::vars().collect();
-        let exported = variables.keys().cloned().collect();
+        let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
+        configure_prefix_path(&mut variables, &mut exported);
         Self { history: Vec::new(), last_status: 0, variables, exported }
     }
 }
@@ -222,6 +223,21 @@ impl Shell {
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
 
+fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
+    let Some(prefix) = variables.get("MYSH_PREFIX") else { return; };
+    let bin = std::path::PathBuf::from(prefix).join("bin");
+    if !bin.is_dir() { return; }
+    let current = variables.get("PATH").cloned().unwrap_or_default();
+    let already_present = std::env::split_paths(&current).any(|entry| entry == bin);
+    if already_present { return; }
+    let mut paths = vec![bin];
+    paths.extend(std::env::split_paths(&current));
+    if let Ok(path) = std::env::join_paths(paths) {
+        variables.insert("PATH".to_owned(), path.to_string_lossy().into_owned());
+        exported.insert("PATH".to_owned());
+    }
+}
+
 fn assignment(value: &str) -> Option<(&str, &str)> {
     let (name, assigned) = value.split_once('=')?;
     let mut chars = name.chars();
@@ -329,7 +345,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{expand_variables, external_status_code, split_pipeline, Shell};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use crate::lexer;
 
     #[test]
@@ -370,6 +386,23 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
         assert!(errors.is_empty());
         
+    }
+
+    #[test]
+    fn prefix_bin_is_added_before_existing_path() {
+        let root = std::env::temp_dir().join(format!("mysh-prefix-test-{}", std::process::id()));
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let mut variables = BTreeMap::from([
+            ("MYSH_PREFIX".to_owned(), root.to_string_lossy().into_owned()),
+            ("PATH".to_owned(), "/system/bin".to_owned()),
+        ]);
+        let mut exported = BTreeSet::from(["MYSH_PREFIX".to_owned(), "PATH".to_owned()]);
+        configure_prefix_path(&mut variables, &mut exported);
+        let paths: Vec<_> = std::env::split_paths(variables.get("PATH").unwrap()).collect();
+        assert_eq!(paths.first(), Some(&bin));
+        assert_eq!(paths.get(1), Some(&std::path::PathBuf::from("/system/bin")));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
