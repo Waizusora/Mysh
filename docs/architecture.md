@@ -4,7 +4,7 @@
 
 Mysh is a standalone native command-line shell implemented in Rust. Its implementation is independent of Bash, Zsh, BusyBox, and other shell interpreters.
 
-The initial architecture is intentionally small. It separates input tokenization, command dispatch, built-in operations, and external process execution so that later shell-language features can be added without coupling them to filesystem commands.
+The initial architecture is intentionally small. It separates input tokenization, command dispatch, built-in operations, and external process execution so that later shell-language features can be added without coupling them to filesystem commands. The long-term compatibility baseline is POSIX, followed by a dedicated FreeBSD port; platform-specific behavior should remain isolated from the portable shell core.
 
 ## Runtime Flow
 
@@ -26,6 +26,12 @@ The initial architecture is intentionally small. It separates input tokenization
 | `lexer.rs` | Quote-aware command-line tokenization |
 | `shell.rs` | Input loop, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
+
+## Portability Strategy
+
+The shell language and shared command behavior should follow POSIX where applicable. Implementations must distinguish portable semantics from operating-system-specific facilities such as process creation, signal handling, terminal control, and filesystem behavior. Keep those facilities behind narrow platform abstractions so that Android and Linux remain supported while a later FreeBSD port can supply its own integration.
+
+The committed BSD target is FreeBSD only. Support for OpenBSD or NetBSD is not currently planned. POSIX is the compatibility target for the shell core; it does not imply that every POSIX utility is bundled or that full conformance has already been achieved.
 
 ## Android Targets
 
