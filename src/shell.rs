@@ -829,6 +829,26 @@ mod tests {
     }
 
     #[test]
+    fn if_elif_selects_the_first_successful_condition() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_first; then echo first; elif echo second; then echo selected; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "second\nselected\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_supports_a_nested_if_as_a_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_outer; then echo wrong; else if echo inner; then echo nested; fi; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inner\nnested\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
     fn if_rejects_missing_then_or_fi() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
