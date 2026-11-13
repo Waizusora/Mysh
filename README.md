@@ -46,7 +46,7 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Combined `rm` options and consistent `--` option termination across filesystem commands.
 - Safeguards against deleting the current working directory, its ancestors, or filesystem roots.
 - Conventional child-process signal status mapping on Unix-like targets.
-- External executable lookup through `PATH`.
+- Explicit external executable lookup through `PATH`, including ordered search, explicit paths, and conventional 126/127 error statuses.
 - Command exit-status reporting.
 - Basic sequential pipelines with buffered input between stages; supported operators may be adjacent to words.
 - Basic input, output, append, and standard-error redirection.
