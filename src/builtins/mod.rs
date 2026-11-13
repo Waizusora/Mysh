@@ -161,6 +161,8 @@ fn mkdir(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
             options = false;
         } else if options && value == "-p" {
             parents = true;
+        } else if options && value.starts_with('-') {
+            return usage("mkdir: supported options are -p and --", err);
         } else {
             paths.push(value);
         }
@@ -184,11 +186,22 @@ fn mkdir(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
 }
 
 fn rmdir(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
-    if args.is_empty() {
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value.starts_with('-') {
+            return usage("rmdir: no options are supported; use -- before a path beginning with '-'", err);
+        } else {
+            paths.push(value);
+        }
+    }
+    if paths.is_empty() {
         return usage("rmdir: usage: rmdir directory ...", err);
     }
     let mut status = 0;
-    for path in args {
+    for path in paths {
         if let Err(error) = fs::remove_dir(path) {
             status = 1;
             let _ = writeln!(err, "mysh: rmdir: {path}: {error}");
@@ -198,11 +211,22 @@ fn rmdir(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
 }
 
 fn touch(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
-    if args.is_empty() {
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value.starts_with('-') {
+            return usage("touch: no options are supported; use -- before a path beginning with '-'", err);
+        } else {
+            paths.push(value);
+        }
+    }
+    if paths.is_empty() {
         return usage("touch: usage: touch file ...", err);
     }
     let mut status = 0;
-    for path in args {
+    for path in paths {
         let result = OpenOptions::new()
             .create(true)
             .append(true)
@@ -442,7 +466,18 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
 }
 
 fn cat(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
-    if args.is_empty() {
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value.starts_with('-') && value != "-" {
+            return usage("cat: no options are supported; use -- before a path beginning with '-'", err);
+        } else {
+            paths.push(value);
+        }
+    }
+    if paths.is_empty() || paths == ["-"] {
         let mut input = io::stdin().lock();
         return match io::copy(&mut input, out) {
             Ok(_) => ok(),
@@ -450,7 +485,7 @@ fn cat(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutc
         };
     }
     let mut status = 0;
-    for path in args {
+    for path in paths {
         match File::open(path) {
             Ok(mut file) => {
                 if let Err(error) = io::copy(&mut file, out) {
