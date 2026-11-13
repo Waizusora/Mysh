@@ -274,7 +274,9 @@ enum ListOperator {
     Or,
 }
 
-fn split_command_list(tokens: Vec<Word>) -> Result<Vec<(Vec<Word>, Option<ListOperator>)>, &'static str> {
+type CommandList = Vec<(Vec<Word>, Option<ListOperator>)>;
+
+fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str> {
     let mut commands = Vec::new();
     let mut current = Vec::new();
     let mut next_condition = None;
