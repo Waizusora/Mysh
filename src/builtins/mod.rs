@@ -21,7 +21,7 @@ pub fn run(
 ) -> Option<BuiltinOutcome> {
     let result = match name {
         "cd" => cd(args, environment, err),
-        "export" => export(args, environment, err),
+        "export" => export(args, environment, out, err),
         "unset" => unset(args, environment, err),
         "pwd" => pwd(out, err),
         "ls" => ls(args, out, err),
@@ -70,10 +70,10 @@ fn cd(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn
     ok()
 }
 
-fn export(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
+fn export(args: &[String], environment: &mut BTreeMap<String, String>, out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
     if args.is_empty() {
         for (name, value) in environment.iter() {
-            if writeln!(err, "export {name}={value:?}").is_err() {
+            if writeln!(out, "export {name}={value:?}").is_err() {
                 return BuiltinOutcome::Continue(1);
             }
         }
