@@ -123,8 +123,17 @@ fn touch(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     if args.is_empty() { return usage("touch: usage: touch file ...", err); }
     let mut status = 0;
     for path in args {
-        if let Err(error) = OpenOptions::new().create(true).append(true).open(path) {
-            status = 1; let _ = writeln!(err, "mysh: touch: {path}: {error}");
+        let result = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|file| {
+                let now = SystemTime::now();
+                file.set_times(FileTimes::new().set_accessed(now).set_modified(now))
+            });
+        if let Err(error) = result {
+            status = 1;
+            let _ = writeln!(err, "mysh: touch: {path}: {error}");
         }
     }
     BuiltinOutcome::Continue(status)
