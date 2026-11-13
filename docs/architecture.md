@@ -63,7 +63,7 @@ The lexer currently supports unquoted words, single quotes, double quotes, backs
 
 Basic parameter substitution for environment-variable names is now performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. This is an improvement to quoting semantics, not a complete POSIX expansion implementation.
 
-The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. Operators still need token boundaries; the lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion, control-flow syntax, here-documents, and job control are not implemented.
+The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion, control-flow syntax, here-documents, and job control are not implemented.
 
 ## Process and Filesystem Model
 
