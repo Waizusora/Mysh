@@ -24,7 +24,7 @@ fn command_string_mode_preserves_exit_status() {
 fn external_child_receives_only_exported_shell_variables() {
     let executable = env!("CARGO_BIN_EXE_mysh");
     let invocation = format!(
-        "\"{executable}\" -c 'echo \\"$MYSH_EXPORTED_CHILD_TEST:$MYSH_PRIVATE_CHILD_TEST\\"'"
+        "\"{executable}\" -c 'echo \"$MYSH_EXPORTED_CHILD_TEST:$MYSH_PRIVATE_CHILD_TEST\"'"
     );
     let mut child = Command::new(executable)
         .stdin(Stdio::piped())
