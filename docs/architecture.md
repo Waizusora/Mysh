@@ -13,8 +13,9 @@ The initial architecture is intentionally small. It separates input tokenization
 3. The lexer converts the line into arguments while applying quote and escape rules.
 4. The dispatcher checks whether the command is a built-in.
 5. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
-6. Non-built-in commands are launched through Rust's process API and resolved using the inherited `PATH`.
-7. The shell records the resulting exit status.
+6. Non-built-in commands are launched through Rust's process API. The inherited environment is used for executable lookup.
+7. Normal child exit codes are preserved. On Unix-like targets, signal termination is represented as 128 plus the signal number.
+8. The shell records the resulting exit status.
 
 ## Modules
 
@@ -24,7 +25,7 @@ The initial architecture is intentionally small. It separates input tokenization
 | `lib.rs` | Public library module declarations |
 | `lexer.rs` | Quote-aware command-line tokenization |
 | `shell.rs` | Input loop, command dispatch, history, and status |
-| `builtins/mod.rs` | Built-in command implementations |
+| `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 
 ## Android Targets
 
@@ -45,5 +46,7 @@ Pipelines, redirections, command substitution, variable expansion, glob expansio
 ## Process and Filesystem Model
 
 Built-ins execute in the Mysh process. External commands execute as child processes and inherit the current working directory, environment, and standard file descriptors.
+
+Filesystem built-ins validate operand counts and supported options before performing mutations. Recursive copy rejects symbolic links and special filesystem entries instead of following them implicitly, and prevents a destination from being created inside the source tree. Recursive removal refuses the current working directory, its ancestors, and filesystem roots. Multi-source copy and move operations require an existing destination directory. Move operations use the platform rename primitive and do not emulate cross-filesystem copies.
 
 Mysh does not elevate privileges. Android sandboxing, SELinux policy, filesystem permissions, executable mapping restrictions, and linker compatibility remain enforced by the operating system.
