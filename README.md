@@ -4,7 +4,7 @@ Mysh (My Shell) is an independent, native command-line shell written in Rust for
 
 ## Project status
 
-The project is in its initial implementation phase. Milestone 1 establishes the interactive command loop, command lexer, built-in filesystem utilities, basic external program execution, tests, and Android build automation.
+The project is progressing through its native shell implementation milestones. Milestone 1 established the command loop, lexer, built-in commands, external process execution, tests, and Android build automation. Milestone 2 strengthens filesystem command semantics and child-process status handling.
 
 ## Supported targets
 
@@ -16,16 +16,20 @@ The project is in its initial implementation phase. Milestone 1 establishes the 
 
 The Android NDK is required to produce Android executables. Host builds are supported for development and testing.
 
-## Milestone 1 features
+## Current features
 
 - Interactive and non-interactive command input.
 - Quoted arguments and backslash escaping.
 - Built-in commands: `cd`, `pwd`, `ls`, `mkdir`, `rmdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `echo`, `clear`, `history`, `help`, and `exit`.
+- Hidden-file listing with `ls -a`.
+- Recursive directory copying and multiple-source copy/move operations.
+- Combined `rm` options, option termination with `--`, and safeguards against deleting the current working directory or its ancestors.
+- Conventional child-process signal status mapping on Unix-like targets.
 - External executable lookup through `PATH`.
 - Command exit-status reporting.
 - Unit and integration tests.
 
-Pipelines, shell expansions, redirections, job control, scripting syntax, and persistent history are not part of Milestone 1.
+Pipelines, shell expansions, redirections, job control, scripting syntax, and persistent history are not implemented yet.
 
 ## Build on a host
 
