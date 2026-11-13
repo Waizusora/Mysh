@@ -118,6 +118,8 @@ impl Shell {
                 Ok(_) => input = Some(contents),
                 Err(error) => {
                     let _ = writeln!(stderr, "mysh: {path}: {error}");
+                    self.variables = saved_variables;
+                    self.exported = saved_exported;
                     self.last_status = 1;
                     return true;
                 }
@@ -168,7 +170,7 @@ impl Shell {
             }
         };
         let mut process = Command::new(executable);
-        process.args(&command[1..]).env_clear().envs(self.exported.iter().filter_map(|name| self.variables.get(name).map(|value| (name, value)))).stdout(Stdio::piped()).stderr(Stdio::piped());
+        process.args(&command[1..]).env_clear().envs(self.exported.iter().map(|name| (name, self.variables.get(name).map(String::as_str).unwrap_or("")))).stdout(Stdio::piped()).stderr(Stdio::piped());
         if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
         }
