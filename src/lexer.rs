@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn supports_backslash_escaping() {
-        assert_eq!(values(r"echo hello\\ world"), ["echo", "hello world"]);
+        assert_eq!(values(r"echo hello\ world"), ["echo", "hello world"]);
     }
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn escaped_dollar_is_not_expandable() {
-        let words = lex(r"echo \\$NAME").unwrap();
+        let words = lex(r"echo \$NAME").unwrap();
         assert!(!words[1].parts()[0].expandable);
         assert_eq!(words[1].literal_value(), "$NAME");
     }
