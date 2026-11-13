@@ -85,7 +85,7 @@ impl Shell {
     }
 
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let (command, redirections) = match parse_redirections(tokens, &self.environment) {
+        let (command, redirections) = match parse_redirections(tokens, &self.variables) {
             Ok(value) => value,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -141,7 +141,7 @@ impl Shell {
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
             };
         }
-        let search_path = self.environment.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
+        let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
         let executable = match resolve_command(&command[0], &search_path) {
             Ok(path) => path,
             Err(error) => {
