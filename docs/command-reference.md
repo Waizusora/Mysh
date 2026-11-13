@@ -58,9 +58,9 @@ Child-process exit codes are returned unchanged when the process exits normally.
 
 ## Pipelines and redirections
 
-The current implementation supports basic sequential pipelines, for example `echo hello | cat`. Pipeline output is buffered between stages rather than streamed through concurrently connected operating-system pipes. The `cat` built-in accepts pipeline input and input-redirection data.
+The current implementation supports basic sequential pipelines, for example `echo hello | cat` or `echo hello|cat`. Pipeline output is buffered between stages rather than streamed through concurrently connected operating-system pipes. The `cat` built-in accepts pipeline input and input-redirection data.
 
-Basic redirection operators are supported when separated into lexer tokens: `<`, `>`, `>>`, and `2>`. For example, `echo hello > output.txt`. Redirection behavior inside multi-stage pipelines is not yet complete.
+Basic redirection operators `<`, `>`, `>>`, and `2>` are recognized both with and without surrounding whitespace. For example, `echo hello>output.txt` and `echo hello > output.txt`. Redirection behavior inside multi-stage pipelines is not yet complete.
 
 Environment-variable references such as `$HOME` and `${HOME}` are substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
 
