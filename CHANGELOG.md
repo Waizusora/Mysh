@@ -70,3 +70,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added initial single-level, single-line `if` / `then` / optional `else` / `fi` compound command execution, selected using the condition's exit status.
 - Added regression tests for successful and failing conditions and malformed compound-command syntax.
 - Documented current limitations: nested `if` statements and multiline compound commands are not supported.
+
+- Extended `if` compound-command handling with ordered `elif` conditions and optional `else` branches.
+- Added support for a nested `if` as the sole command in a selected branch, with regression tests for nested termination and branch selection.
+- Documented remaining compound-command limitations, including multiline syntax and compound commands mixed with other branch commands.
