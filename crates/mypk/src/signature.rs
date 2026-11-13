@@ -134,7 +134,9 @@ mod tests {
     #[test]
     fn rejects_malformed_and_duplicate_key_entries() {
         assert!(TrustedKeyring::parse("bad only-one-field").is_err());
-        assert!(TrustedKeyring::parse("same 0000\nsame 0000").is_err());
+        let signing = SigningKey::from_bytes(&[9_u8; 32]);
+        let encoded = signing.verifying_key().to_bytes().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        assert!(TrustedKeyring::parse(&format!("same {encoded}\nsame {encoded}")).is_err());
         assert!(TrustedKeyring::parse("key zzzz").is_err());
     }
 }
