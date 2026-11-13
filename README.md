@@ -50,10 +50,10 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Command exit-status reporting.
 - Basic sequential pipelines with buffered input between stages.
 - Basic input, output, append, and standard-error redirection.
-- Preliminary environment-variable substitution.
+- Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
 - Unit and integration tests.
 
-The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently occurs after tokenization and does not preserve single-quote semantics. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, control-flow syntax, job control, and persistent history are not implemented.
+The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently supports only basic environment-variable names; full POSIX parameter expansion and later expansion phases are not implemented. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, control-flow syntax, job control, and persistent history are not implemented.
 
 ## Build on a host
 
