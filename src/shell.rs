@@ -1,8 +1,9 @@
-//! Interactive input loop and command dispatcher.
+//! Interactive input loop, shell parsing, command dispatch, and process execution.
 use crate::builtins::{self, BuiltinOutcome};
 use crate::lexer;
-use std::io::{self, BufRead, Write};
-use std::process::Command;
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, Read, Write};
+use std::process::{Command, Stdio};
 
 #[derive(Default)]
 pub struct Shell {
@@ -11,155 +12,282 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn last_status(&self) -> i32 {
-        self.last_status
-    }
+    pub fn new() -> Self { Self::default() }
+    pub fn last_status(&self) -> i32 { self.last_status }
 
     /// Execute one command line. Returns false when an exit command is accepted.
-    pub fn execute_line(
-        &mut self,
-        line: &str,
-        stdout: &mut dyn Write,
-        stderr: &mut dyn Write,
-    ) -> bool {
+    pub fn execute_line(&mut self, line: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let tokens = match lexer::lex(line) {
-            Ok(tokens) => tokens,
+            Ok(tokens) => tokens.into_iter().map(|token| expand_variables(&token)).collect::<Vec<_>>(),
             Err(error) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {error}");
                 self.last_status = 2;
                 return true;
             }
         };
-        if tokens.is_empty() {
-            return true;
-        }
+        if tokens.is_empty() { return true; }
         self.history.push(line.to_owned());
 
-        if let Some(outcome) =
-            builtins::run(&tokens[0], &tokens[1..], &self.history, stdout, stderr)
-        {
-            match outcome {
-                BuiltinOutcome::Continue(status) => {
-                    self.last_status = status;
-                    true
+        let stages = match split_pipeline(tokens) {
+            Ok(stages) => stages,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
+            }
+        };
+        if stages.len() == 1 {
+            return self.execute_stage(&stages[0], stdout, stderr);
+        }
+
+        let mut input = Vec::new();
+        let mut final_status = 0;
+        for (index, stage) in stages.iter().enumerate() {
+            let is_last = index + 1 == stages.len();
+            let (command, redirections) = match parse_redirections(stage) {
+                Ok(value) => value,
+                Err(message) => {
+                    let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                    self.last_status = 2;
+                    return true;
                 }
-                BuiltinOutcome::Exit(status) => {
-                    self.last_status = status;
-                    false
+            };
+            if command.is_empty() {
+                let _ = writeln!(stderr, "mysh: syntax error: empty pipeline stage");
+                self.last_status = 2;
+                return true;
+            }
+            let mut stage_output = Vec::new();
+            let mut stage_error = Vec::new();
+            final_status = self.run_stage(&command, &redirections, &input, &mut stage_output, &mut stage_error);
+            if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
+            if is_last {
+                if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
+            } else {
+                input = stage_output;
+            }
+        }
+        self.last_status = final_status;
+        true
+    }
+
+    fn execute_stage(&mut self, tokens: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let (command, redirections) = match parse_redirections(tokens) {
+            Ok(value) => value,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
+            }
+        };
+        if command.is_empty() { return true; }
+        let mut input = Vec::new();
+        if let Some(path) = redirections.input.as_deref() {
+            match File::open(path).and_then(|mut file| file.read_to_end(&mut input)) {
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = writeln!(stderr, "mysh: {path}: {error}");
+                    self.last_status = 1;
+                    return true;
                 }
             }
-        } else {
-            self.execute_external(&tokens, stderr);
-            true
+        }
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let outcome = self.run_stage(&command, &redirections, &input, &mut output, &mut errors);
+        if redirections.input.is_none() && input.is_empty() { /* stdin remains inherited for cat */ }
+        if let Some(path) = redirections.output.as_deref() {
+            let opened = open_output(path, redirections.append);
+            match opened.and_then(|mut file| file.write_all(&output)) {
+                Ok(()) => {}
+                Err(error) => { let _ = writeln!(stderr, "mysh: {path}: {error}"); self.last_status = 1; return true; }
+            }
+        } else if !output.is_empty() { let _ = stdout.write_all(&output); }
+        if let Some(path) = redirections.error.as_deref() {
+            match open_output(path, false).and_then(|mut file| file.write_all(&errors)) {
+                Ok(()) => {}
+                Err(error) => { let _ = writeln!(stderr, "mysh: {path}: {error}"); self.last_status = 1; return true; }
+            }
+        } else if !errors.is_empty() { let _ = stderr.write_all(&errors); }
+        match outcome {
+            StageOutcome::Exit(status) => { self.last_status = status; false }
+            StageOutcome::Continue(status) => { self.last_status = status; true }
+        }
+    }
+
+    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: &[u8], out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
+        if command.is_empty() { return StageOutcome::Continue(0); }
+        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, out, err) {
+            return match outcome {
+                BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
+                BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
+            };
+        }
+        let mut process = Command::new(&command[0]);
+        process.args(&command[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if redirections.input.is_some() || !input.is_empty() {
+            process.stdin(Stdio::piped());
+        }
+        match process.spawn() {
+            Ok(mut child) => {
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(error) = stdin.write_all(input) {
+                        let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
+                    }
+                }
+                match child.wait_with_output() {
+                    Ok(result) => {
+                        out.extend_from_slice(&result.stdout);
+                        err.extend_from_slice(&result.stderr);
+                        StageOutcome::Continue(external_status_code(result.status))
+                    }
+                    Err(error) => {
+                        let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                        StageOutcome::Continue(126)
+                    }
+                }
+            }
+            Err(error) => {
+                let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                StageOutcome::Continue(if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 })
+            }
         }
     }
 
     /// Read and execute commands until end-of-input or an exit command.
-    pub fn run<R: BufRead, W: Write>(
-        &mut self,
-        reader: &mut R,
-        writer: &mut W,
-        interactive: bool,
-    ) -> io::Result<i32> {
+    pub fn run<R: BufRead, W: Write>(&mut self, reader: &mut R, writer: &mut W, interactive: bool) -> io::Result<i32> {
         let mut line = String::new();
         loop {
             if interactive {
-                let current = std::env::current_dir()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|_| "?".to_owned());
+                let current = std::env::current_dir().map(|path| path.display().to_string()).unwrap_or_else(|_| "?".to_owned());
                 write!(writer, "mysh:{current}$ ")?;
                 writer.flush()?;
             }
             line.clear();
-            if reader.read_line(&mut line)? == 0 {
-                break;
-            }
-            while line.ends_with('\n') || line.ends_with('\r') {
-                line.pop();
-            }
+            if reader.read_line(&mut line)? == 0 { break; }
+            while line.ends_with('\n') || line.ends_with('\r') { line.pop(); }
             let mut stderr = io::stderr().lock();
-            if !self.execute_line(&line, writer, &mut stderr) {
-                break;
-            }
+            if !self.execute_line(&line, writer, &mut stderr) { break; }
         }
         Ok(self.last_status)
     }
+}
 
-    fn execute_external(&mut self, tokens: &[String], stderr: &mut dyn Write) {
-        self.last_status = match Command::new(&tokens[0]).args(&tokens[1..]).status() {
-            Ok(status) => external_status_code(status),
-            Err(error) => {
-                let _ = writeln!(stderr, "mysh: {}: {error}", tokens[0]);
-                if error.kind() == io::ErrorKind::NotFound {
-                    127
-                } else {
-                    126
-                }
-            }
-        };
+#[derive(Default)]
+struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
+enum StageOutcome { Continue(i32), Exit(i32) }
+
+fn split_pipeline(tokens: Vec<String>) -> Result<Vec<Vec<String>>, &'static str> {
+    let mut stages = vec![Vec::new()];
+    for token in tokens {
+        if token == "|" {
+            if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
+            stages.push(Vec::new());
+        } else { stages.last_mut().expect("pipeline has a stage").push(token); }
     }
+    if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
+    Ok(stages)
+}
+
+fn parse_redirections(tokens: &[String]) -> Result<(Vec<String>, Redirections), &'static str> {
+    let mut command = Vec::new();
+    let mut redirects = Redirections::default();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = tokens[index].as_str();
+        if matches!(token, ">" | ">>" | "<" | "2>") {
+            let target = tokens.get(index + 1).ok_or("redirection requires a path")?.clone();
+            match token {
+                "<" => redirects.input = Some(target),
+                ">" => { redirects.output = Some(target); redirects.append = false; }
+                ">>" => { redirects.output = Some(target); redirects.append = true; }
+                "2>" => redirects.error = Some(target),
+                _ => unreachable!(),
+            }
+            index += 2;
+        } else { command.push(tokens[index].clone()); index += 1; }
+    }
+    Ok((command, redirects))
+}
+
+fn open_output(path: &str, append: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true);
+    if append { options.append(true); } else { options.truncate(true); }
+    options.open(path)
+}
+
+/// Expand unquoted variable references in an already-tokenized argument.
+fn expand_variables(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut result = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '$' { result.push(chars[index]); index += 1; continue; }
+        index += 1;
+        let braced = chars.get(index) == Some(&'{');
+        if braced { index += 1; }
+        let start = index;
+        if chars.get(index).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') {
+            index += 1;
+            while chars.get(index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { index += 1; }
+            let name: String = chars[start..index].iter().collect();
+            result.push_str(&std::env::var(&name).unwrap_or_default());
+        } else {
+            result.push('$');
+            continue;
+        }
+        if braced {
+            if chars.get(index) == Some(&'}') { index += 1; } else { result.push_str("{}"); }
+        }
+    }
+    result
 }
 
 /// Convert a child-process status into the conventional shell exit-code range.
 fn external_status_code(status: std::process::ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        status.signal().map_or(128, |signal| 128 + signal)
-    }
-    #[cfg(not(unix))]
-    {
-        128
-    }
+    if let Some(code) = status.code() { return code; }
+    #[cfg(unix)] { use std::os::unix::process::ExitStatusExt; status.signal().map_or(128, |signal| 128 + signal) }
+    #[cfg(not(unix))] { 128 }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{external_status_code, Shell};
-
+    use super::{expand_variables, external_status_code, split_pipeline, Shell};
     #[test]
     fn executes_builtin_commands() {
-        let mut shell = Shell::new();
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(shell.execute_line("echo hello", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
-        assert!(errors.is_empty());
-        assert_eq!(shell.last_status(), 0);
+        assert!(errors.is_empty()); assert_eq!(shell.last_status(), 0);
     }
-
     #[test]
     fn reports_lexer_errors_without_exiting() {
-        let mut shell = Shell::new();
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(shell.execute_line("echo 'unfinished", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 2);
         assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
     }
-
     #[test]
     fn exit_returns_the_requested_status() {
-        let mut shell = Shell::new();
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
-        assert!(!shell.execute_line("exit 23", &mut output, &mut errors));
-        assert_eq!(shell.last_status(), 23);
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
     }
-
+    #[test]
+    fn variable_expansion_supports_braced_and_unbraced_names() {
+        std::env::set_var("MYSH_TEST_VALUE", "expanded");
+        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}"), "expanded/expanded");
+        std::env::remove_var("MYSH_TEST_VALUE");
+    }
+    #[test]
+    fn pipeline_parser_rejects_empty_stages() {
+        assert!(split_pipeline(vec!["|".into(), "cat".into()]).is_err());
+        assert!(split_pipeline(vec!["echo".into(), "|".into()]).is_err());
+    }
     #[cfg(unix)]
     #[test]
     fn maps_signal_termination_to_conventional_shell_status() {
         use std::os::unix::process::ExitStatusExt;
-
-        let status = std::process::ExitStatus::from_raw(9);
-        assert_eq!(external_status_code(status), 137);
+        assert_eq!(external_status_code(std::process::ExitStatus::from_raw(9)), 137);
     }
-
 }
