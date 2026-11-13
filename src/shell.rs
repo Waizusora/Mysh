@@ -56,7 +56,7 @@ impl Shell {
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
-            let (command, redirections) = match parse_redirections(stage, &self.variables) {
+            let (command, redirections) = match parse_redirections(stage, &self.variables, self.last_status) {
                 Ok(value) => value,
                 Err(message) => {
                     let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -100,7 +100,7 @@ impl Shell {
     }
 
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let (mut command, redirections) = match parse_redirections(tokens, &self.variables) {
+        let (mut command, redirections) = match parse_redirections(tokens, &self.variables, self.last_status) {
             Ok(value) => value,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -269,11 +269,11 @@ fn assignment(value: &str) -> Option<(&str, &str)> {
     Some((name, assigned))
 }
 
-fn expand_word(word: &Word, environment: &BTreeMap<String, String>) -> String {
+fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut expanded = String::new();
     for part in word.parts() {
         if part.expandable {
-            expanded.push_str(&expand_variables(&part.text, environment));
+            expanded.push_str(&expand_variables(&part.text, environment, last_status));
         } else {
             expanded.push_str(&part.text);
         }
@@ -293,7 +293,7 @@ fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
     Ok(stages)
 }
 
-fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>) -> Result<(Vec<String>, Redirections), &'static str> {
+fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
     let mut index = 0;
@@ -314,7 +314,7 @@ fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>) -
             }
             index += 2;
         } else {
-            command.push(expand_word(token, environment));
+            command.push(expand_word(token, environment, last_status));
             index += 1;
         }
     }
@@ -329,30 +329,62 @@ fn open_output(path: &str, append: bool) -> io::Result<File> {
 }
 
 /// Expand the currently supported simple environment-variable references.
-fn expand_variables(value: &str, environment: &BTreeMap<String, String>) -> String {
+fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut result = String::new();
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] != '$' { result.push(chars[index]); index += 1; continue; }
-        index += 1;
-        let braced = chars.get(index) == Some(&'{');
-        if braced { index += 1; }
-        let start = index;
-        if chars.get(index).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') {
+        if chars[index] != '$' {
+            result.push(chars[index]);
             index += 1;
-            while chars.get(index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { index += 1; }
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'?') {
+            result.push_str(&last_status.to_string());
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'{') {
+            if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
+                let end = index + 2 + relative_end;
+                let name: String = chars[index + 2..end].iter().collect();
+                if name == "?" {
+                    result.push_str(&last_status.to_string());
+                } else if valid_parameter_name(&name) {
+                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+                } else {
+                    result.extend(chars[index..=end].iter());
+                }
+                index = end + 1;
+                continue;
+            }
+            result.push_str("${");
+            index += 2;
+            continue;
+        }
+
+        let start = index + 1;
+        if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
+            index = start + 1;
+            while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
+                index += 1;
+            }
             let name: String = chars[start..index].iter().collect();
             result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
         } else {
             result.push('$');
-            continue;
-        }
-        if braced {
-            if chars.get(index) == Some(&'}') { index += 1; } else { result.push_str("{}"); }
+            index += 1;
         }
     }
     result
+}
+
+fn valid_parameter_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
 /// Convert a child-process status into the conventional shell exit-code range.
@@ -393,7 +425,8 @@ mod tests {
     #[test]
     fn variable_expansion_supports_braced_and_unbraced_names() {
         let environment = BTreeMap::from([(String::from("MYSH_TEST_VALUE"), String::from("expanded"))]);
-        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}", &environment), "expanded/expanded");
+        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}", &environment, 0), "expanded/expanded");
+        assert_eq!(expand_variables("status=$? braced=${?}", &environment, 37), "status=37 braced=37");
     }
 
     #[test]
