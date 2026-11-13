@@ -86,6 +86,11 @@ pub struct PackageArchive {
 }
 
 impl PackageArchive {
+    /// Verify the detached signature over the exact checksum-list bytes.
+    pub fn verify_signature(&self, keyring: &crate::signature::TrustedKeyring) -> Result<String, crate::signature::SignatureError> {
+        keyring.verify(&self.checksums, &self.signature)
+    }
+
     /// Read a TAR archive, reject unsafe entries, and verify SHA-256 checksums.
     ///
     /// This does not authenticate the publisher. Verify the detached Ed25519
@@ -188,6 +193,10 @@ fn package_name(value: &str) -> Result<(), PackageError> {
 
 fn safe_path(path: &Path, text: &str) -> Result<(), PackageError> {
     if text.is_empty() || text.starts_with('/') || text.contains('\\') {
+        return Err(PackageError::new(format!("unsafe archive path: {text}")));
+    }
+    let normalized = text.strip_suffix('/').unwrap_or(text);
+    if normalized.is_empty() || normalized.split('/').any(|part| part.is_empty() || part == "." || part == "..") {
         return Err(PackageError::new(format!("unsafe archive path: {text}")));
     }
     for part in path.components() {

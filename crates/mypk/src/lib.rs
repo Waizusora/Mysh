@@ -1,6 +1,7 @@
 //! Command-line interface and package-format primitives for My Package Keeper.
 
 pub mod package;
+pub mod signature;
 
 /// A canonical MYPK operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
