@@ -144,9 +144,19 @@ fn recursive_copy_preserves_directory_structure() {
     fs::write(directory.join("source/nested/child.txt"), b"child").unwrap();
 
     let output = run_in(&directory, "cp -r source copied");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(fs::read(directory.join("copied/root.txt")).unwrap(), b"root");
-    assert_eq!(fs::read(directory.join("copied/nested/child.txt")).unwrap(), b"child");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(directory.join("copied/root.txt")).unwrap(),
+        b"root"
+    );
+    assert_eq!(
+        fs::read(directory.join("copied/nested/child.txt")).unwrap(),
+        b"child"
+    );
 
     fs::remove_dir_all(directory).unwrap();
 }
@@ -159,13 +169,27 @@ fn copy_and_move_accept_multiple_sources_for_directory_destinations() {
     fs::write(directory.join("second"), b"two").unwrap();
 
     let output = run_in(&directory, "cp first second destination");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(fs::read(directory.join("destination/first")).unwrap(), b"one");
-    assert_eq!(fs::read(directory.join("destination/second")).unwrap(), b"two");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(directory.join("destination/first")).unwrap(),
+        b"one"
+    );
+    assert_eq!(
+        fs::read(directory.join("destination/second")).unwrap(),
+        b"two"
+    );
 
     fs::create_dir(directory.join("moved")).unwrap();
     let output = run_in(&directory, "mv destination/first destination/second moved");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(fs::read(directory.join("moved/first")).unwrap(), b"one");
     assert_eq!(fs::read(directory.join("moved/second")).unwrap(), b"two");
 
@@ -198,7 +222,11 @@ fn rm_accepts_combined_options_and_refuses_working_directory_removal() {
     fs::write(directory.join("tree/nested/file"), b"data").unwrap();
 
     let output = run_in(&directory, "rm -rf tree");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!directory.join("tree").exists());
 
     let output = run_in(&directory, "rm -rf .");
@@ -214,7 +242,11 @@ fn double_dash_allows_paths_that_begin_with_a_hyphen() {
     fs::write(directory.join("-notes"), b"notes").unwrap();
 
     let output = run_in(&directory, "rm -- -notes");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!directory.join("-notes").exists());
 
     fs::remove_dir_all(directory).unwrap();

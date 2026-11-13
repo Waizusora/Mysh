@@ -242,7 +242,10 @@ fn cp(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     let sources = &paths[..paths.len() - 1];
     let destination_is_directory = destination.is_dir();
     if sources.len() > 1 && !destination_is_directory {
-        return usage("cp: destination must be an existing directory when copying multiple sources", err);
+        return usage(
+            "cp: destination must be an existing directory when copying multiple sources",
+            err,
+        );
     }
 
     let mut status = 0;
@@ -324,7 +327,10 @@ fn mv(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
         if options && value == "--" {
             options = false;
         } else if options && value.starts_with('-') {
-            return usage("mv: no options are currently supported; use -- before a path beginning with '-'", err);
+            return usage(
+                "mv: no options are currently supported; use -- before a path beginning with '-'",
+                err,
+            );
         } else {
             paths.push(value.as_str());
         }
@@ -337,7 +343,10 @@ fn mv(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     let sources = &paths[..paths.len() - 1];
     let destination_is_directory = destination.is_dir();
     if sources.len() > 1 && !destination_is_directory {
-        return usage("mv: destination must be an existing directory when moving multiple sources", err);
+        return usage(
+            "mv: destination must be an existing directory when moving multiple sources",
+            err,
+        );
     }
 
     let mut status = 0;
@@ -395,7 +404,10 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
         let path = Path::new(value);
         if value == "." || value == ".." {
             status = 1;
-            let _ = writeln!(err, "mysh: rm: refusing to remove the current or parent directory: {value}");
+            let _ = writeln!(
+                err,
+                "mysh: rm: refusing to remove the current or parent directory: {value}"
+            );
             continue;
         }
         if let (Some(current), Ok(target)) = (current.as_ref(), fs::canonicalize(path)) {
