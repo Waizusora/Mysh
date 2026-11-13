@@ -21,6 +21,35 @@ fn command_string_mode_preserves_exit_status() {
 }
 
 #[test]
+fn external_child_receives_only_exported_shell_variables() {
+    let executable = env!("CARGO_BIN_EXE_mysh");
+    let invocation = format!(
+        "\"{executable}\" -c 'echo \\"$MYSH_EXPORTED_CHILD_TEST:$MYSH_PRIVATE_CHILD_TEST\\"'"
+    );
+    let mut child = Command::new(executable)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Mysh process should start");
+    child
+        .stdin
+        .take()
+        .expect("stdin should be piped")
+        .write_all(
+            format!(
+                "MYSH_EXPORTED_CHILD_TEST=visible\nexport MYSH_EXPORTED_CHILD_TEST\nMYSH_PRIVATE_CHILD_TEST=hidden\n{invocation}\n"
+            )
+            .as_bytes(),
+        )
+        .expect("commands should be written");
+    let output = child.wait_with_output().expect("Mysh process should finish");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "visible:\n");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn standard_input_mode_runs_multiple_commands() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mysh"))
         .stdin(Stdio::piped())
