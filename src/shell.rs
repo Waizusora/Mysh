@@ -40,7 +40,30 @@ impl Shell {
         if tokens.is_empty() { return true; }
         self.history.push(line.to_owned());
 
-        let stages = match split_pipeline(tokens) {
+        let commands = match split_command_list(tokens) {
+            Ok(commands) => commands,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
+            }
+        };
+
+        for (pipeline, condition) in commands {
+            let should_run = match condition {
+                None | Some(ListOperator::Sequence) => true,
+                Some(ListOperator::And) => self.last_status == 0,
+                Some(ListOperator::Or) => self.last_status != 0,
+            };
+            if should_run && !self.execute_pipeline(&pipeline, stdout, stderr) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn execute_pipeline(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let stages = match split_pipeline(tokens.to_vec()) {
             Ok(stages) => stages,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -243,6 +266,54 @@ impl Shell {
 #[derive(Default)]
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
+
+#[derive(Clone, Copy)]
+enum ListOperator {
+    Sequence,
+    And,
+    Or,
+}
+
+fn split_command_list(tokens: Vec<Word>) -> Result<Vec<(Vec<Word>, Option<ListOperator>)>, &'static str> {
+    let mut commands = Vec::new();
+    let mut current = Vec::new();
+    let mut next_condition = None;
+
+    for token in tokens {
+        let operator = if token.is_unquoted_literal(";") {
+            Some(ListOperator::Sequence)
+        } else if token.is_unquoted_literal("&&") {
+            Some(ListOperator::And)
+        } else if token.is_unquoted_literal("||") {
+            Some(ListOperator::Or)
+        } else if token.is_unquoted_literal("&") {
+            return Err("background execution with '&' is not supported");
+        } else {
+            None
+        };
+
+        if let Some(operator) = operator {
+            if current.is_empty() {
+                return Err("command-list operator requires a command before it");
+            }
+            commands.push((std::mem::take(&mut current), next_condition.take()));
+            next_condition = Some(operator);
+        } else {
+            current.push(token);
+        }
+    }
+
+    if !current.is_empty() {
+        commands.push((current, next_condition));
+    } else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
+        return Err("conditional operator requires a command after it");
+    }
+
+    if commands.is_empty() {
+        return Err("command list is empty");
+    }
+    Ok(commands)
+}
 
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
     let Some(prefix) = variables.get("MYSH_PREFIX") else { return; };
@@ -544,6 +615,41 @@ mod tests {
         assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), ">\n");
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_list_runs_semicolon_separated_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo first; echo second;", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn conditional_command_lists_short_circuit_and_chain_left_to_right() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "mysh_missing_conditional_test && echo skipped || echo fallback",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn command_list_rejects_missing_conditional_operands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo missing &&", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
     }
 
     #[test]
