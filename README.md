@@ -23,7 +23,8 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Built-in commands: `cd`, `pwd`, `ls`, `mkdir`, `rmdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `echo`, `clear`, `history`, `help`, and `exit`.
 - Hidden-file listing with `ls -a`.
 - Recursive directory copying and multiple-source copy/move operations.
-- Combined `rm` options, option termination with `--`, and safeguards against deleting the current working directory or its ancestors.
+- Combined `rm` options and consistent `--` option termination across filesystem commands.
+- Safeguards against deleting the current working directory, its ancestors, or filesystem roots.
 - Conventional child-process signal status mapping on Unix-like targets.
 - External executable lookup through `PATH`.
 - Command exit-status reporting.
