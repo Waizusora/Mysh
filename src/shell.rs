@@ -97,7 +97,7 @@ impl Shell {
         }
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let outcome = self.run_stage(&command, &redirections, &input, &mut output, &mut errors);
+        let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
         // Without an input redirection, built-ins and external commands retain inherited stdin.
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
