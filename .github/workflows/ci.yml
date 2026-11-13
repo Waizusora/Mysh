@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Rust quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run tests
+        run: cargo test --all-targets
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  android:
+    name: Build Android (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86_64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: 27.2.12479018
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build native executable
+        run: cargo ndk -t "${{ matrix.abi }}" --platform 21 -o dist build --release
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysh-${{ matrix.abi }}
+          path: dist/${{ matrix.abi }}/release/mysh
+          if-no-files-found: error
