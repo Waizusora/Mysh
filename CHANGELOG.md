@@ -15,6 +15,9 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ### Added
 
+- Explicit external-command resolution through `PATH`, including ordered directory search, explicit slash-containing paths, executable-permission checks, and command-not-found (127) versus not-executable (126) status handling.
+- Unit tests for PATH lookup, search order, explicit paths, missing commands, and non-executable files.
+
 - Token recognition for supported pipeline and redirection operators adjacent to words, including compact forms such as `echo text|cat` and `echo text>file`.
 - Regression tests for compact pipeline and output-redirection syntax.
 
