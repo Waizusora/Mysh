@@ -15,6 +15,10 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ### Added
 
+- Quote-aware shell-word lexer that preserves ordered quoted, unquoted, and escaped fragments.
+- Variable expansion now respects single quotes and escaped dollar signs while retaining expansion inside double quotes.
+- Regression tests for quote metadata, adjacent quoted fragments, quoted operators, and quote-aware variable expansion.
+
 - Pipeline input delivery to the `cat` built-in, including multi-stage built-in pipelines.
 - Regression tests for `echo | cat` and `echo | cat | cat`.
 - Documentation of the current partial pipeline, redirection, and variable-substitution behavior and its POSIX limitations.
