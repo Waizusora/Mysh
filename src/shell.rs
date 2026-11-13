@@ -358,6 +358,32 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_operator_does_not_require_surrounding_whitespace() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo compact|cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "compact\\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn output_redirection_does_not_require_surrounding_whitespace() {
+        let path = std::env::temp_dir().join(format!("mysh-redirection-{}", std::process::id()));
+        let path_text = path.to_string_lossy();
+        let command = format!("echo redirected>{path_text}");
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\\n");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn pipeline_passes_input_through_multiple_builtin_stages() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
