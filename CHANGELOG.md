@@ -6,6 +6,11 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ## [0.1.0] - Unreleased
 
+### Roadmap
+
+- Set POSIX compatibility as the primary shell-language and portability baseline.
+- Plan Linux validation after the Android foundation, followed by a dedicated FreeBSD port; other BSD systems are not currently in scope.
+
 ### Added
 
 - Milestone 2 filesystem enhancements: hidden-file listing, recursive directory copy, multiple-source copy and move, combined removal options, and the `--` option terminator.
