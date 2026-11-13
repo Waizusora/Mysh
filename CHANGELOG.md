@@ -50,3 +50,9 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - External executable lookup through `PATH`.
 - Unit tests, integration tests, and GitHub Actions CI.
 - Architecture and command reference documentation.
+
+## Unreleased
+
+- Added a shell-managed environment map initialized from inherited process variables.
+- Added `export` and `unset` built-ins and passed the current environment to external child processes.
+- Added regression coverage for exported variable expansion and removal.
