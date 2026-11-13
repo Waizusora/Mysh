@@ -310,7 +310,7 @@ fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, l
             .find(|operator| token.is_unquoted_literal(operator));
         if let Some(operator) = operator {
             let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
-            let target = expand_word(target, environment);
+            let target = expand_word(target, environment, last_status);
             match operator {
                 "<" => redirects.input = Some(target),
                 ">" => { redirects.output = Some(target); redirects.append = false; }
