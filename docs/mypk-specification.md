@@ -85,6 +85,48 @@ The package signature is the standard Ed25519 signature over the exact byte sequ
 
 The archive reader validates signature length and SHA-256 checksums, and exposes `PackageArchive::verify_signature` to authenticate the exact checksum-list bytes against a `TrustedKeyring`. Package installation must call this method successfully before applying payload files. The current CLI does not yet perform package installation.
 
+
+## Repository Trust Framework Version 1
+
+Repository trust metadata is verified in two stages. The initial root public key is provisioned by an authenticated bootstrap process and is never learned from an unauthenticated repository response.
+
+### Root metadata
+
+The root document is UTF-8 JSON with exactly these fields:
+
+| Field | Type |
+| --- | --- |
+| format | `MYPK-ROOT` |
+| format_version | integer; 1 |
+| repository_id | 1–128 ASCII letters, digits, periods, underscores, or hyphens |
+| version | monotonically increasing unsigned integer |
+| issued_at | Unix timestamp in seconds |
+| expires_at | Unix timestamp in seconds; exclusive upper bound |
+| keys | array of repository key records |
+| revoked_key_ids | array of revoked key IDs |
+
+Each repository key record contains exactly `key_id`, `public_key` (64 hexadecimal characters), `not_before`, and `expires_at`. Key validity uses the half-open interval `[not_before, expires_at)`. A key listed in `revoked_key_ids` is excluded regardless of its validity interval. Duplicate key IDs, duplicate revocations, unknown JSON fields, invalid time windows, empty active key sets, and oversized metadata are rejected.
+
+The root signature is a detached text record containing the root signer key ID, one space, and a 128-character hexadecimal Ed25519 signature. The signed message is the exact root JSON byte sequence prefixed by the domain separator `MYSH-MYPK-ROOT-METADATA-V1\0`. The root signature must verify against the locally bootstrapped root keyring.
+
+### Repository index metadata
+
+The repository index metadata JSON has exactly these fields: `format` (`MYPK-INDEX`), `format_version` (1), `repository_id`, `version`, `issued_at`, `expires_at`, `package_index_sha256`, and `package_index_size`. The repository ID must match the verified root metadata. Its detached signature uses the same text encoding and signs the exact metadata bytes prefixed by `MYSH-MYPK-REPOSITORY-INDEX-V1\0`. The signer must be an active, non-revoked repository key authorized by the verified root metadata.
+
+The referenced package-index bytes must match both the declared byte size and SHA-256 digest. Root metadata and repository index metadata are bounded to 1 MiB. Clients persist the highest accepted root and index versions and pass those values as minimum versions to reject rollback. A client must not reset these version floors as part of ordinary cache cleanup.
+
+### Expiration, revocation, and rotation
+
+Expiration is enforced by the client using the current Unix time. Root metadata, repository index metadata, and repository signing keys are rejected at or after their exclusive expiration timestamp. A key is revoked by publishing its ID in a newer root document signed by an already trusted root key. A revoked key is rejected immediately after the client successfully verifies and accepts that root document. Offline clients cannot learn about a newly published revocation until they refresh trusted metadata; short metadata lifetimes bound this exposure.
+
+Routine repository-key rotation is performed by adding a new public key to root metadata, accepting it only after the root signature is verified, and then removing or revoking the old key in a later root version. The root private key should be kept offline. Root-key rotation itself requires an authenticated root-update procedure and is not implemented by this version. Private keys are publisher-side secrets and must never be distributed to clients or included in repository metadata.
+
+### Implementation boundary
+
+Implemented in the Rust library: strict root and index metadata parsing, exact-byte Ed25519 verification with domain separation, repository identity binding, key validity windows, revocation filtering, expiry checks, package-index size and SHA-256 validation, and caller-supplied minimum-version rollback checks.
+
+Not yet implemented: network synchronization, persistent version floors, secure clock handling, root-key rotation, threshold signatures, and integration into the `mypk sync` or `mypk install` command paths. Until those operations are integrated, this library API is a verification primitive and does not by itself make repository synchronization secure.
+
 ## Repository and State
 
 Repository configuration is stored at etc/mypk/repositories.conf and trusted keys at etc/mypk/keys/. Repository indexes must be signed and verified before package selection. Repository downloads require authenticated TLS and bounded redirects, sizes, and decompression.

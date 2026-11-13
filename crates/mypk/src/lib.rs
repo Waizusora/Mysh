@@ -2,6 +2,7 @@
 
 pub mod package;
 pub mod signature;
+pub mod trust;
 
 /// A canonical MYPK operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
