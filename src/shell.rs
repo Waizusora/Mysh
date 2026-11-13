@@ -341,6 +341,21 @@ mod tests {
     }
 
     #[test]
+    fn export_updates_shell_expansion_and_unset_removes_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_EXPORT_TEST='hello world'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello world\\n");
+        assert!(shell.execute_line("unset MYSH_EXPORT_TEST", &mut Vec::new(), &mut errors));
+        let mut after_unset = Vec::new();
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut after_unset, &mut errors));
+        assert_eq!(String::from_utf8(after_unset).unwrap(), "\\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
     fn quoted_pipe_is_a_word_not_a_pipeline_operator() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
