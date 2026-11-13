@@ -47,9 +47,12 @@ Child-process exit codes are returned unchanged when the process exits normally.
 ## Parsing Rules
 
 - Unquoted whitespace separates arguments.
-- Single quotes preserve all characters until the next single quote.
+- Single quotes preserve all characters until the next single quote and suppress variable expansion.
+- Double quotes group characters into one argument; basic variable expansion remains enabled inside them.
+- Adjacent quoted and unquoted fragments are combined into one word.
 - Double quotes group characters into one argument.
-- A backslash escapes the next character outside single quotes.
+- A backslash escapes the next character outside single quotes. Escaped dollar signs are not expanded.
+- A backslash-newline pair is treated as a line continuation.
 - An unquoted `#` at the beginning of a token starts a comment.
 - Empty quoted strings produce empty arguments.
 
@@ -59,7 +62,7 @@ The current implementation supports basic sequential pipelines, for example `ech
 
 Basic redirection operators are supported when separated into lexer tokens: `<`, `>`, `>>`, and `2>`. For example, `echo hello > output.txt`. Redirection behavior inside multi-stage pipelines is not yet complete.
 
-Environment-variable references such as `$HOME` and `${HOME}` are substituted as a preliminary feature. Expansion currently occurs after tokenization, so single-quoted text is not protected from expansion as required by POSIX.
+Environment-variable references such as `$HOME` and `${HOME}` are substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
 
 ## Limitations
 
