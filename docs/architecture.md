@@ -10,7 +10,7 @@ The initial architecture is intentionally small. It separates input tokenization
 
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
 2. The shell reads one command line.
-3. The lexer converts the line into arguments while applying quote and escape rules.
+3. The lexer converts the line into arguments while applying quote and escape rules. The current lexer does not yet retain quote metadata for later expansion phases.
 4. The dispatcher checks whether the command is a built-in.
 5. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
 6. Non-built-in commands are launched through Rust's process API. The inherited environment is used for executable lookup.
@@ -47,11 +47,11 @@ Android executables are linked directly as standalone ELF binaries against Andro
 
 Milestone 1 supports command names, whitespace-separated arguments, single-quoted strings, double-quoted strings, backslash escaping, and comments beginning with an unquoted `#` at the start of a token.
 
-Pipelines, redirections, command substitution, variable expansion, glob expansion, control-flow syntax, and job control are intentionally outside the current implementation.
+The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. It also performs preliminary environment-variable substitution after tokenization. These features are incomplete: pipelines are not concurrent, redirection operators currently require token boundaries, and expansion does not preserve single-quote semantics. POSIX field splitting, pathname expansion, command substitution, control-flow syntax, and job control are not implemented.
 
 ## Process and Filesystem Model
 
-Built-ins execute in the Mysh process. External commands execute as child processes and inherit the current working directory, environment, and standard file descriptors.
+Built-ins execute in the Mysh process. External commands execute as child processes and inherit the current working directory and environment. Pipeline stages currently exchange buffered byte vectors sequentially rather than connected concurrent pipes; standard input is passed to external commands and the `cat` built-in when a prior stage or input redirection supplies data.
 
 Filesystem built-ins validate operand counts and supported options before performing mutations. Recursive copy rejects symbolic links and special filesystem entries instead of following them implicitly, and prevents a destination from being created inside the source tree. Recursive removal refuses the current working directory, its ancestors, and filesystem roots. Multi-source copy and move operations require an existing destination directory. Move operations use the platform rename primitive and do not emulate cross-filesystem copies.
 
