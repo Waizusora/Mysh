@@ -1,6 +1,6 @@
 //! Interactive input loop, shell parsing, command dispatch, and process execution.
 use crate::builtins::{self, BuiltinOutcome};
-use crate::lexer;
+use crate::lexer::{self, Word};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -18,7 +18,7 @@ impl Shell {
     /// Execute one command line. Returns false when an exit command is accepted.
     pub fn execute_line(&mut self, line: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let tokens = match lexer::lex(line) {
-            Ok(tokens) => tokens.into_iter().map(|token| expand_variables(&token)).collect::<Vec<_>>(),
+            Ok(tokens) => tokens,
             Err(error) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {error}");
                 self.last_status = 2;
@@ -73,7 +73,7 @@ impl Shell {
         true
     }
 
-    fn execute_stage(&mut self, tokens: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+    fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let (command, redirections) = match parse_redirections(tokens) {
             Ok(value) => value,
             Err(message) => {
@@ -98,7 +98,6 @@ impl Shell {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
-        // Without an input redirection, built-ins and external commands retain inherited stdin.
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
             match opened.and_then(|mut file| file.write_all(&output)) {
@@ -182,10 +181,22 @@ impl Shell {
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
 
-fn split_pipeline(tokens: Vec<String>) -> Result<Vec<Vec<String>>, &'static str> {
+fn expand_word(word: &Word) -> String {
+    let mut expanded = String::new();
+    for part in word.parts() {
+        if part.expandable {
+            expanded.push_str(&expand_variables(&part.text));
+        } else {
+            expanded.push_str(&part.text);
+        }
+    }
+    expanded
+}
+
+fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
     let mut stages = vec![Vec::new()];
     for token in tokens {
-        if token == "|" {
+        if token.is_unquoted_literal("|") {
             if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
             stages.push(Vec::new());
         } else { stages.last_mut().expect("pipeline has a stage").push(token); }
@@ -194,15 +205,19 @@ fn split_pipeline(tokens: Vec<String>) -> Result<Vec<Vec<String>>, &'static str>
     Ok(stages)
 }
 
-fn parse_redirections(tokens: &[String]) -> Result<(Vec<String>, Redirections), &'static str> {
+fn parse_redirections(tokens: &[Word]) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
     let mut index = 0;
     while index < tokens.len() {
-        let token = tokens[index].as_str();
-        if matches!(token, ">" | ">>" | "<" | "2>") {
-            let target = tokens.get(index + 1).ok_or("redirection requires a path")?.clone();
-            match token {
+        let token = &tokens[index];
+        let operator = [" >", " >>", " <", " 2>"].iter().find(|candidate| {
+            token.is_unquoted_literal(candidate.trim())
+        });
+        if let Some(operator) = operator {
+            let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+            let target = expand_word(target);
+            match operator.trim() {
                 "<" => redirects.input = Some(target),
                 ">" => { redirects.output = Some(target); redirects.append = false; }
                 ">>" => { redirects.output = Some(target); redirects.append = true; }
@@ -210,7 +225,10 @@ fn parse_redirections(tokens: &[String]) -> Result<(Vec<String>, Redirections), 
                 _ => unreachable!(),
             }
             index += 2;
-        } else { command.push(tokens[index].clone()); index += 1; }
+        } else {
+            command.push(expand_word(token));
+            index += 1;
+        }
     }
     Ok((command, redirects))
 }
@@ -222,7 +240,7 @@ fn open_output(path: &str, append: bool) -> io::Result<File> {
     options.open(path)
 }
 
-/// Expand unquoted variable references in an already-tokenized argument.
+/// Expand the currently supported simple environment-variable references.
 fn expand_variables(value: &str) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut result = String::new();
@@ -259,6 +277,8 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{expand_variables, external_status_code, split_pipeline, Shell};
+    use crate::lexer;
+
     #[test]
     fn executes_builtin_commands() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
@@ -266,6 +286,7 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
         assert!(errors.is_empty()); assert_eq!(shell.last_status(), 0);
     }
+
     #[test]
     fn reports_lexer_errors_without_exiting() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
@@ -273,22 +294,58 @@ mod tests {
         assert_eq!(shell.last_status(), 2);
         assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
     }
+
     #[test]
     fn exit_returns_the_requested_status() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
     }
+
     #[test]
     fn variable_expansion_supports_braced_and_unbraced_names() {
         std::env::set_var("MYSH_TEST_VALUE", "expanded");
         assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}"), "expanded/expanded");
         std::env::remove_var("MYSH_TEST_VALUE");
     }
+
+    #[test]
+    fn variable_expansion_respects_single_quotes_and_escapes() {
+        std::env::set_var("MYSH_QUOTING_TEST", "expanded");
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \\$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
+        assert!(errors.is_empty());
+        std::env::remove_var("MYSH_QUOTING_TEST");
+    }
+
+    #[test]
+    fn quoted_pipe_is_a_word_not_a_pipeline_operator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo '|' ", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "|\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn quoted_redirection_operator_is_an_argument() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), ">\n");
+        assert!(errors.is_empty());
+    }
+
     #[test]
     fn pipeline_parser_rejects_empty_stages() {
-        assert!(split_pipeline(vec!["|".into(), "cat".into()]).is_err());
-        assert!(split_pipeline(vec!["echo".into(), "|".into()]).is_err());
+        assert!(split_pipeline(lexer::lex("| cat").unwrap()).is_err());
+        assert!(split_pipeline(lexer::lex("echo |").unwrap()).is_err());
     }
+
     #[test]
     fn pipeline_passes_builtin_output_to_cat_stdin() {
         let mut shell = Shell::new();
