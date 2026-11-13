@@ -146,7 +146,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        return status.signal().map_or(128, |signal| 128 + signal);
+        status.signal().map_or(128, |signal| 128 + signal)
     }
     #[cfg(not(unix))]
     {
