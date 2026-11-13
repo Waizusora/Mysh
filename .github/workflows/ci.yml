@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -25,6 +25,15 @@ jobs:
         run: cargo fmt --all
       - name: Verify formatting
         run: cargo fmt --all -- --check
+      - name: Commit formatted Rust sources
+        run: |
+          if ! git diff --quiet -- src tests; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src tests
+            git commit -m "style: apply rustfmt formatting"
+            git push origin HEAD:main
+          fi
       - name: Run tests
         run: cargo test --all-targets
       - name: Run Clippy
