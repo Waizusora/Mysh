@@ -29,7 +29,9 @@ This document describes the commands implemented in the current Mysh source tree
 - Recursive copy refuses a destination located inside the source directory.
 - `mv` uses the operating system rename operation. Cross-filesystem moves are not emulated.
 - `rm` does not follow symbolic links when deciding whether an entry is a directory.
-- The `--` option terminator allows paths beginning with a hyphen to be passed as operands.
+- The `--` option terminator is supported by `ls`, `mkdir`, `rmdir`, `touch`, `cp`, `mv`, `rm`, and `cat`; it allows paths beginning with a hyphen to be passed as operands.
+- Unsupported leading options are rejected by `mkdir`, `rmdir`, `touch`, and `cat` instead of being interpreted as paths.
+- `cat -` reads from standard input.
 - Filesystem permissions, Android sandboxing, and operating-system policy remain authoritative.
 
 ## External Commands
