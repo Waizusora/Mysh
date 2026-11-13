@@ -85,7 +85,7 @@ impl Shell {
     }
 
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let (command, redirections) = match parse_redirections(tokens, &self.variables) {
+        let (mut command, redirections) = match parse_redirections(tokens, &self.variables) {
             Ok(value) => value,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -93,12 +93,19 @@ impl Shell {
                 return true;
             }
         };
+        let mut assignments = Vec::new();
         while command.first().is_some_and(|word| assignment(word).is_some()) {
             let word = command.remove(0);
             let (name, value) = assignment(&word).expect("assignment was checked");
-            self.variables.insert(name.to_owned(), value.to_owned());
+            assignments.push((name.to_owned(), value.to_owned()));
         }
-        if command.is_empty() { self.last_status = 0; return true; }
+        if command.is_empty() {
+            for (name, value) in assignments { self.variables.insert(name, value); }
+            self.last_status = 0;
+            return true;
+        }
+        let saved_variables = self.variables.clone();
+        for (name, value) in assignments { self.variables.insert(name, value); }
         let mut input = None;
         if let Some(path) = redirections.input.as_deref() {
             let mut contents = Vec::new();
@@ -114,6 +121,7 @@ impl Shell {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
+        self.variables = saved_variables;
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
             match opened.and_then(|mut file| file.write_all(&output)) {
@@ -357,6 +365,30 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
         assert!(errors.is_empty());
         
+    }
+
+    #[test]
+    fn assignment_only_creates_unexported_shell_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_LOCAL_TEST='local value'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_LOCAL_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "local value\\n");
+        assert!(!shell.exported.contains("MYSH_LOCAL_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_prefix_assignment_is_temporary() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_TEMP_TEST=value echo temporary", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_TEMP_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "temporary\\n\\n");
+        assert!(!shell.variables.contains_key("MYSH_TEMP_TEST"));
+        assert!(errors.is_empty());
     }
 
     #[test]
