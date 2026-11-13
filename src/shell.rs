@@ -363,7 +363,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("echo compact|cat", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "compact\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "compact\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
     }
@@ -379,7 +379,7 @@ mod tests {
         assert!(shell.execute_line(&command, &mut output, &mut errors));
         assert!(output.is_empty());
         assert!(errors.is_empty());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\\n");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\n");
         std::fs::remove_file(path).unwrap();
     }
 
