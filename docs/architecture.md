@@ -27,7 +27,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
 7. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
-8. Non-built-in commands are launched through Rust's process API. The inherited environment is used for executable lookup.
+8. Non-built-in commands are resolved by Mysh: names without `/` are searched in the shell process's `PATH` entries in order, while commands containing `/` are treated as explicit paths. Empty `PATH` components refer to the current directory. The selected executable is launched through Rust's process API; Mysh does not invoke another shell.
 9. Normal child exit codes are preserved. On Unix-like targets, signal termination is represented as 128 plus the signal number.
 10. The shell records the resulting exit status.
 
@@ -40,6 +40,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | `lexer.rs` | Shell-word tokenization and quote/escape metadata |
 | `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
+| `command.rs` | Explicit external-command resolution and `PATH` search |
 
 ## Portability Strategy
 
@@ -67,7 +68,7 @@ The current implementation includes sequential, buffered pipelines and basic `<`
 
 ## Process and Filesystem Model
 
-Built-ins execute in the Mysh process. External commands execute as child processes and inherit the current working directory and environment. Pipeline stages currently exchange buffered byte vectors sequentially rather than connected concurrent pipes; standard input is passed to external commands and the `cat` built-in when a prior stage or input redirection supplies data.
+Built-ins execute in the Mysh process. External commands execute as child processes and inherit the current working directory and environment. Mysh resolves command names against `PATH` before spawning them and distinguishes command-not-found status 127 from a found but non-executable command status 126. Pipeline stages currently exchange buffered byte vectors sequentially rather than connected concurrent pipes; standard input is passed to external commands and the `cat` built-in when a prior stage or input redirection supplies data.
 
 Filesystem built-ins validate operand counts and supported options before performing mutations. Recursive copy rejects symbolic links and special filesystem entries instead of following them implicitly, and prevents a destination from being created inside the source tree. Recursive removal refuses the current working directory, its ancestors, and filesystem roots. Multi-source copy and move operations require an existing destination directory. Move operations use the platform rename primitive and do not emulate cross-filesystem copies.
 
