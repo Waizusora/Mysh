@@ -3,6 +3,7 @@ use std::fs::{self, File, FileTimes, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 use std::time::SystemTime;
+use std::collections::BTreeMap;
 
 pub enum BuiltinOutcome {
     Continue(i32),
@@ -13,12 +14,15 @@ pub fn run(
     name: &str,
     args: &[String],
     history: &[String],
+    environment: &mut BTreeMap<String, String>,
     input: Option<&[u8]>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Option<BuiltinOutcome> {
     let result = match name {
-        "cd" => cd(args, err),
+        "cd" => cd(args, environment, err),
+        "export" => export(args, environment, err),
+        "unset" => unset(args, environment, err),
         "pwd" => pwd(out, err),
         "ls" => ls(args, out, err),
         "mkdir" => mkdir(args, err),
@@ -50,20 +54,77 @@ fn usage(message: &str, err: &mut dyn Write) -> BuiltinOutcome {
     BuiltinOutcome::Continue(2)
 }
 
-fn cd(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
+fn cd(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
     if args.len() > 1 {
         return usage("cd: expected at most one directory", err);
     }
-    let Some(path) = args.first().cloned().or_else(|| std::env::var("HOME").ok()) else {
+    let Some(path) = args.first().cloned().or_else(|| environment.get("HOME").cloned()) else {
         return fail("cd: HOME is not set", err);
     };
     if let Err(error) = std::env::set_current_dir(&path) {
         return fail(format!("cd: {path}: {error}"), err);
     }
     if let Ok(path) = std::env::current_dir() {
-        std::env::set_var("PWD", path);
+        environment.insert("PWD".to_owned(), path.to_string_lossy().into_owned());
     }
     ok()
+}
+
+fn export(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
+    if args.is_empty() {
+        for (name, value) in environment.iter() {
+            if writeln!(err, "export {name}={}", shell_quote(value)).is_err() {
+                return BuiltinOutcome::Continue(1);
+            }
+        }
+        return ok();
+    }
+    let mut status = 0;
+    for argument in args {
+        let (name, value) = argument.split_once('=').unwrap_or((argument.as_str(), ""));
+        if !valid_name(name) {
+            status = 1;
+            let _ = writeln!(err, "mysh: export: invalid variable name: {name}");
+            continue;
+        }
+        if argument.contains('=') {
+            environment.insert(name.to_owned(), value.to_owned());
+        } else if !environment.contains_key(name) {
+            status = 1;
+            let _ = writeln!(err, "mysh: export: {name}: variable is not set");
+        }
+    }
+    BuiltinOutcome::Continue(status)
+}
+
+fn unset(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
+    if args.is_empty() {
+        return usage("unset: usage: unset name ...", err);
+    }
+    let mut status = 0;
+    for name in args {
+        if !valid_name(name) {
+            status = 1;
+            let _ = writeln!(err, "mysh: unset: invalid variable name: {name}");
+        } else {
+            environment.remove(name);
+        }
+    }
+    BuiltinOutcome::Continue(status)
+}
+
+fn valid_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() { return "''".to_owned(); }
+    if value.chars().all(|c| c.is_ascii_alphanumeric() || "_./-".contains(c)) {
+        return value.to_owned();
+    }
+    format!("'{}'", value.replace('\\'', "'\\''"))
 }
 
 fn pwd(out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
@@ -539,7 +600,7 @@ fn history_cmd(history: &[String], out: &mut dyn Write) -> BuiltinOutcome {
     ok()
 }
 fn help(out: &mut dyn Write) -> BuiltinOutcome {
-    let text = "Mysh built-in commands:\ncd [directory]       Change the current directory\npwd                  Print the current directory\nls [-a] [path ...]   List directory entries\nmkdir [-p] path ...  Create directories\nrmdir path ...       Remove empty directories\ntouch file ...       Create files if absent\ncp [-r] src ... dest Copy files or directory trees\nmv src ... dest      Rename or move paths\nrm [-rf] [-d] path   Remove files or directories\ncat [file ...]       Write file contents to standard output\necho [-n] [text ...] Write text to standard output\nclear                Clear the terminal display\nhistory              Show this session's command history\nhelp                 Show this help text\nexit [status]        Exit Mysh\n\nExternal executables are resolved through PATH.\n";
+    let text = "Mysh built-in commands:\ncd [directory]       Change the current directory\npwd                  Print the current directory\nls [-a] [path ...]   List directory entries\nmkdir [-p] path ...  Create directories\nrmdir path ...       Remove empty directories\ntouch file ...       Create files if absent\ncp [-r] src ... dest Copy files or directory trees\nmv src ... dest      Rename or move paths\nrm [-rf] [-d] path   Remove files or directories\ncat [file ...]       Write file contents to standard output\necho [-n] [text ...] Write text to standard output\nclear                Clear the terminal display\nhistory              Show this session's command history\nexport [name[=value] ...] Export environment variables\nunset name ...      Remove environment variables\nhelp                 Show this help text\nexit [status]        Exit Mysh\n\nExternal executables are resolved through PATH.\n";
     if out.write_all(text.as_bytes()).is_err() {
         BuiltinOutcome::Continue(1)
     } else {
