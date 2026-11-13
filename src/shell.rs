@@ -346,7 +346,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_variables, external_status_code, split_pipeline, Shell};
+    use super::{configure_prefix_path, expand_variables, external_status_code, split_pipeline, Shell};
     use std::collections::{BTreeMap, BTreeSet};
     use crate::lexer;
 
