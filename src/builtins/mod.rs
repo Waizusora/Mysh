@@ -10,6 +10,7 @@ pub enum BuiltinOutcome {
     Exit(i32),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     name: &str,
     args: &[String],
