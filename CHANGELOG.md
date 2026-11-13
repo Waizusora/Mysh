@@ -66,3 +66,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Preserved assignments preceding the implemented POSIX special built-ins `export`, `unset`, and `exit`.
 - Added `$?` and `${?}` expansion regression coverage and external-child environment inheritance tests.
 - Added sequential `;` command lists and left-associative `&&` / `||` short-circuit execution with regression tests.
+
+- Added initial single-level, single-line `if` / `then` / optional `else` / `fi` compound command execution, selected using the condition's exit status.
+- Added regression tests for successful and failing conditions and malformed compound-command syntax.
+- Documented current limitations: nested `if` statements and multiline compound commands are not supported.
