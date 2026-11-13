@@ -124,15 +124,19 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     characters.next();
                     tokens.push(Word::operator("2>"));
                 }
-                '|' | '<' | '>' => {
+                '|' | '<' | '>' | ';' | '&' => {
                     if started {
                         tokens.push(std::mem::take(&mut word));
                         started = false;
                     }
                     let mut operator = character.to_string();
-                    if character == '>' && characters.peek() == Some(&'>') {
+                    let paired = matches!(
+                        (character, characters.peek().copied()),
+                        ('>', Some('>')) | ('|', Some('|')) | ('&', Some('&'))
+                    );
+                    if paired {
                         characters.next();
-                        operator.push('>');
+                        operator.push(character);
                     }
                     tokens.push(Word::operator(&operator));
                 }
@@ -229,6 +233,16 @@ mod tests {
         assert!(words[2].is_unquoted_literal("|"));
         assert!(words[4].is_unquoted_literal(">"));
         assert!(words[6].is_unquoted_literal("2>"));
+    }
+
+    #[test]
+    fn recognizes_command_list_operators() {
+        let words = lex("echo first; echo second && echo third || echo fourth").unwrap();
+        let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
+        assert_eq!(actual, ["echo", "first", ";", "echo", "second", "&&", "echo", "third", "||", "echo", "fourth"]);
+        assert!(words[2].is_unquoted_literal(";"));
+        assert!(words[5].is_unquoted_literal("&&"));
+        assert!(words[8].is_unquoted_literal("||"));
     }
 
     #[test]
