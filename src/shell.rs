@@ -119,6 +119,7 @@ impl Shell {
             self.last_status = 0;
             return true;
         }
+        let persist_assignments = command.first().is_some_and(|name| is_special_builtin(name));
         let saved_variables = self.variables.clone();
         let saved_exported = self.exported.clone();
         for (name, value) in assignments.iter() {
@@ -256,6 +257,11 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
         variables.insert("PATH".to_owned(), path.to_string_lossy().into_owned());
         exported.insert("PATH".to_owned());
     }
+}
+
+/// POSIX special built-ins execute in the current shell environment.
+fn is_special_builtin(name: &str) -> bool {
+    matches!(name, "export" | "unset" | "exit")
 }
 
 fn assignment(value: &str) -> Option<(&str, &str)> {
@@ -479,6 +485,17 @@ mod tests {
         assert!(shell.execute_line("echo \"$MYSH_TEMP_TEST\"", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "temporary\n\n");
         assert!(!shell.variables.contains_key("MYSH_TEMP_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn assignments_before_special_builtins_persist() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_SPECIAL_ASSIGN_TEST=persist export", &mut output, &mut errors));
+        assert!(shell.variables.get("MYSH_SPECIAL_ASSIGN_TEST").is_some_and(|value| value == "persist"));
+        assert!(shell.exported.contains("MYSH_SPECIAL_ASSIGN_TEST"));
         assert!(errors.is_empty());
     }
 
