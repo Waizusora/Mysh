@@ -412,7 +412,7 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line("MYSH_LOCAL_TEST='local value'", &mut output, &mut errors));
         assert!(shell.execute_line("echo \"$MYSH_LOCAL_TEST\"", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "local value\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "local value\n");
         assert!(!shell.exported.contains("MYSH_LOCAL_TEST"));
         assert!(errors.is_empty());
     }
@@ -424,7 +424,7 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line("MYSH_TEMP_TEST=value echo temporary", &mut output, &mut errors));
         assert!(shell.execute_line("echo \"$MYSH_TEMP_TEST\"", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "temporary\\n\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "temporary\n\n");
         assert!(!shell.variables.contains_key("MYSH_TEMP_TEST"));
         assert!(errors.is_empty());
     }
