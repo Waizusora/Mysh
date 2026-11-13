@@ -330,8 +330,8 @@ mod tests {
 
     #[test]
     fn variable_expansion_respects_single_quotes_and_escapes() {
-        let environment = BTreeMap::from([(String::from("MYSH_QUOTING_TEST"), String::from("expanded"))]);
         let mut shell = Shell::new();
+        shell.environment.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
@@ -347,11 +347,11 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line("export MYSH_EXPORT_TEST='hello world'", &mut output, &mut errors));
         assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "hello world\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "hello world\n");
         assert!(shell.execute_line("unset MYSH_EXPORT_TEST", &mut Vec::new(), &mut errors));
         let mut after_unset = Vec::new();
         assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut after_unset, &mut errors));
-        assert_eq!(String::from_utf8(after_unset).unwrap(), "\\n");
+        assert_eq!(String::from_utf8(after_unset).unwrap(), "\n");
         assert!(errors.is_empty());
     }
 
