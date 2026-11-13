@@ -13,6 +13,7 @@ pub fn run(
     name: &str,
     args: &[String],
     history: &[String],
+    input: Option<&[u8]>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Option<BuiltinOutcome> {
@@ -26,7 +27,7 @@ pub fn run(
         "cp" => cp(args, err),
         "mv" => mv(args, err),
         "rm" => rm(args, err),
-        "cat" => cat(args, out, err),
+        "cat" => cat(args, input, out, err),
         "echo" => echo(args, out),
         "clear" => clear(out),
         "history" => history_cmd(history, out),
@@ -465,7 +466,7 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     BuiltinOutcome::Continue(status)
 }
 
-fn cat(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
+fn cat(args: &[String], input: Option<&[u8]>, out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
     let mut options = true;
     let mut paths = Vec::new();
     for value in args {
@@ -478,8 +479,14 @@ fn cat(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutc
         }
     }
     if paths.is_empty() || (paths.len() == 1 && paths[0] == "-") {
-        let mut input = io::stdin().lock();
-        return match io::copy(&mut input, out) {
+        if let Some(input) = input {
+            return match out.write_all(input) {
+                Ok(()) => ok(),
+                Err(error) => fail(format!("cat: {error}"), err),
+            };
+        }
+        let mut stdin = io::stdin().lock();
+        return match io::copy(&mut stdin, out) {
             Ok(_) => ok(),
             Err(error) => fail(format!("cat: {error}"), err),
         };
