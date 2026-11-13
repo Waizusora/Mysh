@@ -3,7 +3,7 @@ use std::fs::{self, File, FileTimes, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 use std::time::SystemTime;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub enum BuiltinOutcome {
     Continue(i32),
@@ -15,14 +15,15 @@ pub fn run(
     args: &[String],
     history: &[String],
     environment: &mut BTreeMap<String, String>,
+    exported: &mut BTreeSet<String>,
     input: Option<&[u8]>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Option<BuiltinOutcome> {
     let result = match name {
         "cd" => cd(args, environment, err),
-        "export" => export(args, environment, out, err),
-        "unset" => unset(args, environment, err),
+        "export" => export(args, environment, exported, out, err),
+        "unset" => unset(args, environment, exported, err),
         "pwd" => pwd(out, err),
         "ls" => ls(args, out, err),
         "mkdir" => mkdir(args, err),
@@ -70,9 +71,10 @@ fn cd(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn
     ok()
 }
 
-fn export(args: &[String], environment: &mut BTreeMap<String, String>, out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
+fn export(args: &[String], environment: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>, out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
     if args.is_empty() {
-        for (name, value) in environment.iter() {
+        for name in exported.iter() {
+            let value = environment.get(name).map(String::as_str).unwrap_or("");
             if writeln!(out, "export {name}={value:?}").is_err() {
                 return BuiltinOutcome::Continue(1);
             }
@@ -87,17 +89,13 @@ fn export(args: &[String], environment: &mut BTreeMap<String, String>, out: &mut
             let _ = writeln!(err, "mysh: export: invalid variable name: {name}");
             continue;
         }
-        if argument.contains('=') {
-            environment.insert(name.to_owned(), value.to_owned());
-        } else if !environment.contains_key(name) {
-            status = 1;
-            let _ = writeln!(err, "mysh: export: {name}: variable is not set");
-        }
+        if argument.contains('=') { environment.insert(name.to_owned(), value.to_owned()); }
+        exported.insert(name.to_owned());
     }
     BuiltinOutcome::Continue(status)
 }
 
-fn unset(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
+fn unset(args: &[String], environment: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>, err: &mut dyn Write) -> BuiltinOutcome {
     if args.is_empty() {
         return usage("unset: usage: unset name ...", err);
     }
@@ -108,6 +106,7 @@ fn unset(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut 
             let _ = writeln!(err, "mysh: unset: invalid variable name: {name}");
         } else {
             environment.remove(name);
+            exported.remove(name);
         }
     }
     BuiltinOutcome::Continue(status)
