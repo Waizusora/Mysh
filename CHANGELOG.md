@@ -8,7 +8,9 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ### Roadmap
 
-- Set POSIX compatibility as the primary shell-language and portability baseline.
+- Define POSIX shell behavior as the primary compatibility baseline while keeping the interpreter implementation independent in Rust.
+- Explicitly exclude runtime dependence on the host `/bin/sh`, Bash, Zsh, or BusyBox for parsing and interpreting Mysh scripts.
+- Treat `dash`, BusyBox `ash`, and FreeBSD `sh` as compatibility references rather than implementation dependencies.
 - Plan Linux validation after the Android foundation, followed by a dedicated FreeBSD port; other BSD systems are not currently in scope.
 
 ### Added
