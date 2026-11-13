@@ -90,7 +90,7 @@ impl Shell {
 
     fn execute_external(&mut self, tokens: &[String], stderr: &mut dyn Write) {
         self.last_status = match Command::new(&tokens[0]).args(&tokens[1..]).status() {
-            Ok(status) => status.code().unwrap_or(128),
+            Ok(status) => external_status_code(status),
             Err(error) => {
                 let _ = writeln!(stderr, "mysh: {}: {error}", tokens[0]);
                 if error.kind() == io::ErrorKind::NotFound {
@@ -135,5 +135,21 @@ mod tests {
         let mut errors = Vec::new();
         assert!(!shell.execute_line("exit 23", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 23);
+    }
+}
+
+/// Convert a child-process status into the conventional shell exit-code range.
+fn external_status_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        return status.signal().map_or(128, |signal| 128 + signal);
+    }
+    #[cfg(not(unix))]
+    {
+        128
     }
 }
