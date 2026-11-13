@@ -40,6 +40,10 @@ impl Shell {
         if tokens.is_empty() { return true; }
         self.history.push(line.to_owned());
 
+        if tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
+            return self.execute_if_statement(&tokens, stdout, stderr);
+        }
+
         let commands = match split_command_list(tokens) {
             Ok(commands) => commands,
             Err(message) => {
@@ -49,6 +53,89 @@ impl Shell {
             }
         };
 
+        for (pipeline, condition) in commands {
+            let should_run = match condition {
+                None | Some(ListOperator::Sequence) => true,
+                Some(ListOperator::And) => self.last_status == 0,
+                Some(ListOperator::Or) => self.last_status != 0,
+            };
+            if should_run && !self.execute_pipeline(&pipeline, stdout, stderr) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn execute_if_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let then_index = match tokens.iter().position(|word| word.is_unquoted_literal("then")) {
+            Some(index) if index > 1 => index,
+            _ => {
+                let _ = writeln!(stderr, "mysh: syntax error: if requires a condition and then");
+                self.last_status = 2;
+                return true;
+            }
+        };
+        let terminator = match tokens.last() {
+            Some(word) if word.is_unquoted_literal("fi") => tokens.len() - 1,
+            _ => {
+                let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
+                self.last_status = 2;
+                return true;
+            }
+        };
+        if terminator <= then_index + 1 {
+            let _ = writeln!(stderr, "mysh: syntax error: if requires a command after then");
+            self.last_status = 2;
+            return true;
+        }
+        if tokens[1..then_index].iter().any(|word| word.is_unquoted_literal("if"))
+            || tokens[then_index + 1..terminator].iter().any(|word| word.is_unquoted_literal("if") || word.is_unquoted_literal("fi"))
+        {
+            let _ = writeln!(stderr, "mysh: syntax error: nested if statements are not supported yet");
+            self.last_status = 2;
+            return true;
+        }
+
+        let else_index = tokens[then_index + 1..terminator]
+            .iter()
+            .position(|word| word.is_unquoted_literal("else"))
+            .map(|index| then_index + 1 + index);
+        let condition = &tokens[1..then_index];
+        let then_branch = match else_index {
+            Some(index) => &tokens[then_index + 1..index],
+            None => &tokens[then_index + 1..terminator],
+        };
+        let else_branch = else_index.map(|index| &tokens[index + 1..terminator]);
+
+        if !self.execute_word_list(condition, stdout, stderr) {
+            return false;
+        }
+        let selected = if self.last_status == 0 {
+            Some(then_branch)
+        } else {
+            else_branch
+        };
+        if let Some(branch) = selected {
+            if branch.is_empty() {
+                let _ = writeln!(stderr, "mysh: syntax error: if branch cannot be empty");
+                self.last_status = 2;
+                return true;
+            }
+            self.execute_word_list(branch, stdout, stderr)
+        } else {
+            true
+        }
+    }
+
+    fn execute_word_list(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let commands = match split_command_list(tokens.to_vec()) {
+            Ok(commands) => commands,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
+            }
+        };
         for (pipeline, condition) in commands {
             let should_run = match condition {
                 None | Some(ListOperator::Sequence) => true,
@@ -650,6 +737,38 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("echo missing &&", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn if_then_executes_the_success_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; then echo success; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\\nsuccess\\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_else_executes_the_failure_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_if_test; then echo wrong; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_rejects_missing_then_or_fi() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; echo body", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 2);
         assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
     }
