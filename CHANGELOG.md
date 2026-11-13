@@ -56,3 +56,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added a shell-managed environment map initialized from inherited process variables.
 - Added `export` and `unset` built-ins and passed the current environment to external child processes.
 - Added regression coverage for exported variable expansion and removal.
+
+- Added separate shell-variable and exported-variable state, persistent assignment-only commands, and temporary command-prefix assignments.
+- Added startup PATH priority for `$MYSH_PREFIX/bin` when the directory exists.
+- Added regression tests for variable assignment, temporary command assignments, and prefix PATH ordering.
