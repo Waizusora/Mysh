@@ -73,7 +73,7 @@ fn cd(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn
 fn export(args: &[String], environment: &mut BTreeMap<String, String>, err: &mut dyn Write) -> BuiltinOutcome {
     if args.is_empty() {
         for (name, value) in environment.iter() {
-            if writeln!(err, "export {name}={}", shell_quote(value)).is_err() {
+            if writeln!(err, "export {name}={value:?}").is_err() {
                 return BuiltinOutcome::Continue(1);
             }
         }
