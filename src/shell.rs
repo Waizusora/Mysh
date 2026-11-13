@@ -59,7 +59,9 @@ impl Shell {
             }
             let mut stage_output = Vec::new();
             let mut stage_error = Vec::new();
-            final_status = self.run_stage(&command, &redirections, &input, &mut stage_output, &mut stage_error);
+            final_status = match self.run_stage(&command, &redirections, &input, &mut stage_output, &mut stage_error) {
+                StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+            };
             if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
             if is_last {
                 if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
