@@ -5,11 +5,18 @@ use crate::lexer::{self, Word};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
+use std::collections::BTreeMap;
 
-#[derive(Default)]
 pub struct Shell {
     history: Vec<String>,
     last_status: i32,
+    environment: BTreeMap<String, String>,
+}
+
+impl Default for Shell {
+    fn default() -> Self {
+        Self { history: Vec::new(), last_status: 0, environment: std::env::vars().collect() }
+    }
 }
 
 impl Shell {
@@ -45,7 +52,7 @@ impl Shell {
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
-            let (command, redirections) = match parse_redirections(stage) {
+            let (command, redirections) = match parse_redirections(stage, &self.environment) {
                 Ok(value) => value,
                 Err(message) => {
                     let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -75,7 +82,7 @@ impl Shell {
     }
 
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let (command, redirections) = match parse_redirections(tokens) {
+        let (command, redirections) = match parse_redirections(tokens, &self.environment) {
             Ok(value) => value,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -120,13 +127,13 @@ impl Shell {
 
     fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
-        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, input, out, err) {
+        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.environment, input, out, err) {
             return match outcome {
                 BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
             };
         }
-        let search_path = std::env::var_os("PATH").unwrap_or_default();
+        let search_path = self.environment.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
         let executable = match resolve_command(&command[0], &search_path) {
             Ok(path) => path,
             Err(error) => {
@@ -139,7 +146,7 @@ impl Shell {
             }
         };
         let mut process = Command::new(executable);
-        process.args(&command[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
+        process.args(&command[1..]).env_clear().envs(&self.environment).stdout(Stdio::piped()).stderr(Stdio::piped());
         if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
         }
@@ -194,11 +201,11 @@ impl Shell {
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
 
-fn expand_word(word: &Word) -> String {
+fn expand_word(word: &Word, environment: &BTreeMap<String, String>) -> String {
     let mut expanded = String::new();
     for part in word.parts() {
         if part.expandable {
-            expanded.push_str(&expand_variables(&part.text));
+            expanded.push_str(&expand_variables(&part.text, environment));
         } else {
             expanded.push_str(&part.text);
         }
@@ -218,7 +225,7 @@ fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
     Ok(stages)
 }
 
-fn parse_redirections(tokens: &[Word]) -> Result<(Vec<String>, Redirections), &'static str> {
+fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
     let mut index = 0;
@@ -229,7 +236,7 @@ fn parse_redirections(tokens: &[Word]) -> Result<(Vec<String>, Redirections), &'
             .find(|operator| token.is_unquoted_literal(operator));
         if let Some(operator) = operator {
             let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
-            let target = expand_word(target);
+            let target = expand_word(target, environment);
             match operator {
                 "<" => redirects.input = Some(target),
                 ">" => { redirects.output = Some(target); redirects.append = false; }
@@ -239,7 +246,7 @@ fn parse_redirections(tokens: &[Word]) -> Result<(Vec<String>, Redirections), &'
             }
             index += 2;
         } else {
-            command.push(expand_word(token));
+            command.push(expand_word(token, environment));
             index += 1;
         }
     }
@@ -254,7 +261,7 @@ fn open_output(path: &str, append: bool) -> io::Result<File> {
 }
 
 /// Expand the currently supported simple environment-variable references.
-fn expand_variables(value: &str) -> String {
+fn expand_variables(value: &str, environment: &BTreeMap<String, String>) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut result = String::new();
     let mut index = 0;
@@ -268,7 +275,7 @@ fn expand_variables(value: &str) -> String {
             index += 1;
             while chars.get(index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { index += 1; }
             let name: String = chars[start..index].iter().collect();
-            result.push_str(&std::env::var(&name).unwrap_or_default());
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
         } else {
             result.push('$');
             continue;
@@ -290,6 +297,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{expand_variables, external_status_code, split_pipeline, Shell};
+    use std::collections::BTreeMap;
     use crate::lexer;
 
     #[test]
@@ -316,21 +324,20 @@ mod tests {
 
     #[test]
     fn variable_expansion_supports_braced_and_unbraced_names() {
-        std::env::set_var("MYSH_TEST_VALUE", "expanded");
-        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}"), "expanded/expanded");
-        std::env::remove_var("MYSH_TEST_VALUE");
+        let environment = BTreeMap::from([(String::from("MYSH_TEST_VALUE"), String::from("expanded"))]);
+        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}", &environment), "expanded/expanded");
     }
 
     #[test]
     fn variable_expansion_respects_single_quotes_and_escapes() {
-        std::env::set_var("MYSH_QUOTING_TEST", "expanded");
+        let environment = BTreeMap::from([(String::from("MYSH_QUOTING_TEST"), String::from("expanded"))]);
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
         assert!(errors.is_empty());
-        std::env::remove_var("MYSH_QUOTING_TEST");
+        
     }
 
     #[test]
