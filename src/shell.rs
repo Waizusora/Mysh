@@ -67,64 +67,129 @@ impl Shell {
     }
 
     fn execute_if_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let then_index = match tokens.iter().position(|word| word.is_unquoted_literal("then")) {
-            Some(index) if index > 1 => index,
-            _ => {
-                let _ = writeln!(stderr, "mysh: syntax error: if requires a condition and then");
-                self.last_status = 2;
-                return true;
-            }
-        };
-        let terminator = match tokens.last() {
-            Some(word) if word.is_unquoted_literal("fi") => tokens.len() - 1,
-            _ => {
-                let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
-                self.last_status = 2;
-                return true;
-            }
-        };
-        if terminator <= then_index + 1 {
-            let _ = writeln!(stderr, "mysh: syntax error: if requires a command after then");
-            self.last_status = 2;
-            return true;
-        }
-        if tokens[1..then_index].iter().any(|word| word.is_unquoted_literal("if"))
-            || tokens[then_index + 1..terminator].iter().any(|word| word.is_unquoted_literal("if") || word.is_unquoted_literal("fi"))
-        {
-            let _ = writeln!(stderr, "mysh: syntax error: nested if statements are not supported yet");
+        if !tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
+            let _ = writeln!(stderr, "mysh: syntax error: expected if");
             self.last_status = 2;
             return true;
         }
 
-        let else_index = tokens[then_index + 1..terminator]
-            .iter()
-            .position(|word| word.is_unquoted_literal("else"))
-            .map(|index| then_index + 1 + index);
-        let condition = &tokens[1..then_index];
-        let then_branch = match else_index {
-            Some(index) => &tokens[then_index + 1..index],
-            None => &tokens[then_index + 1..terminator],
-        };
-        let else_branch = else_index.map(|index| &tokens[index + 1..terminator]);
-
-        if !self.execute_word_list(condition, stdout, stderr) {
-            return false;
+        let mut depth = 0usize;
+        let mut matching_fi = None;
+        for (index, token) in tokens.iter().enumerate().skip(1) {
+            if token.is_unquoted_literal("if") {
+                depth += 1;
+            } else if token.is_unquoted_literal("fi") {
+                if depth == 0 {
+                    matching_fi = Some(index);
+                    break;
+                }
+                depth -= 1;
+            }
         }
-        let selected = if self.last_status == 0 {
-            Some(then_branch)
-        } else {
-            else_branch
+        let Some(fi_index) = matching_fi else {
+            let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
+            self.last_status = 2;
+            return true;
         };
-        if let Some(branch) = selected {
-            if branch.is_empty() {
+        if fi_index + 1 != tokens.len() {
+            let _ = writeln!(stderr, "mysh: syntax error: unexpected tokens after fi");
+            self.last_status = 2;
+            return true;
+        }
+
+        let mut clauses: Vec<(&[Word], &[Word])> = Vec::new();
+        let mut clause_start = 1usize;
+        let mut clause_body_start = None;
+        let mut index = 1usize;
+        depth = 0;
+        let mut has_else = false;
+        while index < fi_index {
+            let token = &tokens[index];
+            if token.is_unquoted_literal("if") {
+                depth += 1;
+            } else if token.is_unquoted_literal("fi") {
+                if depth > 0 { depth -= 1; }
+            } else if depth == 0 && token.is_unquoted_literal("then") {
+                if clause_body_start.is_some() || index == clause_start {
+                    let _ = writeln!(stderr, "mysh: syntax error: malformed if condition");
+                    self.last_status = 2;
+                    return true;
+                }
+                clause_body_start = Some(index + 1);
+            } else if depth == 0 && (token.is_unquoted_literal("elif") || token.is_unquoted_literal("else")) {
+                let Some(body_start) = clause_body_start.take() else {
+                    let _ = writeln!(stderr, "mysh: syntax error: expected then before elif or else");
+                    self.last_status = 2;
+                    return true;
+                };
+                if body_start == index {
+                    let _ = writeln!(stderr, "mysh: syntax error: if branch cannot be empty");
+                    self.last_status = 2;
+                    return true;
+                }
+                clauses.push((&tokens[clause_start..body_start - 1], &tokens[body_start..index]));
+                if token.is_unquoted_literal("else") {
+                    if has_else {
+                        let _ = writeln!(stderr, "mysh: syntax error: duplicate else clause");
+                        self.last_status = 2;
+                        return true;
+                    }
+                    has_else = true;
+                    clause_start = index + 1;
+                    if clause_start == fi_index {
+                        let _ = writeln!(stderr, "mysh: syntax error: else branch cannot be empty");
+                        self.last_status = 2;
+                        return true;
+                    }
+                    clauses.push((&[], &tokens[clause_start..fi_index]));
+                    clause_start = fi_index;
+                    break;
+                }
+                if has_else {
+                    let _ = writeln!(stderr, "mysh: syntax error: elif cannot follow else");
+                    self.last_status = 2;
+                    return true;
+                }
+                clause_start = index + 1;
+            }
+            index += 1;
+        }
+
+        if clause_start < fi_index {
+            let Some(body_start) = clause_body_start else {
+                let _ = writeln!(stderr, "mysh: syntax error: if requires then");
+                self.last_status = 2;
+                return true;
+            };
+            if body_start >= fi_index {
                 let _ = writeln!(stderr, "mysh: syntax error: if branch cannot be empty");
                 self.last_status = 2;
                 return true;
             }
-            self.execute_word_list(branch, stdout, stderr)
-        } else {
-            true
+            clauses.push((&tokens[clause_start..body_start - 1], &tokens[body_start..fi_index]));
+        } else if !has_else && clauses.is_empty() {
+            let _ = writeln!(stderr, "mysh: syntax error: incomplete if statement");
+            self.last_status = 2;
+            return true;
         }
+
+        for (condition, branch) in clauses {
+            if condition.is_empty() {
+                return self.execute_compound_branch(branch, stdout, stderr);
+            }
+            if !self.execute_word_list(condition, stdout, stderr) { return false; }
+            if self.last_status == 0 {
+                return self.execute_compound_branch(branch, stdout, stderr);
+            }
+        }
+        true
+    }
+
+    fn execute_compound_branch(&mut self, branch: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        if branch.first().is_some_and(|word| word.is_unquoted_literal("if")) {
+            return self.execute_if_statement(branch, stdout, stderr);
+        }
+        self.execute_word_list(branch, stdout, stderr)
     }
 
     fn execute_word_list(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
