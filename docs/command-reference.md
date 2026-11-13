@@ -27,6 +27,8 @@ This document describes the commands implemented in the current Mysh source tree
 - `cp` copies regular files and, with `-r`, recursively copies directory trees.
 - Symbolic links and special filesystem entries are rejected by recursive copy. Mysh does not follow them implicitly.
 - Recursive copy refuses a destination located inside the source directory.
+- Recursive copy rejects symbolic links and special filesystem entries rather than following or reproducing them.
+- `rm -r` refuses to remove the current working directory, any of its ancestors, or a filesystem root.
 - `mv` uses the operating system rename operation. Cross-filesystem moves are not emulated.
 - `rm` does not follow symbolic links when deciding whether an entry is a directory.
 - The `--` option terminator is supported by `ls`, `mkdir`, `rmdir`, `touch`, `cp`, `mv`, `rm`, and `cat`; it allows paths beginning with a hyphen to be passed as operands.
