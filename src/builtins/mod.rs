@@ -119,14 +119,6 @@ fn valid_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-fn shell_quote(value: &str) -> String {
-    if value.is_empty() { return "''".to_owned(); }
-    if value.chars().all(|c| c.is_ascii_alphanumeric() || "_./-".contains(c)) {
-        return value.to_owned();
-    }
-    format!("'{}'", value.replace('\\'', "'\\''"))
-}
-
 fn pwd(out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
     match std::env::current_dir() {
         Ok(path) => {
