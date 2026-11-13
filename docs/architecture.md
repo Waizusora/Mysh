@@ -32,10 +32,11 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 4. The parser identifies unquoted operators. Quoted or escaped operator-looking text remains part of an ordinary word.
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
-7. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
+7. Built-ins execute in the current process. This is required for stateful operations such as `cd`, `export`, and `unset`.
+8. Mysh maintains its own environment map initialized from the process environment. Parameter substitution and `PATH` lookup use this map; external children receive the current map as their environment.
 8. Non-built-in commands are resolved by Mysh: names without `/` are searched in the shell process's `PATH` entries in order, while commands containing `/` are treated as explicit paths. Empty `PATH` components refer to the current directory. The selected executable is launched through Rust's process API; Mysh does not invoke another shell.
 9. Normal child exit codes are preserved. On Unix-like targets, signal termination is represented as 128 plus the signal number.
-10. The shell records the resulting exit status.
+12. The shell records the resulting exit status.
 
 ## Modules
 
@@ -47,6 +48,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 | `command.rs` | Explicit external-command resolution and `PATH` search |
+| `builtins/mod.rs` | Built-in commands, including environment mutation |
 
 ## Portability Strategy
 
@@ -68,7 +70,7 @@ Android executables are linked directly as standalone ELF binaries against Andro
 
 The lexer currently supports unquoted words, single quotes, double quotes, backslash escaping, adjacent quoted and unquoted fragments within one word, empty quoted words, and comments beginning with an unquoted `#` at a token boundary. It retains fragment metadata so later phases can distinguish expandable text from literal text.
 
-Basic parameter substitution for environment-variable names is now performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. This is an improvement to quoting semantics, not a complete POSIX expansion implementation.
+The shell maintains an environment map initialized from inherited process variables. `export NAME=value` changes the shell environment, and `unset NAME` removes a variable. These changes affect later expansion, `PATH` lookup, and the environment passed to external children. This is an initial exported-environment model; unexported shell variables and assignment-only commands are not yet implemented. Basic parameter substitution for environment-variable names is now performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. This is an improvement to quoting semantics, not a complete POSIX expansion implementation.
 
 The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion, control-flow syntax, here-documents, and job control are not implemented.
 
