@@ -58,7 +58,9 @@ Child-process exit codes are returned unchanged when the process exits normally.
 - An unquoted `#` at the beginning of a token starts a comment.
 - Empty quoted strings produce empty arguments.
 
-## Pipelines and redirections
+## Command lists, pipelines, and redirections
+
+The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. `&&` runs its right-hand command only when the preceding command succeeds; `||` runs its right-hand command only when the preceding command fails. A trailing `;` is accepted. Background execution with `&` is not implemented and is reported as a syntax error.
 
 The current implementation supports basic sequential pipelines, for example `echo hello | cat` or `echo hello|cat`. Pipeline output is buffered between stages rather than streamed through concurrently connected operating-system pipes. The `cat` built-in accepts pipeline input and input-redirection data.
 
