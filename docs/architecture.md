@@ -34,7 +34,7 @@ The initial architecture is intentionally small. It separates input tokenization
 | ARMv7-A / armeabi-v7a | `armv7-linux-androideabi` |
 | x86-64 / x86_64 | `x86_64-linux-android` |
 
-Android binaries are linked against the Android NDK toolchain and Android's Bionic C library through the Rust Android target.
+Android executables are linked directly as standalone ELF binaries against Android's Bionic C library. CI uses the NDK LLVM toolchain's API-level Clang linker wrappers and Cargo's Rust Android target configuration. The build does not produce an Android shared library, JNI module, or APK.
 
 ## Current Language Boundary
 
