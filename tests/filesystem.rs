@@ -271,3 +271,33 @@ fn recursive_copy_rejects_copying_a_directory_into_itself() {
 
     fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn filesystem_commands_honor_option_termination_and_reject_unknown_options() {
+    let directory = temporary_directory();
+
+    let output = run_in(&directory, "touch -- -touch");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(directory.join("-touch").is_file());
+
+    fs::write(directory.join("-cat"), b"payload").unwrap();
+    let output = run_in(&directory, "cat -- -cat");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(output.stdout, b"payload");
+
+    let output = run_in(&directory, "mkdir -- -directory");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(directory.join("-directory").is_dir());
+
+    let output = run_in(&directory, "rmdir -- -directory");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(!directory.join("-directory").exists());
+
+    for command in ["mkdir -z", "touch -z", "rmdir -z", "cat -z"] {
+        let output = run_in(&directory, command);
+        assert_eq!(output.status.code(), Some(2), "command: {command}");
+    }
+
+    fs::remove_dir_all(directory).unwrap();
+}
