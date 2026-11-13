@@ -15,6 +15,9 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ### Added
 
+- Token recognition for supported pipeline and redirection operators adjacent to words, including compact forms such as `echo text|cat` and `echo text>file`.
+- Regression tests for compact pipeline and output-redirection syntax.
+
 - Quote-aware shell-word lexer that preserves ordered quoted, unquoted, and escaped fragments.
 - Variable expansion now respects single quotes and escaped dollar signs while retaining expansion inside double quotes.
 - Regression tests for quote metadata, adjacent quoted fragments, quoted operators, and quote-aware variable expansion.
