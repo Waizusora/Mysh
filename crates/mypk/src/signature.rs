@@ -2,6 +2,8 @@
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
 
 /// A trusted publisher key identified by a local key ID.
 #[derive(Debug, Clone)]
@@ -56,6 +58,36 @@ impl TrustedKeyring {
             keys.push(TrustedKey { id: id.to_owned(), key });
         }
         Ok(Self { keys })
+    }
+
+    /// Load trusted public keys from regular .pub files in a key directory.
+    /// Symbolic links are rejected; files are limited to 64 KiB and 256 files.
+    pub fn load_dir(directory: &Path) -> Result<Self, SignatureError> {
+        let entries = fs::read_dir(directory).map_err(|e| SignatureError(format!("cannot read trusted-key directory: {e}")))?;
+        let mut contents = String::new();
+        let mut count = 0_usize;
+        for entry in entries {
+            let entry = entry.map_err(|e| SignatureError(format!("cannot read trusted-key entry: {e}")))?;
+            let path = entry.path();
+            if path.extension().and_then(|v| v.to_str()) != Some("pub") { continue; }
+            let metadata = fs::symlink_metadata(&path).map_err(|e| SignatureError(format!("cannot inspect trusted-key file: {e}")))?;
+            if !metadata.file_type().is_file() {
+                return Err(SignatureError(format!("trusted-key entry is not a regular file: {}", path.display())));
+            }
+            if metadata.len() > 65_536 { return Err(SignatureError(format!("trusted-key file exceeds 64 KiB: {}", path.display()))); }
+            count += 1;
+            if count > 256 { return Err(SignatureError("trusted-key directory exceeds 256 files".into())); }
+            contents.push_str(&fs::read_to_string(&path).map_err(|e| SignatureError(format!("cannot read trusted-key file: {e}")))?);
+            contents.push('\n');
+        }
+        Self::parse(&contents)
+    }
+
+    /// Return trusted key IDs in deterministic lexical order.
+    pub fn key_ids(&self) -> Vec<&str> {
+        let mut ids = self.keys.iter().map(|key| key.id.as_str()).collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
     }
 
     /// Verify a 64-byte Ed25519 signature and return the matching trusted key ID.
@@ -129,6 +161,34 @@ mod tests {
         let encoded = other.verifying_key().to_bytes().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         let keyring = TrustedKeyring::parse(&format!("other {encoded}")).unwrap();
         assert!(keyring.verify(b"message", &signature.to_bytes()).is_err());
+    }
+
+    #[test]
+    fn loads_public_keys_from_directory() {
+        let signing = SigningKey::from_bytes(&[11_u8; 32]);
+        let encoded = signing.verifying_key().to_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let dir = std::env::temp_dir().join(format!("mypk-keyring-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("official.pub"), format!("official {encoded}\n")).unwrap();
+        let keyring = TrustedKeyring::load_dir(&dir).unwrap();
+        assert_eq!(keyring.key_ids(), vec!["official"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_symlinked_public_key_files() {
+        let dir = std::env::temp_dir().join(format!("mypk-keyring-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("target");
+        std::fs::write(&target, "invalid").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, dir.join("linked.pub")).unwrap();
+            assert!(TrustedKeyring::load_dir(&dir).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

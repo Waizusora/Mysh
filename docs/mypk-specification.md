@@ -69,9 +69,9 @@ Paths are manifest.json and payload/<relative-path>. Every manifest and payload 
 
 ### Trusted publisher keys
 
-Trusted publisher public keys are stored as UTF-8 text files beneath `etc/mypk/keys/`. Each non-comment line has exactly two whitespace-separated fields: a key ID (1–64 ASCII letters, digits, periods, underscores, or hyphens) and a 32-byte Ed25519 public key encoded as 64 hexadecimal characters. Key IDs must be unique within a keyring. Private signing keys must never be distributed with packages or stored in the client trusted-key directory.
+Trusted publisher public keys are stored as UTF-8 text files beneath `etc/mypk/keys/`. Each non-comment line has exactly two whitespace-separated fields: a key ID (1–64 ASCII letters, digits, periods, underscores, or hyphens) and a 32-byte Ed25519 public key encoded as 64 hexadecimal characters. Key IDs must be unique within a keyring. Private signing keys must never be distributed with packages or stored in the client trusted-key directory. MYPK loads only regular `.pub` files, rejects symbolic links, limits each key file to 64 KiB and the directory to 256 key files, and rejects duplicate key IDs across files. `TrustedKeyring::load_dir` implements this bounded loading. An empty directory is not a trust configuration and all signature checks fail.
 
-The package signature is the standard Ed25519 signature over the exact byte sequence in `checksums.txt` (PureEdDSA Ed25519 as specified by RFC 8032, not Ed25519ph). The verifier tries the configured trusted keys and accepts only a strict cryptographic verification match. An empty keyring, unknown signer, malformed key, malformed signature, or modified checksum list is a verification failure. The matching key ID is returned for audit/logging. Key rotation is performed by adding the replacement public key before removing the retired key.
+The package signature is the standard Ed25519 signature over the exact byte sequence in `checksums.txt` (PureEdDSA Ed25519 as specified by RFC 8032, not Ed25519ph). The verifier tries the configured trusted keys and accepts only a strict cryptographic verification match. An empty keyring, unknown signer, malformed key, malformed signature, or modified checksum list is a verification failure. The matching key ID is returned for audit/logging. Key rotation is performed by distributing the replacement public key through an already trusted channel, verifying its fingerprint out of band, adding it before removing the retired key, and publishing a transition signed by the currently trusted key. The Mysh release operator owns the official signing key; independent repository operators own separate keys. End users do not generate signing keys merely to install packages.
 
 ### Resource limits
 
@@ -103,6 +103,6 @@ Installed state will record package version, architecture, runtime, installation
 
 ## Implementation Status
 
-Implemented: strict JSON manifest parsing, metadata validation, bounded TAR reading, path and entry validation, required-member validation, SHA-256 verification, Ed25519 trusted-key parsing and strict signature verification, and unit tests.
+Implemented: strict JSON manifest parsing, metadata validation, bounded TAR reading, path and entry validation, required-member validation, SHA-256 verification, Ed25519 trusted-key parsing, bounded public-key directory loading, strict signature verification, and unit tests.
 
 Not implemented: repository indexes, dependency resolution, installed-state database, transaction engine, and filesystem installation.
