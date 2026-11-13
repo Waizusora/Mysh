@@ -11,7 +11,7 @@ This document describes the commands implemented in the current Milestone 1 sour
 | `ls` | `ls [path ...]` | List directory entries or print file names. |
 | `mkdir` | `mkdir [-p] directory ...` | Create directories. `-p` creates missing parent directories. |
 | `rmdir` | `rmdir directory ...` | Remove empty directories. |
-| `touch` | `touch file ...` | Create files that do not already exist. |
+| `touch` | `touch file ...` | Create files and update access and modification timestamps. |
 | `cp` | `cp source destination` | Copy one regular file. |
 | `mv` | `mv source destination` | Rename or move one filesystem entry. |
 | `rm` | `rm [-r] [-f] path ...` | Remove files; `-r` enables recursive directory removal and `-f` ignores missing paths. |
