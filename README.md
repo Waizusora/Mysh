@@ -48,7 +48,7 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Conventional child-process signal status mapping on Unix-like targets.
 - External executable lookup through `PATH`.
 - Command exit-status reporting.
-- Basic sequential pipelines with buffered input between stages.
+- Basic sequential pipelines with buffered input between stages; supported operators may be adjacent to words.
 - Basic input, output, append, and standard-error redirection.
 - Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
 - Unit and integration tests.
