@@ -11,6 +11,9 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Milestone 2 filesystem enhancements: hidden-file listing, recursive directory copy, multiple-source copy and move, combined removal options, and the `--` option terminator.
 - Filesystem safeguards against recursive self-copy and removal of the current working directory, its ancestors, or filesystem roots.
 - Unix child-process signal termination status mapping.
+- Consistent `--` option termination for `rmdir`, `touch`, and `cat`.
+- Explicit rejection of unsupported leading options by `mkdir`, `rmdir`, `touch`, and `cat`.
+- Standard-input handling for the `cat -` operand.
 
 - Initial Rust project structure and Android ABI build targets.
 - Interactive command loop and command-line entry point.
