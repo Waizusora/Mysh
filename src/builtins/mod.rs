@@ -79,11 +79,24 @@ fn pwd(out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
 }
 
 fn ls(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutcome {
-    let paths: Vec<&str> = if args.is_empty() {
-        vec!["."]
-    } else {
-        args.iter().map(String::as_str).collect()
-    };
+    let mut show_hidden = false;
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value == "-a" {
+            show_hidden = true;
+        } else if options && value.starts_with('-') {
+            return usage("ls: supported options are -a and --", err);
+        } else {
+            paths.push(value.as_str());
+        }
+    }
+    if paths.is_empty() {
+        paths.push(".");
+    }
+
     let mut status = 0;
     for (index, value) in paths.iter().enumerate() {
         let path = Path::new(value);
@@ -100,7 +113,12 @@ fn ls(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> BuiltinOutco
                         let mut names = Vec::new();
                         for entry in entries {
                             match entry {
-                                Ok(entry) => names.push(entry.file_name()),
+                                Ok(entry) => {
+                                    let name = entry.file_name();
+                                    if show_hidden || !name.to_string_lossy().starts_with('.') {
+                                        names.push(name);
+                                    }
+                                }
                                 Err(error) => {
                                     status = 1;
                                     let _ = writeln!(err, "mysh: ls: {error}");
@@ -202,28 +220,7 @@ fn touch(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
 }
 
 fn cp(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
-    if args.len() != 2 {
-        return usage("cp: usage: cp source destination", err);
-    }
-    if let Err(error) = fs::copy(&args[0], &args[1]) {
-        return fail(format!("cp: {}: {error}", args[0]), err);
-    }
-    ok()
-}
-
-fn mv(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
-    if args.len() != 2 {
-        return usage("mv: usage: mv source destination", err);
-    }
-    if let Err(error) = fs::rename(&args[0], &args[1]) {
-        return fail(format!("mv: {}: {error}", args[0]), err);
-    }
-    ok()
-}
-
-fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     let mut recursive = false;
-    let mut force = false;
     let mut options = true;
     let mut paths = Vec::new();
     for value in args {
@@ -231,24 +228,193 @@ fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
             options = false;
         } else if options && (value == "-r" || value == "-R") {
             recursive = true;
-        } else if options && value == "-f" {
-            force = true;
         } else if options && value.starts_with('-') {
-            return usage("rm: supported options are -r, -R, -f, and --", err);
+            return usage("cp: supported options are -r, -R, and --", err);
         } else {
-            paths.push(value);
+            paths.push(value.as_str());
+        }
+    }
+    if paths.len() < 2 {
+        return usage("cp: usage: cp [-r] source ... destination", err);
+    }
+
+    let destination = Path::new(paths[paths.len() - 1]);
+    let sources = &paths[..paths.len() - 1];
+    let destination_is_directory = destination.is_dir();
+    if sources.len() > 1 && !destination_is_directory {
+        return usage("cp: destination must be an existing directory when copying multiple sources", err);
+    }
+
+    let mut status = 0;
+    for source_value in sources {
+        let source = Path::new(source_value);
+        let target = if destination_is_directory {
+            match source.file_name() {
+                Some(name) => destination.join(name),
+                None => {
+                    status = 1;
+                    let _ = writeln!(err, "mysh: cp: invalid source path: {source_value}");
+                    continue;
+                }
+            }
+        } else {
+            destination.to_path_buf()
+        };
+        if let Err(error) = copy_path(source, &target, recursive) {
+            status = 1;
+            let _ = writeln!(err, "mysh: cp: {source_value}: {error}");
+        }
+    }
+    BuiltinOutcome::Continue(status)
+}
+
+/// Copy a regular file or, when requested, a directory tree.
+/// Symbolic links are rejected rather than followed implicitly.
+fn copy_path(source: &Path, destination: &Path, recursive: bool) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    let file_type = metadata.file_type();
+    if file_type.is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "symbolic-link copying is not supported",
+        ));
+    }
+    if metadata.is_dir() {
+        if !recursive {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "omitting directory; use -r to copy directories",
+            ));
+        }
+
+        let source_absolute = fs::canonicalize(source)?;
+        let destination_parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let parent_absolute = fs::canonicalize(destination_parent)?;
+        let destination_name = destination.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid destination directory")
+        })?;
+        let destination_absolute = parent_absolute.join(destination_name);
+        if destination_absolute.starts_with(&source_absolute) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot copy a directory into itself",
+            ));
+        }
+
+        fs::create_dir(destination)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            copy_path(&entry.path(), &destination.join(entry.file_name()), true)?;
+        }
+        Ok(())
+    } else if metadata.is_file() {
+        fs::copy(source, destination).map(|_| ())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported filesystem entry type",
+        ))
+    }
+}
+
+fn mv(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value.starts_with('-') {
+            return usage("mv: no options are currently supported; use -- before a path beginning with '-'", err);
+        } else {
+            paths.push(value.as_str());
+        }
+    }
+    if paths.len() < 2 {
+        return usage("mv: usage: mv source ... destination", err);
+    }
+
+    let destination = Path::new(paths[paths.len() - 1]);
+    let sources = &paths[..paths.len() - 1];
+    let destination_is_directory = destination.is_dir();
+    if sources.len() > 1 && !destination_is_directory {
+        return usage("mv: destination must be an existing directory when moving multiple sources", err);
+    }
+
+    let mut status = 0;
+    for source_value in sources {
+        let source = Path::new(source_value);
+        let target = if destination_is_directory {
+            match source.file_name() {
+                Some(name) => destination.join(name),
+                None => {
+                    status = 1;
+                    let _ = writeln!(err, "mysh: mv: invalid source path: {source_value}");
+                    continue;
+                }
+            }
+        } else {
+            destination.to_path_buf()
+        };
+        if let Err(error) = fs::rename(source, &target) {
+            status = 1;
+            let _ = writeln!(err, "mysh: mv: {source_value}: {error}");
+        }
+    }
+    BuiltinOutcome::Continue(status)
+}
+
+fn rm(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
+    let mut recursive = false;
+    let mut force = false;
+    let mut directories = false;
+    let mut options = true;
+    let mut paths = Vec::new();
+    for value in args {
+        if options && value == "--" {
+            options = false;
+        } else if options && value.starts_with('-') && value.len() > 1 {
+            for option in value[1..].chars() {
+                match option {
+                    'r' | 'R' => recursive = true,
+                    'f' => force = true,
+                    'd' => directories = true,
+                    _ => return usage("rm: supported options are -r, -R, -f, -d, and --", err),
+                }
+            }
+        } else {
+            paths.push(value.as_str());
         }
     }
     if paths.is_empty() {
-        return usage("rm: usage: rm [-r] [-f] path ...", err);
+        return usage("rm: usage: rm [-r] [-f] [-d] path ...", err);
     }
+
+    let current = std::env::current_dir().ok();
     let mut status = 0;
     for value in paths {
         let path = Path::new(value);
-        let result = if recursive && path.is_dir() {
-            fs::remove_dir_all(path)
-        } else {
-            fs::remove_file(path)
+        if value == "." || value == ".." {
+            status = 1;
+            let _ = writeln!(err, "mysh: rm: refusing to remove the current or parent directory: {value}");
+            continue;
+        }
+        if let (Some(current), Ok(target)) = (current.as_ref(), fs::canonicalize(path)) {
+            if target == *current || target.parent().is_none() {
+                status = 1;
+                let _ = writeln!(err, "mysh: rm: refusing to remove the current directory or filesystem root: {value}");
+                continue;
+            }
+        }
+
+        let result = match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.is_dir() && recursive => fs::remove_dir_all(path),
+            Ok(metadata) if metadata.is_dir() && directories => fs::remove_dir(path),
+            Ok(metadata) if metadata.is_dir() => Err(io::Error::new(
+                io::ErrorKind::IsADirectory,
+                "is a directory; use -r to remove directories",
+            )),
+            Ok(_) => fs::remove_file(path),
+            Err(error) => Err(error),
         };
         if let Err(error) = result {
             if !(force && error.kind() == io::ErrorKind::NotFound) {
