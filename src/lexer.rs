@@ -45,6 +45,14 @@ impl Word {
         self.quoted = true;
     }
 
+    fn operator(value: &str) -> Self {
+        let mut word = Self::default();
+        for character in value.chars() {
+            word.push(character, true);
+        }
+        word
+    }
+
     /// Return true only when the word is exactly an unquoted literal.
     /// Quoted and escaped operator-looking words must remain ordinary words.
     pub fn is_unquoted_literal(&self, value: &str) -> bool {
@@ -112,6 +120,22 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     }
                     None => return Err(LexError("trailing escape character")),
                 },
+                '2' if !started && characters.peek() == Some(&'>') => {
+                    characters.next();
+                    tokens.push(Word::operator("2>"));
+                }
+                '|' | '<' | '>' => {
+                    if started {
+                        tokens.push(std::mem::take(&mut word));
+                        started = false;
+                    }
+                    let mut operator = character.to_string();
+                    if character == '>' && characters.peek() == Some(&'>') {
+                        characters.next();
+                        operator.push('>');
+                    }
+                    tokens.push(Word::operator(&operator));
+                }
                 '#' if !started => break,
                 value if value.is_whitespace() => {
                     if started {
@@ -195,6 +219,16 @@ mod tests {
         let words = lex(r"echo \$NAME").unwrap();
         assert!(!words[1].parts()[0].expandable);
         assert_eq!(words[1].literal_value(), "$NAME");
+    }
+
+    #[test]
+    fn recognizes_supported_operators_without_whitespace() {
+        let words = lex("echo hi|cat >out 2>err").unwrap();
+        let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
+        assert_eq!(actual, ["echo", "hi", "|", "cat", ">", "out", "2>", "err"]);
+        assert!(words[2].is_unquoted_literal("|"));
+        assert!(words[4].is_unquoted_literal(">"));
+        assert!(words[6].is_unquoted_literal("2>"));
     }
 
     #[test]
