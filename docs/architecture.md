@@ -22,12 +22,14 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
 2. The shell reads one command line.
-3. The lexer converts the line into arguments while applying quote and escape rules. The current lexer does not yet retain quote metadata for later expansion phases.
-4. The dispatcher checks whether the command is a built-in.
-5. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
-6. Non-built-in commands are launched through Rust's process API. The inherited environment is used for executable lookup.
-7. Normal child exit codes are preserved. On Unix-like targets, signal termination is represented as 128 plus the signal number.
-8. The shell records the resulting exit status.
+3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input.
+4. The parser identifies unquoted operators. Quoted or escaped operator-looking text remains part of an ordinary word.
+5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
+6. The dispatcher checks whether the command is a built-in.
+7. Built-ins execute in the current process. This is required for stateful operations such as `cd`.
+8. Non-built-in commands are launched through Rust's process API. The inherited environment is used for executable lookup.
+9. Normal child exit codes are preserved. On Unix-like targets, signal termination is represented as 128 plus the signal number.
+10. The shell records the resulting exit status.
 
 ## Modules
 
@@ -35,8 +37,8 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | --- | --- |
 | `main.rs` | Process entry point and command-line options |
 | `lib.rs` | Public library module declarations |
-| `lexer.rs` | Quote-aware command-line tokenization |
-| `shell.rs` | Input loop, command dispatch, history, and status |
+| `lexer.rs` | Shell-word tokenization and quote/escape metadata |
+| `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 
 ## Portability Strategy
@@ -57,9 +59,11 @@ Android executables are linked directly as standalone ELF binaries against Andro
 
 ## Current Language Boundary
 
-Milestone 1 supports command names, whitespace-separated arguments, single-quoted strings, double-quoted strings, backslash escaping, and comments beginning with an unquoted `#` at the start of a token.
+The lexer currently supports unquoted words, single quotes, double quotes, backslash escaping, adjacent quoted and unquoted fragments within one word, empty quoted words, and comments beginning with an unquoted `#` at a token boundary. It retains fragment metadata so later phases can distinguish expandable text from literal text.
 
-The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. It also performs preliminary environment-variable substitution after tokenization. These features are incomplete: pipelines are not concurrent, redirection operators currently require token boundaries, and expansion does not preserve single-quote semantics. POSIX field splitting, pathname expansion, command substitution, control-flow syntax, and job control are not implemented.
+Basic parameter substitution for environment-variable names is now performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. This is an improvement to quoting semantics, not a complete POSIX expansion implementation.
+
+The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. Operators still need token boundaries; the lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion, control-flow syntax, here-documents, and job control are not implemented.
 
 ## Process and Filesystem Model
 
