@@ -4,7 +4,19 @@
 
 Mysh is a standalone native command-line shell implemented in Rust. Its implementation is independent of Bash, Zsh, BusyBox, and other shell interpreters.
 
-The initial architecture is intentionally small. It separates input tokenization, command dispatch, built-in operations, and external process execution so that later shell-language features can be added without coupling them to filesystem commands. The long-term compatibility baseline is POSIX, followed by a dedicated FreeBSD port; platform-specific behavior should remain isolated from the portable shell core.
+The initial architecture is intentionally small. It separates input tokenization, command dispatch, built-in operations, and external process execution so that later shell-language features can be added without coupling them to filesystem commands. The long-term compatibility baseline is the POSIX shell command language, followed by a dedicated FreeBSD port; platform-specific behavior should remain isolated from the portable shell core.
+
+## Compatibility Contract
+
+Mysh targets the behavior specified for a POSIX-conforming `sh`, rather than cloning a particular shell implementation.
+
+- The shell lexer, parser, expansion phases, execution semantics, and built-ins belong to Mysh and are implemented in Rust.
+- Mysh interprets scripts itself. It must not invoke the host's `/bin/sh` as a hidden interpreter or require Bash, Zsh, or BusyBox to parse or execute shell language.
+- The operating system remains responsible for process and filesystem services. External commands are separate executables resolved through the environment and platform rules.
+- POSIX shell-language compatibility is a different scope from bundling every POSIX command-line utility. Utility coverage must be specified and tested separately.
+- `dash`, BusyBox `ash`, and FreeBSD `sh` are useful independent comparison implementations for compatibility testing; none is a runtime dependency or the normative specification.
+
+The current implementation is not yet POSIX-conformant. Conformance must be established through implementation work and systematic tests, not inferred from the use of familiar command names or syntax.
 
 ## Runtime Flow
 
