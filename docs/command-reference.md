@@ -7,6 +7,8 @@ This document describes the commands implemented in the current Mysh source tree
 | Command | Syntax | Description |
 | --- | --- | --- |
 | `cd` | `cd [directory]` | Change the current working directory. With no argument, uses `HOME`. |
+| `export` | `export [name[=value] ...]` | Set environment values or confirm that existing names are exported. With no arguments, list the current environment. |
+| `unset` | `unset name ...` | Remove environment variables from the current shell. |
 | `pwd` | `pwd` | Print the current working directory. |
 | `ls` | `ls [-a] [path ...]` | List directory entries. Hidden entries are omitted unless `-a` is supplied. |
 | `mkdir` | `mkdir [-p] directory ...` | Create directories. `-p` creates missing parent directories. |
@@ -62,7 +64,7 @@ The current implementation supports basic sequential pipelines, for example `ech
 
 Basic redirection operators `<`, `>`, `>>`, and `2>` are recognized both with and without surrounding whitespace. For example, `echo hello>output.txt` and `echo hello > output.txt`. Redirection behavior inside multi-stage pipelines is not yet complete.
 
-Environment-variable references such as `$HOME` and `${HOME}` are substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
+The shell maintains its own environment map. `export NAME=value` updates it, and `unset NAME` removes a name. External commands receive the current map as their process environment. Assignment-only commands and unexported shell variables are not yet supported. Environment-variable references such as `$HOME` and `${HOME}` are substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
 
 ## Limitations
 
