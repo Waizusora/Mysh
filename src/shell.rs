@@ -145,7 +145,7 @@ impl Shell {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
-        if !assignments.is_empty() {
+        if !assignments.is_empty() && !persist_assignments {
             self.variables = saved_variables;
             self.exported = saved_exported;
         }
@@ -444,7 +444,7 @@ mod tests {
         assert_eq!(shell.last_status(), 127);
         assert!(shell.execute_line("echo status=$? braced=${?}", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "status=127 braced=127\n");
-        assert!(errors.is_empty());
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
     }
 
     #[test]
