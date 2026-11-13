@@ -103,6 +103,21 @@ impl Shell {
     }
 }
 
+fn external_status_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal().map_or(128, |signal| 128 + signal)
+    }
+    #[cfg(not(unix))]
+    {
+        128
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Shell;
@@ -139,17 +154,4 @@ mod tests {
 }
 
 /// Convert a child-process status into the conventional shell exit-code range.
-fn external_status_code(status: std::process::ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        status.signal().map_or(128, |signal| 128 + signal)
-    }
-    #[cfg(not(unix))]
-    {
-        128
-    }
-}
+
