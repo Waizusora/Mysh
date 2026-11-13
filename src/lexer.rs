@@ -35,6 +35,7 @@ pub fn lex(input: &str) -> Result<Vec<String>, LexError> {
                 '\\' => escaped = true,
                 _ => token.push(character),
             },
+            Some(_) => token.push(character),
             None => match character {
                 '\'' | '"' => { quote = Some(character); started = true; }
                 '\\' => { escaped = true; started = true; }
