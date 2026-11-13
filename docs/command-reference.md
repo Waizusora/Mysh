@@ -26,7 +26,7 @@ This document describes the commands implemented in the current Milestone 1 sour
 
 Commands not recognized as built-ins are launched as external executables. Mysh searches the directories in `PATH` when the command name does not contain a path separator.
 
-External command availability depends on the Android environment, executable permissions, ABI compatibility, dynamic linker, and application sandbox.
+External command availability depends on the Android environment, executable permissions, ABI compatibility, dynamic linker, and application sandbox. For example, ping is not a built-in command; it runs only when a compatible ping executable is available through PATH.
 
 ## Parsing Rules
 
