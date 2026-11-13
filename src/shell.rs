@@ -16,7 +16,7 @@ pub struct Shell {
 
 impl Default for Shell {
     fn default() -> Self {
-        let variables: BTreeMap<String, String> = std::env::vars().collect();
+        let mut variables: BTreeMap<String, String> = std::env::vars().collect();
         let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
         configure_prefix_path(&mut variables, &mut exported);
         Self { history: Vec::new(), last_status: 0, variables, exported }
