@@ -747,7 +747,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("if echo condition; then echo success; fi", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "condition\\nsuccess\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nsuccess\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
     }
@@ -758,7 +758,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("if mysh_missing_if_test; then echo wrong; else echo fallback; fi", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "fallback\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
         assert!(String::from_utf8(errors).unwrap().contains("command not found"));
         assert_eq!(shell.last_status(), 0);
     }
