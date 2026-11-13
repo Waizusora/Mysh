@@ -57,7 +57,10 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Basic sequential pipelines with buffered input between stages; supported operators may be adjacent to words.
 - Basic input, output, append, and standard-error redirection.
 - Shell-managed environment variables initialized from the inherited process environment.
-- `export` and `unset` built-ins, with exported values inherited by external commands.
+- Persistent shell assignments (`NAME=value`) and temporary command-prefix assignments (`NAME=value command`).
+- Separate shell-variable and exported-variable tracking; external commands inherit exported values only.
+- `export` and `unset` built-ins.
+- Automatic priority for `$MYSH_PREFIX/bin` in command lookup when that directory exists.
 - Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
 - Unit and integration tests.
 
