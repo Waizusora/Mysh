@@ -40,7 +40,7 @@ impl Shell {
             return self.execute_stage(&stages[0], stdout, stderr);
         }
 
-        let mut input = Vec::new();
+        let mut input: Option<Vec<u8>> = None;
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
@@ -59,14 +59,14 @@ impl Shell {
             }
             let mut stage_output = Vec::new();
             let mut stage_error = Vec::new();
-            final_status = match self.run_stage(&command, &redirections, &input, &mut stage_output, &mut stage_error) {
+            final_status = match self.run_stage(&command, &redirections, input.as_deref(), &mut stage_output, &mut stage_error) {
                 StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
             };
             if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
             if is_last {
                 if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
             } else {
-                input = stage_output;
+                input = Some(stage_output);
             }
         }
         self.last_status = final_status;
@@ -83,10 +83,11 @@ impl Shell {
             }
         };
         if command.is_empty() { return true; }
-        let mut input = Vec::new();
+        let mut input = None;
         if let Some(path) = redirections.input.as_deref() {
-            match File::open(path).and_then(|mut file| file.read_to_end(&mut input)) {
-                Ok(_) => {}
+            let mut contents = Vec::new();
+            match File::open(path).and_then(|mut file| file.read_to_end(&mut contents)) {
+                Ok(_) => input = Some(contents),
                 Err(error) => {
                     let _ = writeln!(stderr, "mysh: {path}: {error}");
                     self.last_status = 1;
@@ -97,7 +98,7 @@ impl Shell {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let outcome = self.run_stage(&command, &redirections, &input, &mut output, &mut errors);
-        if redirections.input.is_none() && input.is_empty() { /* stdin remains inherited for cat */ }
+        // Without an input redirection, built-ins and external commands retain inherited stdin.
         if let Some(path) = redirections.output.as_deref() {
             let opened = open_output(path, redirections.append);
             match opened.and_then(|mut file| file.write_all(&output)) {
@@ -117,9 +118,9 @@ impl Shell {
         }
     }
 
-    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: &[u8], out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
+    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
-        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, out, err) {
+        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, input, out, err) {
             return match outcome {
                 BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
@@ -127,14 +128,16 @@ impl Shell {
         }
         let mut process = Command::new(&command[0]);
         process.args(&command[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
-        if redirections.input.is_some() || !input.is_empty() {
+        if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
         }
         match process.spawn() {
             Ok(mut child) => {
                 if let Some(mut stdin) = child.stdin.take() {
-                    if let Err(error) = stdin.write_all(input) {
-                        let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
+                    if let Some(input) = input {
+                        if let Err(error) = stdin.write_all(input) {
+                            let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
+                        }
                     }
                 }
                 match child.wait_with_output() {
@@ -286,6 +289,28 @@ mod tests {
         assert!(split_pipeline(vec!["|".into(), "cat".into()]).is_err());
         assert!(split_pipeline(vec!["echo".into(), "|".into()]).is_err());
     }
+    #[test]
+    fn pipeline_passes_builtin_output_to_cat_stdin() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo pipeline | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_passes_input_through_multiple_builtin_stages() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo multi | cat | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "multi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
     #[cfg(unix)]
     #[test]
     fn maps_signal_termination_to_conventional_shell_status() {
