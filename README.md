@@ -39,9 +39,12 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Conventional child-process signal status mapping on Unix-like targets.
 - External executable lookup through `PATH`.
 - Command exit-status reporting.
+- Basic sequential pipelines with buffered input between stages.
+- Basic input, output, append, and standard-error redirection.
+- Preliminary environment-variable substitution.
 - Unit and integration tests.
 
-Pipelines, shell expansions, redirections, job control, scripting syntax, and persistent history are not implemented yet.
+The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently occurs after tokenization and does not preserve single-quote semantics. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, control-flow syntax, job control, and persistent history are not implemented.
 
 ## Build on a host
 
