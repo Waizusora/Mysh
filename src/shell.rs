@@ -491,6 +491,31 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_prefix_assignments_are_temporary_to_the_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_PIPE_ASSIGN_TEST=value echo pipeline | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_ASSIGN_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\\n\\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_ASSIGN_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn pipeline_builtin_variable_changes_do_not_leak_to_parent() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_PIPE_EXPORT_TEST=value | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "\\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_EXPORT_TEST"));
+        assert!(!shell.exported.contains("MYSH_PIPE_EXPORT_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
     fn pipeline_passes_builtin_output_to_cat_stdin() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
