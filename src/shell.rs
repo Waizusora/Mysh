@@ -103,6 +103,7 @@ impl Shell {
     }
 }
 
+/// Convert a child-process status into the conventional shell exit-code range.
 fn external_status_code(status: std::process::ExitStatus) -> i32 {
     if let Some(code) = status.code() {
         return code;
@@ -117,8 +118,6 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
         128
     }
 }
-
-/// Convert a child-process status into the conventional shell exit-code range.
 
 #[cfg(test)]
 mod tests {
