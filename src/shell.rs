@@ -1335,6 +1335,22 @@ mod tests {
     }
 
     #[test]
+    fn nested_function_calls_restore_the_callers_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "inner() { echo $1; }; outer() { inner innerarg; echo $1; }; outer outerarg",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "innerarg\\nouterarg\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
     fn function_definition_persists_shell_variable_changes() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
