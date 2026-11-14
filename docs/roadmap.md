@@ -54,7 +54,7 @@ Exit criteria:
 
 ## Phase 3 — POSIX expansion engine
 
-**Status: Not complete; basic named and positional parameter substitution, `$#`, `shift`, and limited field-preserving quoted `"$@"` expansion are implemented. Quoted `"$*"` joins positional parameters into one field using the first character of `IFS`; unquoted expansion, POSIX field splitting, pathname expansion, and the remaining POSIX parameter operators are incomplete.**
+**Status: In progress; basic named and positional parameter substitution, `$#`, `shift`, quoted `"$@"` field preservation, and quoted `"$*"` joining are implemented. A first IFS field-splitting pass now processes unquoted named-parameter expansion results while protecting literal and quoted characters. Default, empty, whitespace, and non-whitespace IFS behavior has focused regression coverage. Unquoted positional-field semantics, pathname expansion, remaining parameter operators, command substitution, arithmetic expansion, and full POSIX expansion ordering remain incomplete.**
 
 Scope:
 - Implement POSIX parameter expansion, including special and positional parameters and parameter operators.
