@@ -1061,7 +1061,7 @@ mod tests {
         let mut errors = Vec::new();
         let command = format!("while test ! -e '{}'; do while test ! -e '{}'; do touch '{}'; continue 2; echo skipped-inner; done; touch '{}'; echo skipped-outer; done; echo after", outer.display(), inner.display(), inner.display(), outer.display());
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "skipped-outer\nafter\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         let _ = std::fs::remove_file(outer);
         let _ = std::fs::remove_file(inner);
