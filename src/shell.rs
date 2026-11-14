@@ -499,7 +499,7 @@ impl Shell {
                 }
                 break;
             }
-            let line = line.trim_end_matches(['\\r', '\\n']);
+            let line = line.trim_end_matches(['\r', '\n']);
             if !pending.is_empty() {
                 let previous = pending.trim_end();
                 if previous.ends_with("then") {
@@ -509,7 +509,7 @@ impl Shell {
                 }
             }
             pending.push_str(line);
-            pending.push('\\n');
+            pending.push(char::from(10));
             if requires_more_input(&pending) {
                 continue;
             }
