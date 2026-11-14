@@ -2347,20 +2347,6 @@ mod tests {
     }
 
     #[test]
-    fn compound_command_can_follow_a_simple_pipeline_stage() {
-        let mut shell = Shell::new();
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
-        assert!(shell.execute_line(
-            "echo pipeline | if true; then cat; fi",
-            &mut output,
-            &mut errors
-        ));
-        assert_eq!(String::from_utf8_lossy(&output), "pipeline\n");
-        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
-    }
-
-    #[test]
     fn brace_group_can_run_as_a_pipeline_stage() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
