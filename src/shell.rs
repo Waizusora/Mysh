@@ -1049,7 +1049,7 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
         };
 
         let expression: String = chars[index..end].iter().collect();
-        if expression == "$@" || expression == "\${@}" {
+        if expression == "$@" || expression == concat!("$", "{@}") {
             let parameters = positional_parameters(environment);
             if let Some(first) = parameters.first() {
                 fields.last_mut().unwrap().extend(first.chars().map(|character| (character, true)));
