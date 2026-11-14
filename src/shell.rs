@@ -2419,6 +2419,8 @@ mod tests {
         };
 
         assert_eq!(expand("$VALUE", &environment), ["alpha", "beta"]);
+        environment.insert("VALUE".to_owned(), " \talpha\nbeta \t".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["alpha", "beta"]);
         assert_eq!(expand(r"literal\ whitespace$EMPTY", &environment), ["literal whitespace"]);
         assert!(expand("$EMPTY", &environment).is_empty());
         assert_eq!(expand("\"$EMPTY\"", &environment), [""]);
