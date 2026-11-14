@@ -13,6 +13,7 @@ pub struct Shell {
     last_status: i32,
     variables: BTreeMap<String, String>,
     exported: BTreeSet<String>,
+    functions: BTreeMap<String, crate::parser::CompoundCommand>,
     loop_depth: usize,
     loop_control: Option<LoopControl>,
 }
@@ -22,7 +23,7 @@ impl Default for Shell {
         let mut variables: BTreeMap<String, String> = std::env::vars().collect();
         let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
         configure_prefix_path(&mut variables, &mut exported);
-        Self { history: Vec::new(), last_status: 0, variables, exported, loop_depth: 0, loop_control: None }
+        Self { history: Vec::new(), last_status: 0, variables, exported, functions: BTreeMap::new(), loop_depth: 0, loop_control: None }
     }
 }
 
@@ -63,6 +64,7 @@ impl Shell {
                 || is_reserved_word(&tokens, index, "until")
                 || is_reserved_word(&tokens, index, "for")
                 || is_reserved_word(&tokens, index, "case")
+                || crate::parser::is_function_definition_start(&tokens, index)
                 || tokens[index].is_unquoted_literal("{")
                 || tokens[index].is_unquoted_literal("(")
         });
@@ -206,6 +208,7 @@ impl Shell {
             last_status: self.last_status,
             variables: self.variables.clone(),
             exported: self.exported.clone(),
+            functions: self.functions.clone(),
             loop_depth: 0,
             loop_control: None,
         };
@@ -259,6 +262,11 @@ impl Shell {
                 }
                 crate::parser::CompoundCommand::Case(statement) => {
                     self.execute_case_statement(statement, stdout, stderr)
+                }
+                crate::parser::CompoundCommand::FunctionDefinition(definition) => {
+                    self.functions.insert(definition.name.clone(), *definition.body.clone());
+                    self.last_status = 0;
+                    true
                 }
                 crate::parser::CompoundCommand::BraceGroup(body) => {
                     self.execute_compound_list(body, stdout, stderr)
@@ -330,6 +338,7 @@ impl Shell {
                     last_status: self.last_status,
                     variables: self.variables.clone(),
                     exported: self.exported.clone(),
+                    functions: self.functions.clone(),
                     loop_depth: 0,
                     loop_control: None,
                 };
@@ -505,6 +514,31 @@ impl Shell {
                 return StageOutcome::Continue(0);
             }
             return if self.execute_line(&evaluated, out, err) {
+                StageOutcome::Continue(self.last_status)
+            } else {
+                StageOutcome::Exit(self.last_status)
+            };
+        }
+        if let Some(function_body) = self.functions.get(&command[0]).cloned() {
+            let saved_positionals: Vec<(String, Option<String>)> = (1..=9)
+                .map(|index| (index.to_string(), self.variables.get(&index.to_string()).cloned()))
+                .chain(std::iter::once(("#".to_owned(), self.variables.get("#").cloned())))
+                .collect();
+            for index in 1..=9 {
+                let value = command.get(index).cloned().unwrap_or_default();
+                self.variables.insert(index.to_string(), value);
+            }
+            self.variables.insert("#".to_owned(), command.len().saturating_sub(1).to_string());
+            let entries = vec![CompoundListEntry { command: function_body, connector: None }];
+            let keep_running = self.execute_compound_list(&entries, out, err);
+            for (name, value) in saved_positionals {
+                if let Some(value) = value {
+                    self.variables.insert(name, value);
+                } else {
+                    self.variables.remove(&name);
+                }
+            }
+            return if keep_running {
                 StageOutcome::Continue(self.last_status)
             } else {
                 StageOutcome::Exit(self.last_status)
