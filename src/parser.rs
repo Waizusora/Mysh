@@ -2,6 +2,93 @@
 
 use crate::lexer::{self, Word};
 
+/// Operator connecting adjacent command-list entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListOperator { Sequence, And, Or }
+
+/// A command list split into pipelines and their preceding control operators.
+pub type CommandList = Vec<(Vec<Word>, Option<ListOperator>)>;
+
+/// Split tokens into a command list without performing expansion or execution.
+pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str> {
+    let mut commands = Vec::new();
+    let mut current = Vec::new();
+    let mut next_condition = None;
+    for token in tokens {
+        let operator = if token.is_unquoted_literal(";") { Some(ListOperator::Sequence) }
+        else if token.is_unquoted_literal("&&") { Some(ListOperator::And) }
+        else if token.is_unquoted_literal("||") { Some(ListOperator::Or) }
+        else if token.is_unquoted_literal("&") { return Err("background execution with '&' is not supported"); }
+        else { None };
+        if let Some(operator) = operator {
+            if current.is_empty() { return Err("command-list operator requires a command before it"); }
+            commands.push((std::mem::take(&mut current), next_condition.take()));
+            next_condition = Some(operator);
+        } else { current.push(token); }
+    }
+    if !current.is_empty() { commands.push((current, next_condition)); }
+    else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
+        return Err("conditional operator requires a command after it");
+    }
+    if commands.is_empty() { return Err("command list is empty"); }
+    Ok(commands)
+}
+
+/// Split one pipeline into its ordered stages.
+pub fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
+    let mut stages = vec![Vec::new()];
+    for token in tokens {
+        if token.is_unquoted_literal("|") {
+            if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
+            stages.push(Vec::new());
+        } else { stages.last_mut().expect("pipeline has a stage").push(token); }
+    }
+    if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
+    Ok(stages)
+}
+
+#[cfg(test)]
+mod command_structure_tests {
+    use super::{split_command_list, split_pipeline, ListOperator};
+    use crate::lexer;
+    #[test]
+    fn command_lists_preserve_sequence_and_short_circuit_operators() {
+        let parsed = split_command_list(lexer::lex("echo one; echo two && echo three || echo four").unwrap()).unwrap();
+        assert_eq!(parsed.len(), 4);
+        assert_eq!(parsed[0].1, None);
+        assert_eq!(parsed[1].1, Some(ListOperator::Sequence));
+        assert_eq!(parsed[2].1, Some(ListOperator::And));
+        assert_eq!(parsed[3].1, Some(ListOperator::Or));
+    }
+    #[test]
+    fn command_lists_reject_missing_operands_and_background_execution() {
+        for input in ["; echo one", "echo one &&", "echo one ||", "echo one;;echo two", "echo one & echo two"] {
+            assert!(split_command_list(lexer::lex(input).unwrap()).is_err(), "{input}");
+        }
+    }
+    #[test]
+    fn pipeline_split_preserves_stage_order() {
+        let stages = split_pipeline(lexer::lex("echo one | cat | wc").unwrap()).unwrap();
+        assert_eq!(stages.len(), 3);
+        assert_eq!(stages[0].len(), 2);
+        assert_eq!(stages[1].len(), 1);
+        assert_eq!(stages[2].len(), 1);
+    }
+    #[test]
+    fn pipeline_split_rejects_empty_stages() {
+        for input in ["| cat", "echo |", "echo || cat"] {
+            assert!(split_pipeline(lexer::lex(input).unwrap()).is_err(), "{input}");
+        }
+    }
+    #[test]
+    fn quoted_pipe_remains_a_word() {
+        let stages = split_pipeline(lexer::lex("echo '|'").unwrap()).unwrap();
+        assert_eq!(stages.len(), 1);
+        assert_eq!(stages[0].len(), 2);
+    }
+}
+
+
 /// State of a physical input buffer before command execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputState {
