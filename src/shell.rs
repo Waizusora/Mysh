@@ -590,7 +590,7 @@ fn is_uutils_utility(name: &str) -> bool {
             | "chgrp" | "chmod" | "chown" | "chroot" | "cksum" | "comm" | "cp"
             | "csplit" | "cut" | "date" | "dd" | "df" | "dir" | "dircolors"
             | "dirname" | "du" | "echo" | "env" | "expand" | "expr" | "factor"
-            | "fmt" | "fold" | "groups" | "head" | "hostid" | "hostname" | "id"
+            | "fmt" | "fold" | "groups" | "head" | "hostid" | "id"
             | "install" | "join" | "kill" | "link" | "ln" | "logname" | "ls"
             | "md5sum" | "mkdir" | "mkfifo" | "mknod" | "mktemp" | "more" | "mv"
             | "nice" | "nl" | "nohup" | "nproc" | "numfmt" | "od" | "paste"
