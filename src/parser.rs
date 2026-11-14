@@ -496,6 +496,32 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
 
 
 
+/// Find the end of a command segment, ignoring list separators nested in groups.
+fn command_segment_end(tokens: &[Word], start: usize) -> usize {
+    let mut brace_depth = 0usize;
+    let mut subshell_depth = 0usize;
+    for index in start..tokens.len() {
+        let token = &tokens[index];
+        if brace_depth == 0 && subshell_depth == 0
+            && (token.is_unquoted_literal(";")
+                || token.is_unquoted_literal("&&")
+                || token.is_unquoted_literal("||"))
+        {
+            return index;
+        }
+        if token.is_unquoted_literal("{") {
+            brace_depth += 1;
+        } else if token.is_unquoted_literal("}") {
+            brace_depth = brace_depth.saturating_sub(1);
+        } else if token.is_unquoted_literal("(") {
+            subshell_depth += 1;
+        } else if token.is_unquoted_literal(")") {
+            subshell_depth = subshell_depth.saturating_sub(1);
+        }
+    }
+    tokens.len()
+}
+
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
     if tokens.iter().any(|token| {
@@ -520,19 +546,29 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         let start = index;
         let command = if tokens[index].is_unquoted_literal("(") {
             index = compound_command_end(tokens, index)?;
-            let closing = index - 1;
-            let body = &tokens[start + 1..closing];
-            if body.is_empty() {
-                return Err("subshell requires a non-empty compound list");
+            if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("|")) {
+                index = command_segment_end(tokens, start);
+                CompoundCommand::Simple(tokens[start..index].to_vec())
+            } else {
+                let closing = index - 1;
+                let body = &tokens[start + 1..closing];
+                if body.is_empty() {
+                    return Err("subshell requires a non-empty compound list");
+                }
+                CompoundCommand::Subshell(parse_compound_list(body)?)
             }
-            CompoundCommand::Subshell(parse_compound_list(body)?)
         } else if tokens[index].is_unquoted_literal("{") {
             index = compound_command_end(tokens, index)?;
-            let closing = index - 1;
-            if closing <= start + 1 || !tokens[closing - 1].is_unquoted_literal(";") {
-                return Err("brace group requires a non-empty list terminated by ';'");
+            if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("|")) {
+                index = command_segment_end(tokens, start);
+                CompoundCommand::Simple(tokens[start..index].to_vec())
+            } else {
+                let closing = index - 1;
+                if closing <= start + 1 || !tokens[closing - 1].is_unquoted_literal(";") {
+                    return Err("brace group requires a non-empty list terminated by ';'");
+                }
+                CompoundCommand::BraceGroup(parse_compound_list(&tokens[start + 1..closing - 1])?)
             }
-            CompoundCommand::BraceGroup(parse_compound_list(&tokens[start + 1..closing - 1])?)
         } else if is_reserved_word(tokens, index, "if")
             || is_reserved_word(tokens, index, "while")
             || is_reserved_word(tokens, index, "until")
@@ -548,13 +584,7 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
                 CompoundCommand::Loop(parse_loop_statement(segment)?)
             }
         } else {
-            while index < tokens.len()
-                && !tokens[index].is_unquoted_literal(";")
-                && !tokens[index].is_unquoted_literal("&&")
-                && !tokens[index].is_unquoted_literal("||")
-            {
-                index += 1;
-            }
+            index = command_segment_end(tokens, start);
             if index == start {
                 return Err("expected command");
             }
