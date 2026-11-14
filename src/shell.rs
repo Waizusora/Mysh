@@ -1432,6 +1432,49 @@ mod tests {
     }
 
     #[test]
+    fn quoted_at_preserves_argument_boundaries_and_empty_arguments() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "show() { printf '<%s>\\\\n' \"$@\"; }; show 'one two' '' three",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "<one two>\\n<>\\n<three>\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn quoted_at_attaches_adjacent_prefix_and_suffix_to_boundary_fields() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "show() { printf '[%s]\\\\n' pre\"$@\"post; }; show first second",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "[prefirst]\\n[secondpost]\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn quoted_at_with_no_positional_parameters_expands_to_no_fields() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "show() { printf '<%s>\\\\n' \"$@\"; }; show",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(output.is_empty());
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn for_without_word_list_iterates_over_positional_parameters() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
