@@ -1570,7 +1570,7 @@ mod for_parser_tests {
             panic!("expected function definition");
         };
         assert_eq!(definition.name, "greet");
-        assert!(matches!(*definition.body, CompoundCommand::BraceGroup(_)));
+        assert!(matches!(definition.body.as_ref(), CompoundCommand::BraceGroup(_)));
     }
 
     #[test]
