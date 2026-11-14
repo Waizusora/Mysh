@@ -56,7 +56,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 ### Added
 
 - Initial IFS field splitting for unquoted parameter-expansion results, preserving literal and quoted text and covering default, empty, whitespace, non-whitespace, and mixed delimiters.
-- Unquoted positional `$@` field-boundary preservation and unquoted `$*` IFS joining before field splitting, with regression tests for empty positional values and prefix/suffix concatenation.
+- Unquoted positional `$@` field-boundary preservation and unquoted `$*` IFS joining before field splitting, with regression tests for empty positional values and prefix/suffix concatenation.\n- Initial pathname expansion for `*`, `?`, and bracket expressions across path components, with unmatched-pattern preservation, leading-dot handling, and quoted wildcard regression tests.
 
 ### Changed
 
