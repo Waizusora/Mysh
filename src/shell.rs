@@ -1421,6 +1421,21 @@ mod tests {
     }
 
     #[test]
+    fn return_propagates_from_if_conditions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { if return 8; then echo unreachable; fi; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "8\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn return_is_rejected_outside_a_function() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
