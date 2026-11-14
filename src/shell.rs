@@ -1855,6 +1855,7 @@ impl<'a> ArithmeticParser<'a> {
         None
     }
     fn expression(&mut self, minimum: u8) -> Option<i64> {
+        let mut assigned_left = None;
         if minimum <= 1 {
             self.whitespace();
             let saved = self.index;
@@ -1893,12 +1894,12 @@ impl<'a> ArithmeticParser<'a> {
                         _ => None,
                     }?;
                     self.environment.insert(name, value.to_string());
-                    return Some(value);
+                    assigned_left = Some(value);
                 }
                 self.index = saved;
             }
         }
-        let mut left = self.unary()?;
+        let mut left = match assigned_left { Some(value) => value, None => self.unary()? };
         while let Some((operator, precedence)) = self.operator() {
             if precedence < minimum { break; }
             self.index += operator.chars().count();
