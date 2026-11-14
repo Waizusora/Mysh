@@ -2427,8 +2427,8 @@ mod tests {
     fn pathname_patterns_use_locale_character_classes_and_collation_order() {
         assert!(shell_pattern_matches("[[:alnum:]]", "A"));
         assert!(shell_pattern_matches("[[:alpha:]]", "A"));
-        assert!(shell_pattern_matches("[[:blank:]]", "\\t"));
-        assert!(shell_pattern_matches("[[:cntrl:]]", "\\u{7f}"));
+        assert!(shell_pattern_matches("[[:blank:]]", "\t"));
+        assert!(shell_pattern_matches("[[:cntrl:]]", "\u{7f}"));
         assert!(shell_pattern_matches("[[:digit:]]", "7"));
         assert!(shell_pattern_matches("[[:graph:]]", "A"));
         assert!(shell_pattern_matches("[[:lower:]]", "a"));
