@@ -48,7 +48,7 @@ External command availability also depends on ABI compatibility, dynamic linker 
 - A backslash-newline pair is treated as a line continuation.
 - An unquoted \`#\` at the beginning of a token starts a comment.
 - Empty quoted strings produce empty arguments.
-- The lexer recognizes additional POSIX operator tokens, including parentheses, `;;`, descriptor redirections, and here-document operators. Recognition is lexical only; operators without execution support are rejected by the parser rather than treated as ordinary arguments.
+- The lexer recognizes POSIX operator forms including parentheses, `;;`, descriptor redirections, and here-document operators. Recognition is lexical only; descriptor/operator combinations without execution support are rejected by the parser rather than passed to commands as ordinary arguments. Quoted operator-looking text remains an ordinary word.
 
 These rules are partial and do not yet implement the complete POSIX token-recognition and expansion model.
 
