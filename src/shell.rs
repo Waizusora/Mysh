@@ -509,7 +509,7 @@ impl Shell {
                 }
             }
             pending.push_str(line);
-            pending.push(char::from(10));
+            pending.push('\n');
             if requires_more_input(&pending) {
                 continue;
             }
