@@ -1869,7 +1869,7 @@ fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<Stri
             return Some(if mode == "required" {
                 value
             } else if use_word {
-                expand_parameter_word(word, environment, last_status)
+                expand_parameter_word_mut(word, environment, last_status)
             } else if mode == "default" { value } else { String::new() });
         }
     }
@@ -2351,6 +2351,17 @@ mod tests {
         let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_OUTER:-${MYSH_NESTED_VALUE}} $((MYSH_NESTED_VALUE++)) $MYSH_NESTED_VALUE";
         assert!(shell.execute_line(command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "2 2 3\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_side_effects_inside_selected_parameter_words_are_ordered() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_NESTED_OUTER:-$((MYSH_NESTED_VALUE++))} $MYSH_NESTED_VALUE";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "2 3\\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
