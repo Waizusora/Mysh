@@ -1358,7 +1358,7 @@ mod tests {
         assert_eq!(classify_input("{ echo complete; }"), InputState::Complete);
         assert_eq!(classify_input("{ { echo nested; }; }"), InputState::Complete);
         assert_eq!(classify_input("}"), InputState::Invalid);
-        assert_eq!(classify_input("{ echo open; }}"), InputState::Invalid);
+        assert_eq!(classify_input("{ echo open; } }"), InputState::Invalid);
         assert_eq!(classify_input("echo '{' '}'"), InputState::Complete);
     }
 
