@@ -2416,6 +2416,7 @@ mod tests {
         assert_eq!(expand(r"literal\ whitespace$EMPTY", &environment), ["literal whitespace"]);
         assert!(expand("$EMPTY", &environment).is_empty());
         assert_eq!(expand("\"$EMPTY\"", &environment), [""]);
+        assert_eq!(expand("\"\"", &environment), [""]);
 
         environment.insert("IFS".to_owned(), ":".to_owned());
         environment.insert("VALUE".to_owned(), "left::right:".to_owned());
@@ -2424,6 +2425,10 @@ mod tests {
         environment.insert("IFS".to_owned(), " ".to_owned());
         environment.insert("VALUE".to_owned(), "  one   two  ".to_owned());
         assert_eq!(expand("$VALUE", &environment), ["one", "two"]);
+
+        environment.insert("IFS".to_owned(), " :".to_owned());
+        environment.insert("VALUE".to_owned(), "left : right".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["left", "right"]);
 
         environment.insert("IFS".to_owned(), String::new());
         environment.insert("VALUE".to_owned(), " one two ".to_owned());
