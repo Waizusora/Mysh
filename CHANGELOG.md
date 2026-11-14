@@ -72,6 +72,6 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Documented current limitations: nested `if` statements and multiline compound commands are not supported.
 
 - Extended `if` compound-command handling with ordered `elif` conditions and optional `else` branches.
-- Added support for a nested `if` as the sole command in a selected branch, including an optional terminating semicolon before the enclosing `fi`.
-- Added regression coverage for nested termination and branch selection.
-- Documented remaining compound-command limitations, including multiline syntax and compound commands mixed with other branch commands.
+- Extended compound-branch execution to support nested `if` statements alongside sequential commands and `&&` / `||` command lists.
+- Added regression coverage for commands before and after nested `if` statements and conditional execution within compound branches.
+- Multiline compound commands and the complete POSIX compound-command grammar remain unsupported.
