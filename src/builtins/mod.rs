@@ -21,7 +21,8 @@ pub fn run(
     err: &mut dyn Write,
 ) -> Option<BuiltinOutcome> {
     let result = match name {
-        ":" => ok(),
+        ":" | "true" => ok(),
+        "false" => BuiltinOutcome::Continue(1),
         "cd" => cd(args, environment, exported, out, err),
         "export" => export(args, environment, exported, out, err),
         "unset" => unset(args, environment, exported, err),
