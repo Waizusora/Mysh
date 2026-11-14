@@ -6,6 +6,10 @@ Mysh is a standalone native command-line shell implemented in Rust. Its implemen
 
 The initial architecture is intentionally small. It separates input tokenization, command dispatch, built-in operations, and external process execution so that later shell-language features can be added without coupling them to filesystem commands. The long-term compatibility baseline is the POSIX shell command language, followed by a dedicated FreeBSD port; platform-specific behavior should remain isolated from the portable shell core.
 
+## Development Roadmap
+
+The maturity phases, current phase status, scope, and completion criteria are maintained in [the development roadmap](roadmap.md). The roadmap separates shell-language conformance from external utility coverage and platform expansion. A phase is complete only after its behavior is implemented, documented, and covered by automated tests.
+
 ## MYPK Component Boundary
 
 MYPK (My Package Keeper) is a separate Rust crate and executable in the same Cargo workspace. It has its own command-line entry point and package-management responsibilities. It does not implement shell parsing and does not depend on Mysh's command interpreter. Mysh can launch mypk through normal external-command lookup when the executable is installed in PATH.
