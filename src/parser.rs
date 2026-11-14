@@ -687,7 +687,7 @@ mod tests {
         assert_eq!(parsed.kind, LoopKind::While);
         assert_eq!(parsed.condition.len(), 1);
         assert_eq!(parsed.body.len(), 1);
-        assert!(matches!(parsed.body[0].command, super::CompoundCommand::Simple(_)));
+        assert!(matches!(&parsed.body[0].command, super::CompoundCommand::Simple(_)));
         let tokens = lexer::lex("until false; do echo body; done").unwrap();
         assert_eq!(parse_loop_statement(&tokens).unwrap().kind, LoopKind::Until);
     }
@@ -697,8 +697,8 @@ mod tests {
         use super::{parse_loop_statement, CompoundCommand};
         let tokens = lexer::lex("while true; do until false; do echo nested; done; echo outer; done").unwrap();
         let parsed = parse_loop_statement(&tokens).unwrap();
-        assert!(matches!(parsed.body[0].command, CompoundCommand::Loop(_)));
-        assert!(matches!(parsed.body[1].command, CompoundCommand::Simple(_)));
+        assert!(matches!(&parsed.body[0].command, CompoundCommand::Loop(_)));
+        assert!(matches!(&parsed.body[1].command, CompoundCommand::Simple(_)));
     }
 
     #[test]
@@ -820,8 +820,8 @@ mod tests {
         let tokens = lexer::lex("if true; then if false; then echo inner; else echo nested; fi; echo outer; fi").unwrap();
         let parsed = parse_if_statement(&tokens).unwrap();
         assert_eq!(parsed.clauses.len(), 1);
-        assert!(matches!(parsed.clauses[0].body[0].command, super::CompoundCommand::If(_)));
-        assert!(matches!(parsed.clauses[0].body[1].command, super::CompoundCommand::Simple(_)));
+        assert!(matches!(&parsed.clauses[0].body[0].command, super::CompoundCommand::If(_)));
+        assert!(matches!(&parsed.clauses[0].body[1].command, super::CompoundCommand::Simple(_)));
         assert!(parsed.else_body.is_none());
     }
 
