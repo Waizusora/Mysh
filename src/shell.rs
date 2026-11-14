@@ -1671,33 +1671,37 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
 }
 
 /// Expand the operand of a braced parameter operator, applying shell quote removal.
+/// Expand a braced parameter operator operand with quote removal.
 fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut result = String::new();
     let mut expandable = String::new();
-    let mut quote = None;
+    let mut quote = 0u32;
     let mut chars = word.chars().peekable();
-
-    let flush = |result: &mut String, expandable: &mut String| {
-        if !expandable.is_empty() {
-            result.push_str(&expand_variables(expandable, environment, last_status));
-            expandable.clear();
-        }
-    };
-
     while let Some(character) = chars.next() {
-        match quote {
-            Some('\'') => {
-                if character == '\'' {
-                    quote = None;
-                } else {
-                    flush(&mut result, &mut expandable);
-                    result.push(character);
+        let code = character as u32;
+        if quote == 39 {
+            if code == 39 { quote = 0; } else { result.push(character); }
+        } else if quote == 34 {
+            if code == 34 { quote = 0; }
+            else if code == 92 {
+                match chars.peek().copied() {
+                    Some(next) if [36, 34, 92].contains(&(next as u32)) => { result.push(chars.next().unwrap()); }
+                    Some('\n') => { chars.next(); }
+                    _ => expandable.push(character),
                 }
-            }
-            Some('"') => match character {
-                '"' => quote = None,
-                '\\' => match chars.peek().copied() {
-                    Some('fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
+            } else { expandable.push(character); }
+        } else if code == 39 || code == 34 {
+            if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); expandable.clear(); }
+            quote = code;
+        } else if code == 92 {
+            if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); expandable.clear(); }
+            if let Some(next) = chars.next() { if next != '\n' { result.push(next); } }
+        } else { expandable.push(character); }
+    }
+    if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); }
+    result
+}
+fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
     for (operator, colon, mode) in [
         (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
         (":+", true, "alternate"), ("+", false, "alternate"),
@@ -1716,7 +1720,7 @@ fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, las
             return Some(if mode == "required" {
                 value
             } else if use_word {
-                expand_variables(word, environment, last_status)
+                expand_parameter_word(word, environment, last_status)
             } else if mode == "default" { value } else { String::new() });
         }
     }
