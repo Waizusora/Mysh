@@ -60,20 +60,6 @@ impl Shell {
         if tokens.is_empty() { return true; }
         self.history.push(line.to_owned());
 
-        let has_compound_command = tokens.iter().enumerate().any(|(index, _)| {
-            is_reserved_word(&tokens, index, "if")
-                || is_reserved_word(&tokens, index, "while")
-                || is_reserved_word(&tokens, index, "until")
-                || is_reserved_word(&tokens, index, "for")
-                || is_reserved_word(&tokens, index, "case")
-                || crate::parser::is_function_definition_start(&tokens, index)
-                || tokens[index].is_unquoted_literal("{")
-                || tokens[index].is_unquoted_literal("(")
-        });
-        if has_compound_command {
-            return self.execute_compound_branch(&tokens, stdout, stderr);
-        }
-
         let commands = match split_command_list(tokens) {
             Ok(commands) => commands,
             Err(message) => {
@@ -242,18 +228,6 @@ impl Shell {
             self.last_status = 1;
         }
         true
-    }
-
-    fn execute_compound_branch(&mut self, branch: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let commands = match crate::parser::parse_compound_list(branch) {
-            Ok(commands) => commands,
-            Err(message) => {
-                let _ = writeln!(stderr, "mysh: syntax error: {message}");
-                self.last_status = 2;
-                return true;
-            }
-        };
-        self.execute_compound_list(&commands, stdout, stderr)
     }
 
     fn execute_compound_list(&mut self, commands: &crate::parser::CompoundList, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
