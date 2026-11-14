@@ -2725,6 +2725,16 @@ mod tests {
     }
 
     #[test]
+    fn pathname_character_classes_follow_the_selected_process_locale() {
+        super::initialize_shell_locale();
+        match std::env::var("LC_ALL").as_deref() {
+            Ok("C") => assert!(!super::locale_class_matches("alpha", 'é')),
+            Ok("C.UTF-8") => assert!(super::locale_class_matches("alpha", 'é')),
+            _ => {}
+        }
+    }
+
+    #[test]
     fn pathname_patterns_support_collating_and_equivalence_elements() {
         assert!(shell_pattern_matches("[.a.]", "a"));
         assert!(shell_pattern_matches("[=a=]", "a"));
