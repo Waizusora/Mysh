@@ -1895,8 +1895,9 @@ impl<'a> ArithmeticParser<'a> {
                     }?;
                     self.environment.insert(name, value.to_string());
                     assigned_left = Some(value);
+                } else {
+                    self.index = saved;
                 }
-                self.index = saved;
             }
         }
         let mut left = match assigned_left { Some(value) => value, None => self.unary()? };
