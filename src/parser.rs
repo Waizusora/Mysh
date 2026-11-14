@@ -24,6 +24,8 @@ pub enum PipelineStage {
 pub struct CommandListEntry {
     pub pipeline: Pipeline,
     pub connector: Option<ListOperator>,
+    /// True when this pipeline is terminated by the asynchronous-list operator.
+    pub asynchronous: bool,
 }
 
 /// A parsed shell command list.
@@ -80,8 +82,19 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
             commands.push(CommandListEntry {
                 pipeline: split_pipeline(std::mem::take(&mut current))?,
                 connector: next_condition.take(),
+                asynchronous: false,
             });
             next_condition = Some(operator);
+        } else if at_list_level && token.is_unquoted_literal("&") {
+            if current.is_empty() {
+                return Err("asynchronous-list operator requires a command before it");
+            }
+            commands.push(CommandListEntry {
+                pipeline: split_pipeline(std::mem::take(&mut current))?,
+                connector: next_condition.take(),
+                asynchronous: true,
+            });
+            next_condition = Some(ListOperator::Sequence);
         } else {
             current.push(token);
         }
@@ -95,6 +108,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
         commands.push(CommandListEntry {
             pipeline: split_pipeline(current)?,
             connector: next_condition,
+            asynchronous: false,
         });
     } else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
         return Err("conditional operator requires a command after it");
@@ -542,6 +556,8 @@ pub struct CaseStatement {
 pub struct CompoundListEntry {
     pub command: CompoundCommand,
     pub connector: Option<ListOperator>,
+    /// True when this command is terminated by the asynchronous-list operator.
+    pub asynchronous: bool,
 }
 
 /// A command list that can contain nested compound commands.
@@ -946,9 +962,7 @@ fn pipeline_segment_end_after_compound(
 
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
-    if tokens.iter().any(|token| {
-        is_unsupported_operator(token) || token.is_unquoted_literal("&")
-    }) {
+    if tokens.iter().any(is_unsupported_operator) {
         return Err("recognized shell operator is not implemented yet");
     }
     let mut entries = Vec::new();
@@ -958,6 +972,9 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
     while index < tokens.len() {
         if tokens[index].is_unquoted_literal(";;") {
             return Err("case terminator is only valid inside a case command");
+        }
+        if tokens[index].is_unquoted_literal("&") {
+            return Err("asynchronous-list operator requires a command before it");
         }
         if tokens[index].is_unquoted_literal(";") {
             connector = Some(ListOperator::Sequence);
@@ -1052,10 +1069,14 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         entries.push(CompoundListEntry {
             command,
             connector: connector.take(),
+            asynchronous: false,
         });
 
         if index < tokens.len() {
-            if tokens[index].is_unquoted_literal(";") {
+            if tokens[index].is_unquoted_literal("&") {
+                entries.last_mut().expect("command entry was just pushed").asynchronous = true;
+                connector = Some(ListOperator::Sequence);
+            } else if tokens[index].is_unquoted_literal(";") {
                 connector = Some(ListOperator::Sequence);
             } else if tokens[index].is_unquoted_literal("&&") {
                 connector = Some(ListOperator::And);
