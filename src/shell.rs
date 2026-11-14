@@ -533,12 +533,7 @@ impl Shell {
                 let _ = writeln!(err, "mysh: .: positional arguments are not implemented yet");
                 return StageOutcome::Continue(2);
             }
-            if is_shell_builtin(&command[0]) {
-            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
-                return outcome;
-            }
-        }
-        let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
+            let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
             let path = match resolve_script(&command[1], &search_path) {
                 Ok(path) => path,
                 Err(error) => {
@@ -571,6 +566,11 @@ impl Shell {
                 StageOutcome::Exit(self.last_status)
             };
         }
+        if is_shell_builtin(&command[0]) && is_special_builtin(&command[0]) {
+            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
+                return outcome;
+            }
+        }
         if let Some(function_body) = self.functions.get(&command[0]).cloned() {
             let saved_positionals: Vec<(String, Option<String>)> = (1..=9)
                 .map(|index| (index.to_string(), self.variables.get(&index.to_string()).cloned()))
@@ -596,7 +596,7 @@ impl Shell {
                 StageOutcome::Exit(self.last_status)
             };
         }
-        if is_shell_builtin(&command[0]) && is_special_builtin(&command[0]) {
+        if is_shell_builtin(&command[0]) {
             if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
                 return outcome;
             }
