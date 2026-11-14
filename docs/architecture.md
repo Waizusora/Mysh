@@ -77,7 +77,7 @@ The current implementation includes sequential, buffered pipelines and basic `<`
 
 ## Compound-command limitations
 
-Compound-command support is currently limited to `if`/`elif`/`else`, `while`, and `until`. Loop conditions are simple command lists; loop bodies support nested loops and `if` statements. `break` and `continue` are not implemented. The parser represents `if`/`elif`/`else` and `while`/`until` as typed nodes whose conditions and bodies contain recursive `CompoundList` entries. A compound list can contain simple commands, nested if statements, and nested loops, with sequence and conditional connectors preserved. The executor consumes this AST recursively. This is still a limited compound-command grammar: `for`, `case`, functions, `break`, and `continue` are not implemented, and compound commands are not accepted in every POSIX grammar position.
+Compound-command support is currently limited to `if`/`elif`/`else`, `while`, and `until`. Loop conditions are simple command lists; loop bodies support nested loops and `if` statements. `break` and `continue` support optional positive loop levels and nested-loop propagation. The parser represents `if`/`elif`/`else` and `while`/`until` as typed nodes whose conditions and bodies contain recursive `CompoundList` entries. A compound list can contain simple commands, nested if statements, and nested loops, with sequence and conditional connectors preserved. The executor consumes this AST recursively. This is still a limited compound-command grammar: `for`, `case`, and functions are not implemented, and compound commands are not accepted in every POSIX grammar position.
 
 ## Process and Filesystem Model
 
