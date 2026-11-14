@@ -1316,4 +1316,43 @@ mod tests {
         assert!(marker.exists());
         let _ = std::fs::remove_file(marker);
     }
+
+    #[test]
+    fn only_posix_shell_builtins_are_dispatched_in_process() {
+        use super::is_shell_builtin;
+
+        for name in ["cd", "pwd", "export", "unset", "exit", "break", "continue"] {
+            assert!(is_shell_builtin(name), "{name}");
+        }
+        for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
+            assert!(!is_shell_builtin(name), "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_utility_is_dispatched_through_uutils_multicall_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!("mysh-coreutils-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let multicall = directory.join("coreutils");
+        std::fs::write(&multicall, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+        std::fs::set_permissions(&multicall, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("uutils-test alpha beta", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "uutils-test\nalpha\nbeta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
 }
