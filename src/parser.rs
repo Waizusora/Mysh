@@ -105,6 +105,30 @@ fn is_unsupported_operator(token: &Word) -> bool {
     !matches!(value.as_str(), "<" | ">" | ">>" | "2>")
 }
 
+/// Return whether a command-position token sequence begins a POSIX function definition.
+pub fn is_function_definition_start(tokens: &[Word], index: usize) -> bool {
+    let Some(name) = tokens.get(index) else { return false; };
+    let value = name.literal_value();
+    let mut characters = value.chars();
+    if !characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+        || name.parts().iter().any(|part| !part.expandable)
+    {
+        return false;
+    }
+    tokens.get(index + 1).is_some_and(|word| word.is_unquoted_literal("("))
+        && tokens.get(index + 2).is_some_and(|word| word.is_unquoted_literal(")"))
+        && tokens.get(index + 3).is_some_and(|word| {
+            word.is_unquoted_literal("{")
+                || word.is_unquoted_literal("(")
+                || is_reserved_word(tokens, index + 3, "if")
+                || is_reserved_word(tokens, index + 3, "for")
+                || is_reserved_word(tokens, index + 3, "while")
+                || is_reserved_word(tokens, index + 3, "until")
+                || is_reserved_word(tokens, index + 3, "case")
+        })
+}
+
 /// Split one pipeline into its ordered stages.
 pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut raw_stages: Vec<Vec<Word>> = vec![Vec::new()];
@@ -322,8 +346,16 @@ pub enum CompoundCommand {
     Loop(LoopStatement),
     For(ForStatement),
     Case(CaseStatement),
+    FunctionDefinition(FunctionDefinition),
     BraceGroup(CompoundList),
     Subshell(CompoundList),
+}
+
+/// A POSIX function definition and its compound-command body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDefinition {
+    pub name: String,
+    pub body: Box<CompoundCommand>,
 }
 
 /// One pattern arm in a POSIX case command.
@@ -744,7 +776,20 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         }
 
         let start = index;
-        let command = if tokens[index].is_unquoted_literal("(") {
+        let command = if is_function_definition_start(tokens, index) {
+            let name = tokens[index].literal_value();
+            let body_start = index + 3;
+            let body_end = compound_command_end(tokens, body_start)?;
+            let body_entries = parse_compound_list(&tokens[body_start..body_end])?;
+            if body_entries.len() != 1 || body_entries[0].connector.is_some() {
+                return Err("function body must be one compound command");
+            }
+            index = body_end;
+            CompoundCommand::FunctionDefinition(FunctionDefinition {
+                name,
+                body: Box::new(body_entries[0].command.clone()),
+            })
+        } else if tokens[index].is_unquoted_literal("(") {
             index = compound_command_end(tokens, index)?;
             if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("|")) {
                 index = command_segment_end(tokens, start);
