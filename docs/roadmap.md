@@ -35,7 +35,7 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
+**Status: In progress; brace groups now have recursive AST construction and current-environment execution. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
