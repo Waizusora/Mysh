@@ -204,6 +204,7 @@ impl Shell {
             if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
+            if self.loop_control.is_some() { return true; }
         }
         true
     }
@@ -228,6 +229,7 @@ impl Shell {
             };
             let saved_variables = self.variables.clone();
             let saved_exported = self.exported.clone();
+            let saved_loop_control = self.loop_control;
             let saved_directory = std::env::current_dir().ok();
             let mut stage_command = command;
             while stage_command.first().is_some_and(|word| assignment(word).is_some()) {
@@ -247,6 +249,7 @@ impl Shell {
             };
             self.variables = saved_variables;
             self.exported = saved_exported;
+            self.loop_control = saved_loop_control;
             if let Some(directory) = saved_directory {
                 let _ = std::env::set_current_dir(directory);
             }
@@ -340,6 +343,9 @@ impl Shell {
                     if self.loop_depth == 0 {
                         let _ = writeln!(err, "mysh: break: not in a loop");
                         StageOutcome::Continue(1)
+                    } else if level > self.loop_depth {
+                        let _ = writeln!(err, "mysh: break: level exceeds active loop depth");
+                        StageOutcome::Continue(1)
                     } else {
                         self.loop_control = Some(LoopControl::Break(level));
                         StageOutcome::Continue(0)
@@ -348,6 +354,9 @@ impl Shell {
                 BuiltinOutcome::ContinueLoop(level) => {
                     if self.loop_depth == 0 {
                         let _ = writeln!(err, "mysh: continue: not in a loop");
+                        StageOutcome::Continue(1)
+                    } else if level > self.loop_depth {
+                        let _ = writeln!(err, "mysh: continue: level exceeds active loop depth");
                         StageOutcome::Continue(1)
                     } else {
                         self.loop_control = Some(LoopControl::Continue(level));
@@ -1008,6 +1017,68 @@ mod tests {
     fn maps_signal_termination_to_conventional_shell_status() {
         use std::os::unix::process::ExitStatusExt;
         assert_eq!(external_status_code(std::process::ExitStatus::from_raw(9)), 137);
+    }
+
+
+    #[test]
+    fn break_exits_the_current_loop_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-break-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; echo before; break; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn continue_starts_the_next_iteration_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-continue-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; continue; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn break_two_exits_two_nested_loops() {
+        let outer = std::env::temp_dir().join(format!("mysh-break-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-break-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; while test ! -e '{}'; do touch '{}'; break 2; echo skipped-inner; done; echo skipped-outer; done; echo after", outer.display(), outer.display(), inner.display(), inner.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
+    }
+
+    #[test]
+    fn loop_control_rejects_use_outside_loops_and_excessive_levels() {
+        let mut shell = Shell::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("break", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(shell.execute_line("continue 0", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(shell.execute_line("while true; do break 2; done", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 0);
+        let text = String::from_utf8(errors).unwrap();
+        assert!(text.contains("not in a loop"));
+        assert!(text.contains("positive integer"));
+        assert!(text.contains("level exceeds active loop depth"));
     }
 
     #[test]
