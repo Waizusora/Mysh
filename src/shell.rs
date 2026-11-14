@@ -490,7 +490,9 @@ impl Shell {
                         next_id += 1;
                         environment.insert(name.clone(), value);
                         rewritten.push(char::from(36));
+                        rewritten.push('{');
                         rewritten.push_str(&name);
+                        rewritten.push('}');
                         index = end + 1;
                         continue;
                     }
