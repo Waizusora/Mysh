@@ -356,7 +356,7 @@ impl Shell {
                     loop_depth: 0,
                     loop_control: None,
                 };
-                let entries = vec![CompoundListEntry { command: compound.clone(), connector: None }];
+                let entries = vec![CompoundListEntry { command: compound.clone(), connector: None, asynchronous: false }];
                 let mut stage_output = Vec::new();
                 let mut stage_error = Vec::new();
                 let _ = child.execute_compound_list(&entries, &mut stage_output, &mut stage_error);
@@ -648,7 +648,7 @@ impl Shell {
         if let Some(function_body) = self.functions.get(&command[0]).cloned() {
             let saved_positionals = positional_parameters(&self.variables);
             set_positional_parameters(&mut self.variables, &command[1..]);
-            let entries = vec![CompoundListEntry { command: function_body, connector: None }];
+            let entries = vec![CompoundListEntry { command: function_body, connector: None, asynchronous: false }];
             self.function_depth += 1;
             let keep_running = self.execute_compound_list(&entries, out, err);
             self.function_depth -= 1;
