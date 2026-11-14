@@ -1531,6 +1531,34 @@ mod tests {
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
     #[test]
+    fn quoted_star_uses_space_when_ifs_is_unset() {
+        let mut shell = Shell::new();
+        shell.variables.remove("IFS");
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "show() { printf '<%s>\\n' \"$*\"; }; show alpha beta",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "<alpha beta>\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn quoted_star_without_positional_parameters_is_one_empty_field() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "show() { printf '<%s>\\n' \"$*\"; }; show",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "<>\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+    #[test]
     fn quoted_at_preserves_argument_boundaries_and_empty_arguments() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
