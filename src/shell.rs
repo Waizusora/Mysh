@@ -800,61 +800,61 @@ enum StageOutcome { Continue(i32), Exit(i32) }
 enum LoopControl { Break(usize), Continue(usize) }
 
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
-    fn matches(pattern: &[char], value: &[char]) -> bool {
-        if pattern.is_empty() {
-            return value.is_empty();
+    fn bracket_matches(expression: &[char], candidate: char) -> Option<(bool, usize)> {
+        if expression.first() != Some(&'[') { return None; }
+        let mut index = 1;
+        let negate = expression.get(index) == Some(&'!');
+        if negate { index += 1; }
+        let mut members = Vec::new();
+        if expression.get(index) == Some(&']') {
+            members.push(']');
+            index += 1;
         }
+        let mut close = None;
+        while index < expression.len() {
+            if expression[index] == ']' {
+                close = Some(index);
+                break;
+            }
+            members.push(expression[index]);
+            index += 1;
+        }
+        let close = close?;
+        let mut matched = false;
+        let mut member = 0;
+        while member < members.len() {
+            if member + 2 < members.len() && members[member + 1] == '-' {
+                let first = members[member];
+                let last = members[member + 2];
+                if first <= last && (first..=last).contains(&candidate) {
+                    matched = true;
+                }
+                member += 3;
+            } else {
+                matched |= members[member] == candidate;
+                member += 1;
+            }
+        }
+        Some((if negate { !matched } else { matched }, close + 1))
+    }
 
+    fn matches(pattern: &[char], value: &[char]) -> bool {
+        if pattern.is_empty() { return value.is_empty(); }
         match pattern[0] {
-            '*' => (0..=value.len())
-                .any(|offset| matches(&pattern[1..], &value[offset..])),
+            '*' => (0..=value.len()).any(|offset| matches(&pattern[1..], &value[offset..])),
             '?' => !value.is_empty() && matches(&pattern[1..], &value[1..]),
-            '[' => {
-                let Some(close) = pattern.iter().position(|character| *character == ']') else {
-                    return !value.is_empty()
-                        && value[0] == '['
-                        && matches(&pattern[1..], &value[1..]);
-                };
-                if value.is_empty() {
-                    return false;
+            '[' if !value.is_empty() => {
+                if let Some((matched, consumed)) = bracket_matches(pattern, value[0]) {
+                    matched && matches(&pattern[consumed..], &value[1..])
+                } else {
+                    value[0] == '[' && matches(&pattern[1..], &value[1..])
                 }
-
-                let mut index = 1usize;
-                let negate = pattern
-                    .get(index)
-                    .is_some_and(|character| *character == '!');
-                if negate {
-                    index += 1;
-                }
-
-                let mut matched = false;
-                while index < close {
-                    if index + 2 < close && pattern[index + 1] == '-' {
-                        matched |= value[0] >= pattern[index] && value[0] <= pattern[index + 2];
-                        index += 3;
-                    } else {
-                        matched |= value[0] == pattern[index];
-                        index += 1;
-                    }
-                }
-
-                if matched == negate {
-                    return false;
-                }
-                matches(&pattern[close + 1..], &value[1..])
             }
-            literal => {
-                !value.is_empty()
-                    && literal == value[0]
-                    && matches(&pattern[1..], &value[1..])
-            }
+            literal => !value.is_empty() && literal == value[0] && matches(&pattern[1..], &value[1..]),
         }
     }
 
-    matches(
-        &pattern.chars().collect::<Vec<_>>(),
-        &value.chars().collect::<Vec<_>>(),
-    )
+    matches(&pattern.chars().collect::<Vec<_>>(), &value.chars().collect::<Vec<_>>())
 }
 
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
@@ -2565,6 +2565,17 @@ mod tests {
         assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "right"]);
         let word = crate::lexer::lex("$*").unwrap().remove(0);
         assert_eq!(expand_word_fields(&word, &environment, 0), ["leftright"]);
+    }
+
+    #[test]
+    fn bracket_patterns_support_negation_ranges_and_literal_closing_bracket() {
+        assert!(shell_pattern_matches("[!a-c]", "z"));
+        assert!(!shell_pattern_matches("[!a-c]", "b"));
+        assert!(shell_pattern_matches("[a-c]", "b"));
+        assert!(!shell_pattern_matches("[a-c]", "d"));
+        assert!(shell_pattern_matches("[]a]", "]"));
+        assert!(shell_pattern_matches("[]a]", "a"));
+        assert!(shell_pattern_matches("[abc", "[abc"));
     }
 
     #[test]
