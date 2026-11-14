@@ -614,9 +614,7 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
             index += 1;
         }
 
-        if tokens
-            .get(index)
-            .is_some_and(|token| is_reserved_word(tokens, index, "esac"))
+        if index < tokens.len() && is_reserved_word(tokens, index, "esac")
         {
             if index + 1 != tokens.len() {
                 return Err("unexpected tokens after esac");
@@ -1496,7 +1494,7 @@ mod compound_boundary_tests {
 
 #[cfg(test)]
 mod for_parser_tests {
-    use super::{parse_for_statement, parse_compound_list, CompoundCommand, InputState, classify_input};
+    use super::{parse_for_statement, parse_compound_list, CompoundCommand};
     use crate::lexer;
 
     #[test]
