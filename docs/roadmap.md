@@ -35,7 +35,7 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; brace groups and subshells have recursive AST construction and execution semantics and can be represented as pipeline stages. The parser and executor now include an initial \`case\` implementation with pattern alternatives, first-match arm selection, basic wildcard matching, and incremental case-arm classification. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
+**Status: In progress; brace groups and subshells have recursive AST construction and execution semantics and can be represented as pipeline stages. The parser and executor now include an initial `case` implementation with pattern alternatives, first-match arm selection, basic wildcard matching, and incremental case-arm classification. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
@@ -155,4 +155,4 @@ Exit criteria:
 
 ## Current implementation boundary
 
-The roadmap is not a statement that phases 1 through 7 are complete. The current implementation has a native execution foundation, initial compound-command support including brace-group/subshell pipeline stages and basic \`case\` execution, basic expansion, buffered sequential pipelines, limited redirection, and a subset of built-ins. The lexer recognizes a broader set of POSIX operators, while the parser explicitly rejects unsupported descriptor-redirection forms. The README, architecture document, and command reference remain the source of detail about the current code. Update those documents whenever implementation changes materially alter this boundary.
+The roadmap is not a statement that phases 1 through 7 are complete. The current implementation has a native execution foundation, initial compound-command support including brace-group/subshell pipeline stages and basic `case` execution, basic expansion, buffered sequential pipelines, limited redirection, and a subset of built-ins. The lexer recognizes a broader set of POSIX operators, while the parser explicitly rejects unsupported descriptor-redirection forms. The README, architecture document, and command reference remain the source of detail about the current code. Update those documents whenever implementation changes materially alter this boundary.
