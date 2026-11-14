@@ -86,3 +86,30 @@ Built-ins execute in the Mysh process. External commands execute as child proces
 Filesystem built-ins validate operand counts and supported options before performing mutations. Recursive copy rejects symbolic links and special filesystem entries instead of following them implicitly, and prevents a destination from being created inside the source tree. Recursive removal refuses the current working directory, its ancestors, and filesystem roots. Multi-source copy and move operations require an existing destination directory. Move operations use the platform rename primitive and do not emulate cross-filesystem copies.
 
 Mysh does not elevate privileges. Android sandboxing, SELinux policy, filesystem permissions, executable mapping restrictions, and linker compatibility remain enforced by the operating system.
+## Adopted Shell and Utility Architecture
+
+The project target is a standalone POSIX shell implementation conforming to the Shell Command Language in POSIX.1-2024. Mysh is the shell interpreter; it is not a wrapper around Bash, dash, BusyBox ash, or another shell.
+
+The language boundary is deliberately limited to POSIX shell. Bash, KornShell, Zsh, GNU-shell, and BSD-shell language extensions are not project targets. Compatibility tests may use other shells as comparison implementations, but their extensions must not become Mysh features.
+
+### Responsibilities
+
+- **Mysh shell engine:** tokenization, grammar, parsing, expansions, command search and dispatch, command execution, pipelines, redirections, subshell environments, shell variables, positional parameters, traps, and the shell execution environment.
+- **Mysh shell built-ins:** implement only commands that POSIX defines as shell built-ins or that must execute in the shell process to preserve shell state and control. Implement the POSIX special-built-in semantics separately from regular built-ins.
+- **External utilities:** use uutils Coreutils for utilities that uutils provides. Do not retain a Mysh implementation of a utility merely to duplicate an available uutils command. Resolve these commands as external executables through the normal command-search path.
+- **Utility gaps:** uutils Coreutils is not the complete POSIX.1 utility set. Utilities absent from uutils must be evaluated individually against the POSIX utility specification and selected or implemented as separate external utilities; they must not be added as Bash-like shell features.
+- **MYPK:** remains a separate package-management component and is not part of the shell language implementation.
+
+### Command ownership policy
+
+A command belongs to the shell when POSIX specifies it as a shell built-in, or when its semantics require direct access to the current shell execution environment. A command provided by uutils belongs to the external utility layer unless POSIX shell semantics require a built-in implementation. The shell's command-search and special-built-in precedence rules must follow POSIX rather than a project-specific generic lookup order.
+
+The presence of a familiar command name in the current source tree does not establish POSIX conformance. In particular, the current filesystem command implementations are transitional and must be migrated to external uutils executables with their behavior and tests updated before they are removed.
+
+### Conformance and migration
+
+POSIX.1-2024 is the normative language and behavior reference. The implementation must be tested against the specification, including lexical and grammar rules, expansion order, special parameters, field splitting, pathname expansion, redirections, command search, exit statuses, and interactive-shell requirements. Passing tests against another shell is useful evidence but does not replace the normative specification.
+
+The current source tree is a partial implementation and is not to be described as POSIX-conformant until the relevant conformance tests pass. Integration of uutils must separately validate the selected release, its license and transitive dependencies, Android Bionic compatibility, and both supported Android ABIs (aarch64-linux-android and armv7-linux-androideabi). A successful build for one Android ABI does not establish support for the other.
+
+No Bash compatibility layer, Bash-specific syntax, GNU Coreutils dependency, or BSD shell extension is to be introduced as part of this architecture.
