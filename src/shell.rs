@@ -1986,6 +1986,20 @@ fn parse_arithmetic_integer(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
+fn contains_arithmetic_assignment(expression: &str) -> bool {
+    let chars: Vec<char> = expression.chars().collect();
+    chars.iter().enumerate().any(|(index, character)| {
+        if *character != '=' { return false; }
+        if chars.get(index + 1) == Some(&'=')
+            || index > 0 && matches!(chars[index - 1], '=' | '!' | '<' | '>')
+        {
+            return false;
+        }
+        true
+    }) || ["+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "<<=", ">>="]
+        .iter().any(|operator| expression.contains(operator))
+}
+
 fn arithmetic_assignment_parts(expression: &str) -> Option<(String, String, String)> {
     let chars: Vec<char> = expression.chars().collect();
     let mut depth = 0usize;
@@ -2034,7 +2048,7 @@ fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<Stri
                 }
                 let Some(end) = matching_arithmetic_end(&chars, index) else { break; };
                 let expression: String = chars[index + 3..end - 1].iter().collect();
-                if arithmetic_assignment_parts(&expression).is_some() {
+                if contains_arithmetic_assignment(&expression) {
                     let _ = evaluate_arithmetic_mut(&expression, environment);
                 }
                 index = end + 1;
@@ -2215,6 +2229,27 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line("echo $((MYSH_ORDER_VALUE = 1)) $((MYSH_ORDER_VALUE += 1)) $MYSH_ORDER_VALUE", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "1 2 2\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_assignment_expressions_are_right_associative_and_sequenced() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "echo $((MYSH_CHAIN_A = MYSH_CHAIN_B = 4, MYSH_CHAIN_A += 3)); echo $MYSH_CHAIN_A $MYSH_CHAIN_B";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "7\n7 4\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_assignment_short_circuit_suppresses_side_effects() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo $((0 && (MYSH_SHORT_VALUE = 9))) $((1 || (MYSH_SHORT_VALUE = 8))); echo ${MYSH_SHORT_VALUE-unset}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "0 1\nunset\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
