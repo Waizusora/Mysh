@@ -394,11 +394,14 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         let command = if is_reserved_word(tokens, index, "if")
             || is_reserved_word(tokens, index, "while")
             || is_reserved_word(tokens, index, "until")
+            || is_reserved_word(tokens, index, "for")
         {
             index = compound_command_end(tokens, index)?;
             let segment = &tokens[start..index];
             if is_reserved_word(tokens, start, "if") {
                 CompoundCommand::If(parse_if_statement(segment)?)
+            } else if is_reserved_word(tokens, start, "for") {
+                CompoundCommand::For(parse_for_statement(segment)?)
             } else {
                 CompoundCommand::Loop(parse_loop_statement(segment)?)
             }
