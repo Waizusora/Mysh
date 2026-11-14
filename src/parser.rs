@@ -572,24 +572,49 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
 /// Parse a POSIX case command. Patterns are retained as shell words so the
 /// execution phase can apply expansion and pattern matching in the case context.
 pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static str> {
-    if !tokens.first().is_some_and(|word| word.is_unquoted_literal("case")) {
+    if !tokens
+        .first()
+        .is_some_and(|word| word.is_unquoted_literal("case"))
+    {
         return Err("expected case");
     }
-    let word = tokens.get(1).ok_or("case requires a word")?.clone();
-    let in_index = (2..tokens.len()).find(|&index| tokens[index].is_unquoted_literal("in"))
+    let word = tokens.get(1).ok_or("case requires a word")?;
+    let word = word.clone();
+    let in_index = (2..tokens.len())
+        .find(|&index| tokens[index].is_unquoted_literal("in"))
         .ok_or("case requires in")?;
     let mut index = in_index + 1;
     let mut arms = Vec::new();
+
     loop {
-        while tokens.get(index).is_some_and(|token| token.is_unquoted_literal(";")) { index += 1; }
-        if tokens.get(index).is_some_and(|token| is_reserved_word(tokens, index, "esac")) {
-            if index + 1 != tokens.len() { return Err("unexpected tokens after esac"); }
-            if arms.is_empty() { return Err("case requires at least one pattern arm"); }
+        while tokens
+            .get(index)
+            .is_some_and(|token| token.is_unquoted_literal(";"))
+        {
+            index += 1;
+        }
+
+        if tokens
+            .get(index)
+            .is_some_and(|token| is_reserved_word(tokens, index, "esac"))
+        {
+            if index + 1 != tokens.len() {
+                return Err("unexpected tokens after esac");
+            }
+            if arms.is_empty() {
+                return Err("case requires at least one pattern arm");
+            }
             return Ok(CaseStatement { word, arms });
         }
-        if index >= tokens.len() { return Err("case requires a closing esac"); }
+        if index >= tokens.len() {
+            return Err("case requires a closing esac");
+        }
+
         // POSIX permits an optional opening parenthesis before each pattern list.
-        if tokens[index].is_unquoted_literal("(") { index += 1; }
+        if tokens[index].is_unquoted_literal("(") {
+            index += 1;
+        }
+
         let mut patterns = Vec::new();
         loop {
             let pattern = tokens.get(index).ok_or("case pattern is missing")?;
@@ -598,35 +623,55 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
             }
             patterns.push(pattern.clone());
             index += 1;
+
             match tokens.get(index) {
-                Some(token) if token.is_unquoted_literal("|") => { index += 1; }
-                Some(token) if token.is_unquoted_literal(")") => { index += 1; break; }
+                Some(token) if token.is_unquoted_literal("|") => {
+                    index += 1;
+                }
+                Some(token) if token.is_unquoted_literal(")") => {
+                    index += 1;
+                    break;
+                }
                 _ => return Err("case pattern list requires '|' or ')'"),
             }
         }
+
         let body_start = index;
         let mut nested_case = 0usize;
         let mut terminator = None;
         while index < tokens.len() {
-            if is_reserved_word(tokens, index, "case") { nested_case += 1; }
-            else if is_reserved_word(tokens, index, "esac") {
-                if nested_case == 0 { terminator = Some((index, false)); break; }
+            if is_reserved_word(tokens, index, "case") {
+                nested_case += 1;
+            } else if is_reserved_word(tokens, index, "esac") {
+                if nested_case == 0 {
+                    terminator = Some((index, false));
+                    break;
+                }
                 nested_case -= 1;
             } else if tokens[index].is_unquoted_literal(";;") && nested_case == 0 {
-                terminator = Some((index, true)); break;
+                terminator = Some((index, true));
+                break;
             }
             index += 1;
         }
-        let (body_end, has_separator) = terminator.ok_or("case requires ';;' or esac")?;
-        let body = if body_end == body_start { Vec::new() } else { parse_compound_list(&tokens[body_start..body_end])? };
+
+        let (body_end, has_separator) =
+            terminator.ok_or("case requires ';;' or esac")?;
+        let body = if body_end == body_start {
+            Vec::new()
+        } else {
+            parse_compound_list(&tokens[body_start..body_end])?
+        };
         arms.push(CaseArm { patterns, body });
+
         index = body_end;
         if has_separator {
             index += 1;
             continue;
         }
-        if index + 1 != tokens.len() { return Err("unexpected tokens after esac"); }
-        if arms.is_empty() { return Err("case requires at least one pattern arm"); }
+        if index + 1 != tokens.len() {
+            return Err("unexpected tokens after esac");
+        }
         return Ok(CaseStatement { word, arms });
     }
 }
