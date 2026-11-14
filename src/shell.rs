@@ -1531,7 +1531,7 @@ fn expand_word_fields_mut(word: &Word, environment: &mut BTreeMap<String, String
                 literal_start = index;
             }
             let literal: String = chars[literal_start..].iter().collect();
-            let value = expand_variables(&literal, environment, last_status);
+            let value = expand_variables_mut(&literal, environment, last_status);
             fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
         } else if part.expandable {
             append_unquoted_expansion_mut(&mut fields, &mut keep_empty, &text, environment, last_status);
@@ -2604,6 +2604,18 @@ mod tests {
             &mut errors,
         ));
         assert_eq!(String::from_utf8(output).unwrap(), "kept nested deep\nalternate bc 5\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_side_effects_are_preserved_inside_double_quoted_expansions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = r#"MYSH_QUOTED_ARITH=5; echo "$((MYSH_QUOTED_ARITH++))" "$MYSH_QUOTED_ARITH" "${MYSH_QUOTED_DEFAULT:-$((++MYSH_QUOTED_ARITH))}" "$MYSH_QUOTED_ARITH""#;
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "5 6 7 7\n");
+        assert_eq!(shell.variables.get("MYSH_QUOTED_ARITH").map(String::as_str), Some("7"));
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
