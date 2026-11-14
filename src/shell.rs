@@ -1539,7 +1539,7 @@ mod tests {
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "alpha beta 2\n 0\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha beta 2\n0\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
