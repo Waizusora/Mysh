@@ -380,6 +380,22 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn nested_compound_lists_preserve_compound_pipeline_stages() {
+        let tokens = lexer::lex(
+            "if true; then if true; then echo nested; fi | cat; fi",
+        ).unwrap();
+        let parsed = split_command_list(tokens).unwrap();
+        let super::PipelineStage::Compound(super::CompoundCommand::If(statement)) =
+            &parsed[0].pipeline.stages[0] else {
+                panic!("expected outer if compound command");
+            };
+        assert!(matches!(
+            &statement.clauses[0].body[0].command,
+            super::CompoundCommand::Simple(words) if words.iter().any(|word| word.is_unquoted_literal("|"))
+        ));
+    }
+
+    #[test]
     fn compound_command_is_retained_on_the_right_side_of_a_pipeline() {
         let tokens = lexer::lex("echo pipeline | if true; then cat; fi").unwrap();
         let parsed = split_command_list(tokens).unwrap();
