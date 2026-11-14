@@ -36,10 +36,10 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     let mut next_condition = None;
     let mut brace_depth = 0usize;
     let mut subshell_depth = 0usize;
-    for token in tokens {
-        if token.is_unquoted_literal("{") {
+    for (index, token) in tokens.iter().cloned().enumerate() {
+        if is_reserved_word(&tokens, index, "{") {
             brace_depth += 1;
-        } else if token.is_unquoted_literal("}") {
+        } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 { return Err("unmatched closing brace"); }
             brace_depth -= 1;
         } else if token.is_unquoted_literal("(") {
@@ -134,13 +134,13 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut brace_depth = 0usize;
     let mut subshell_depth = 0usize;
 
-    for token in tokens {
-        if is_unsupported_operator(&token) || token.is_unquoted_literal(";;") {
+    for (index, token) in tokens.iter().enumerate() {
+        if is_unsupported_operator(token) || token.is_unquoted_literal(";;") {
             return Err("recognized shell operator is not implemented yet");
         }
-        if token.is_unquoted_literal("{") {
+        if is_reserved_word(&tokens, index, "{") {
             brace_depth += 1;
-        } else if token.is_unquoted_literal("}") {
+        } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 { return Err("unmatched closing brace"); }
             brace_depth -= 1;
         } else if token.is_unquoted_literal("(") {
@@ -154,7 +154,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
             if raw_stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
             raw_stages.push(Vec::new());
         } else {
-            raw_stages.last_mut().expect("pipeline has a stage").push(token);
+            raw_stages.last_mut().expect("pipeline has a stage").push(token.clone());
         }
     }
 
@@ -175,9 +175,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
                 }
                 _ => return Err("unsupported compound command in pipeline"),
             }
-        } else if stage.iter().any(|word| word.is_unquoted_literal("{")
-            || word.is_unquoted_literal("}")
-            || word.is_unquoted_literal("(")
+        } else if stage.iter().any(|word| word.is_unquoted_literal("(")
             || word.is_unquoted_literal(")"))
         {
             return Err("compound delimiters must form a complete pipeline stage");
@@ -311,6 +309,33 @@ mod command_structure_tests {
         assert!(matches!(&left_subshell.stages[0], PipelineStage::Compound(CompoundCommand::Subshell(_))));
         let right_group = split_pipeline(lexer::lex("echo before | { cat; }").unwrap()).unwrap();
         assert!(matches!(&right_group.stages[1], PipelineStage::Compound(CompoundCommand::BraceGroup(_))));
+    }
+
+    #[test]
+    fn brace_words_are_not_mistaken_for_brace_group_delimiters() {
+        for input in ["echo {", "echo }", "echo before | cat {", "echo before | cat }"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(split_command_list(tokens).is_ok(), "{input}");
+        }
+    }
+
+    #[test]
+    fn brace_groups_are_recognized_only_in_command_position() {
+        let tokens = lexer::lex("echo before; { echo inside; }").unwrap();
+        let parsed = split_command_list(tokens).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(matches!(
+            &parsed[1].pipeline.stages[0],
+            super::PipelineStage::Compound(super::CompoundCommand::BraceGroup(_))
+        ));
+    }
+
+    #[test]
+    fn unmatched_command_position_brace_is_rejected() {
+        for input in ["echo before; }", "{ echo inside;"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(split_command_list(tokens).is_err(), "{input}");
+        }
     }
 
     #[test]
@@ -737,9 +762,9 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
         {
             return index;
         }
-        if token.is_unquoted_literal("{") {
+        if is_reserved_word(tokens, index, "{") {
             brace_depth += 1;
-        } else if token.is_unquoted_literal("}") {
+        } else if is_reserved_word(tokens, index, "}") {
             brace_depth = brace_depth.saturating_sub(1);
         } else if token.is_unquoted_literal("(") {
             subshell_depth += 1;
@@ -801,7 +826,7 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
                 }
                 CompoundCommand::Subshell(parse_compound_list(body)?)
             }
-        } else if tokens[index].is_unquoted_literal("{") {
+        } else if is_reserved_word(tokens, index, "{") {
             index = compound_command_end(tokens, index)?;
             if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("|")) {
                 index = command_segment_end(tokens, start);
@@ -889,12 +914,12 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
         return Err("subshell requires a closing ')'");
     }
 
-    if first.is_unquoted_literal("{") {
+    if is_reserved_word(tokens, start, "{") {
         let mut depth = 1usize;
         for (index, token) in tokens.iter().enumerate().skip(start + 1) {
-            if token.is_unquoted_literal("{") {
+            if is_reserved_word(tokens, index, "{") {
                 depth += 1;
-            } else if token.is_unquoted_literal("}") {
+            } else if is_reserved_word(tokens, index, "}") {
                 depth -= 1;
                 if depth == 0 {
                     return Ok(index + 1);
@@ -1171,9 +1196,9 @@ pub fn classify_input(input: &str) -> InputState {
                 return InputState::Invalid;
             }
             subshell_depth -= 1;
-        } else if tokens[index].is_unquoted_literal("{") {
+        } else if is_reserved_word(&tokens, index, "{") {
             brace_depth += 1;
-        } else if tokens[index].is_unquoted_literal("}") {
+        } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 {
                 return InputState::Invalid;
             }
