@@ -931,6 +931,36 @@ mod tests {
     }
 
     #[test]
+    fn if_branch_supports_commands_before_and_after_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if mysh_missing_outer_mixed; then echo wrong; else echo before; if echo inner; then echo nested; fi; echo after; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\\ninner\\nnested\\nafter\\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_branch_honors_conditional_command_lists_around_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo condition; then mysh_missing_inner && echo skipped; if echo nested; then echo selected; fi; echo final; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\\nnested\\nselected\\nfinal\\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
     fn if_rejects_missing_then_or_fi() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
