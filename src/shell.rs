@@ -1059,7 +1059,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let command = format!("while test ! -e '{}'; do if test -e '{}'; then touch '{}'; else touch '{}'; continue 2; fi; echo skipped; done; echo after", outer.display(), inner.display(), outer.display(), inner.display());
+        let command = format!("while test ! -e '{}'; do while test ! -e '{}'; do touch '{}'; continue 2; echo skipped-inner; done; touch '{}'; echo skipped-outer; done; echo after", outer.display(), inner.display(), inner.display(), outer.display());
         assert!(shell.execute_line(&command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "after\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
