@@ -167,7 +167,12 @@ impl Shell {
         true
     }
 
-    fn execute_case_statement(&mut self, statement: &crate::parser::CaseStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+    fn execute_case_statement(
+        &mut self,
+        statement: &crate::parser::CaseStatement,
+        stdout: &mut dyn Write,
+        stderr: &mut dyn Write,
+    ) -> bool {
         let value = expand_word(&statement.word, &self.variables, self.last_status);
         for arm in &statement.arms {
             let matched = arm.patterns.iter().any(|pattern| {
@@ -664,18 +669,32 @@ enum LoopControl { Break(usize), Continue(usize) }
 
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
     fn matches(pattern: &[char], value: &[char]) -> bool {
-        if pattern.is_empty() { return value.is_empty(); }
+        if pattern.is_empty() {
+            return value.is_empty();
+        }
+
         match pattern[0] {
-            '*' => (0..=value.len()).any(|offset| matches(&pattern[1..], &value[offset..])),
+            '*' => (0..=value.len())
+                .any(|offset| matches(&pattern[1..], &value[offset..])),
             '?' => !value.is_empty() && matches(&pattern[1..], &value[1..]),
             '[' => {
                 let Some(close) = pattern.iter().position(|character| *character == ']') else {
-                    return !value.is_empty() && value[0] == '[' && matches(&pattern[1..], &value[1..]);
+                    return !value.is_empty()
+                        && value[0] == '['
+                        && matches(&pattern[1..], &value[1..]);
                 };
-                if value.is_empty() { return false; }
+                if value.is_empty() {
+                    return false;
+                }
+
                 let mut index = 1usize;
-                let negate = pattern.get(index).is_some_and(|character| *character == '!');
-                if negate { index += 1; }
+                let negate = pattern
+                    .get(index)
+                    .is_some_and(|character| *character == '!');
+                if negate {
+                    index += 1;
+                }
+
                 let mut matched = false;
                 while index < close {
                     if index + 2 < close && pattern[index + 1] == '-' {
@@ -686,13 +705,24 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                         index += 1;
                     }
                 }
-                if matched == negate { return false; }
+
+                if matched == negate {
+                    return false;
+                }
                 matches(&pattern[close + 1..], &value[1..])
             }
-            literal => !value.is_empty() && literal == value[0] && matches(&pattern[1..], &value[1..]),
+            literal => {
+                !value.is_empty()
+                    && literal == value[0]
+                    && matches(&pattern[1..], &value[1..])
+            }
         }
     }
-    matches(&pattern.chars().collect::<Vec<_>>(), &value.chars().collect::<Vec<_>>())
+
+    matches(
+        &pattern.chars().collect::<Vec<_>>(),
+        &value.chars().collect::<Vec<_>>(),
+    )
 }
 
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
@@ -1081,19 +1111,49 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac", &mut output, &mut errors));
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
         assert_eq!(String::from_utf8(output).unwrap(), "selected\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
 
     #[test]
-    fn case_supports_shell_wildcard_patterns_and_nested_compounds() {
+    fn case_supports_shell_wildcard_and_bracket_patterns() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("case item42 in item*) if true; then echo wildcard; fi ;; *) echo fallback ;; esac", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\n");
+
+        assert!(shell.execute_line(
+            "case item42 in item*) echo wildcard ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(shell.execute_line(
+            "case b in [a-z]) echo range ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\nrange\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_supports_nested_compound_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case item42 in item*) if true; then echo nested; fi ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
@@ -1102,7 +1162,12 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("case apple in orange) echo wrong ;; esac", &mut output, &mut errors));
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; esac",
+            &mut output,
+            &mut errors,
+        ));
         assert!(output.is_empty());
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
