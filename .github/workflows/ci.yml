@@ -142,22 +142,62 @@ jobs:
           path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
   musl:
-    name: Build Linux (musl)
+    name: Build Linux musl (${{ matrix.arch }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            rust_target: x86_64-unknown-linux-musl
+          - arch: aarch64
+            rust_target: aarch64-unknown-linux-musl
     steps:
       - name: Check out source
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
-      - name: Install musl linker
+          targets: ${{ matrix.rust_target }}
+      - name: Install native x86_64 musl linker
+        if: matrix.arch == 'x86_64'
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
-      - name: Configure musl linker
+      - name: Configure native x86_64 musl linker
+        if: matrix.arch == 'x86_64'
         run: echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+      - name: Install cross
+        if: matrix.arch == 'aarch64'
+        uses: taiki-e/install-action@cross
       - name: Build Mysh for musl
-        run: cargo build -p mysh --target x86_64-unknown-linux-musl --release
+        run: |
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            cross build -p mysh --target "${{ matrix.rust_target }}" --release
+          else
+            cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+          fi
       - name: Run Mysh tests on musl
-        run: cargo test -p mysh --target x86_64-unknown-linux-musl --release -- --test-threads=1
+        run: |
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            cross test -p mysh --target "${{ matrix.rust_target }}" --release -- --test-threads=1
+          else
+            cargo test -p mysh --target "${{ matrix.rust_target }}" --release -- --test-threads=1
+          fi
       - name: Build MYPK for musl
-        run: cargo build -p my-pkg-keeper --target x86_64-unknown-linux-musl --release
+        run: |
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            cross build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
+          else
+            cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
+          fi
+      - name: Upload Mysh musl executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: mysh-musl-${{ matrix.arch }}
+          path: target/${{ matrix.rust_target }}/release/mysh
+          if-no-files-found: error
+      - name: Upload MYPK musl executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: mypk-musl-${{ matrix.arch }}
+          path: target/${{ matrix.rust_target }}/release/mypk
+          if-no-files-found: error
