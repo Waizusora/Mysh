@@ -164,18 +164,23 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut stages = Vec::with_capacity(raw_stages.len());
     for stage in raw_stages {
         let Some(first) = stage.first() else { return Err("empty pipeline stage"); };
-        if first.is_unquoted_literal("{") || first.is_unquoted_literal("(") {
+        let compound_start = first.is_unquoted_literal("(")
+            || is_reserved_word(&stage, 0, "{")
+            || is_reserved_word(&stage, 0, "if")
+            || is_reserved_word(&stage, 0, "case")
+            || is_reserved_word(&stage, 0, "for")
+            || is_reserved_word(&stage, 0, "while")
+            || is_reserved_word(&stage, 0, "until")
+            || is_function_definition_start(&stage, 0);
+        if compound_start {
             let parsed = parse_compound_list(&stage)?;
             if parsed.len() != 1 || parsed[0].connector.is_some() {
                 return Err("pipeline compound stage must contain exactly one compound command");
             }
-            match &parsed[0].command {
-                CompoundCommand::BraceGroup(_) | CompoundCommand::Subshell(_) => {
-                    stages.push(PipelineStage::Compound(parsed[0].command.clone()));
-                }
-                _ => return Err("unsupported compound command in pipeline"),
-            }
-        } else if stage.iter().any(|word| word.is_unquoted_literal("(")
+            stages.push(PipelineStage::Compound(parsed[0].command.clone()));
+        } else if stage.iter().any(|word| word.is_unquoted_literal("{")
+            || word.is_unquoted_literal("}")
+            || word.is_unquoted_literal("(")
             || word.is_unquoted_literal(")"))
         {
             return Err("compound delimiters must form a complete pipeline stage");
@@ -309,6 +314,36 @@ mod command_structure_tests {
         assert!(matches!(&left_subshell.stages[0], PipelineStage::Compound(CompoundCommand::Subshell(_))));
         let right_group = split_pipeline(lexer::lex("echo before | { cat; }").unwrap()).unwrap();
         assert!(matches!(&right_group.stages[1], PipelineStage::Compound(CompoundCommand::BraceGroup(_))));
+    }
+
+    #[test]
+    fn all_compound_command_families_can_be_pipeline_stages() {
+        use super::{CompoundCommand, PipelineStage};
+        let cases = [
+            ("if true; then :; fi | cat", 0),
+            ("case value in value) : ;; esac | cat", 1),
+            ("for item in one; do :; done | cat", 2),
+            ("while false; do :; done | cat", 3),
+            ("until true; do :; done | cat", 4),
+            ("work() { :; }; work | cat", 5),
+        ];
+        for (input, kind) in cases {
+            let tokens = lexer::lex(input).unwrap();
+            let parsed = split_pipeline(tokens);
+            assert!(parsed.is_ok(), "{input}: {parsed:?}");
+            let parsed = parsed.unwrap();
+            let PipelineStage::Compound(command) = &parsed.stages[0] else {
+                panic!("expected compound stage for {input}");
+            };
+            assert!(matches!(
+                (kind, command),
+                (0, CompoundCommand::If(_))
+                    | (1, CompoundCommand::Case(_))
+                    | (2, CompoundCommand::For(_))
+                    | (3 | 4, CompoundCommand::Loop(_))
+                    | (5, CompoundCommand::FunctionDefinition(_))
+            ), "{input}");
+        }
     }
 
     #[test]
