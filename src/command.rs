@@ -4,6 +4,46 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// Resolve a shell file for the POSIX dot built-in. Sourced files need to be
+/// readable, but do not need executable permission.
+pub fn resolve_script(script: &str, search_path: &OsStr) -> io::Result<PathBuf> {
+    if script.contains('/') {
+        return Ok(PathBuf::from(script));
+    }
+
+    let mut permission_denied = false;
+    for directory in std::env::split_paths(search_path) {
+        let directory = if directory.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            directory.as_path()
+        };
+        let candidate = directory.join(script);
+        match fs::metadata(&candidate) {
+            Ok(metadata) if metadata.is_file() => match fs::File::open(&candidate) {
+                Ok(_) => return Ok(candidate),
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    permission_denied = true;
+                }
+                Err(_) => {}
+            },
+            _ => {}
+        }
+    }
+
+    if permission_denied {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("shell file is not readable: {script}"),
+        ))
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("shell file not found: {script}"),
+        ))
+    }
+}
+
 /// Resolve a command name without invoking another shell.
 ///
 /// Commands containing '/' are treated as explicit paths. Other names are
@@ -59,7 +99,7 @@ fn is_executable(_metadata: &fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_command;
+    use super::{resolve_command, resolve_script};
     use std::ffi::OsStr;
     use std::fs;
     use std::path::PathBuf;
@@ -128,6 +168,35 @@ mod tests {
             resolve_command("./tools/my-command", OsStr::new("")).unwrap(),
             explicit
         );
+    }
+
+    #[test]
+    fn resolves_readable_non_executable_script_from_path() {
+        let directory = temporary_directory();
+        let script = directory.join("mysh-source-file");
+        fs::write(&script, "VALUE=loaded").unwrap();
+        let search_path = std::env::join_paths([&directory]).unwrap();
+
+        assert_eq!(resolve_script("mysh-source-file", &search_path).unwrap(), script);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn preserves_explicit_script_paths_without_path_search() {
+        let explicit = PathBuf::from("./scripts/setup.sh");
+        assert_eq!(
+            resolve_script("./scripts/setup.sh", OsStr::new("")).unwrap(),
+            explicit
+        );
+    }
+
+    #[test]
+    fn reports_missing_script_files() {
+        let directory = temporary_directory();
+        let search_path = std::env::join_paths([&directory]).unwrap();
+        let error = resolve_script("missing-mysh-script", &search_path).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

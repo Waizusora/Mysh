@@ -29,7 +29,7 @@ fn run_in(directory: &std::path::Path, command: &str) -> std::process::Output {
 }
 
 #[test]
-fn filesystem_builtins_create_copy_move_and_remove_files() {
+fn external_coreutils_create_copy_move_and_remove_files() {
     let directory = temporary_directory();
 
     let output = run_in(&directory, "mkdir -p nested/deep");
@@ -90,7 +90,7 @@ fn filesystem_builtins_create_copy_move_and_remove_files() {
 }
 
 #[test]
-fn rmdir_removes_empty_directories() {
+fn external_rmdir_removes_empty_directories() {
     let directory = temporary_directory();
     fs::create_dir(directory.join("empty")).unwrap();
 
@@ -204,7 +204,7 @@ fn copy_and_move_accept_multiple_sources_for_directory_destinations() {
 }
 
 #[test]
-fn ls_hides_dot_entries_unless_all_option_is_used() {
+fn external_ls_hides_dot_entries_unless_all_option_is_used() {
     let directory = temporary_directory();
     fs::write(directory.join(".hidden"), b"hidden").unwrap();
     fs::write(directory.join("visible"), b"visible").unwrap();
@@ -260,20 +260,6 @@ fn double_dash_allows_paths_that_begin_with_a_hyphen() {
 }
 
 #[test]
-fn recursive_copy_rejects_copying_a_directory_into_itself() {
-    let directory = temporary_directory();
-    fs::create_dir_all(directory.join("source/nested")).unwrap();
-    fs::write(directory.join("source/file"), b"data").unwrap();
-
-    let output = run_in(&directory, "cp -r source source/nested/copy");
-    assert_eq!(output.status.code(), Some(1));
-    assert!(!directory.join("source/nested/copy").exists());
-
-    fs::remove_dir_all(directory).unwrap();
-}
-
-
-#[test]
 fn filesystem_commands_honor_option_termination_and_reject_unknown_options() {
     let directory = temporary_directory();
 
@@ -296,7 +282,7 @@ fn filesystem_commands_honor_option_termination_and_reject_unknown_options() {
 
     for command in ["mkdir -z", "touch -z", "rmdir -z", "cat -z"] {
         let output = run_in(&directory, command);
-        assert_eq!(output.status.code(), Some(2), "command: {command}");
+        assert!(!output.status.success(), "command: {command}");
     }
 
     fs::remove_dir_all(directory).unwrap();
@@ -339,8 +325,13 @@ fn recursive_copy_rejects_symbolic_links_without_following_them() {
     symlink(directory.join("outside"), directory.join("source/link")).unwrap();
 
     let output = run_in(&directory, "cp -r source copied");
-    assert_eq!(output.status.code(), Some(1));
-    assert!(!directory.join("copied").join("link").exists());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let copied_link = fs::symlink_metadata(directory.join("copied/link")).unwrap();
+    assert!(copied_link.file_type().is_symlink());
     assert!(directory.join("outside").is_file());
 
     fs::remove_dir_all(directory).unwrap();

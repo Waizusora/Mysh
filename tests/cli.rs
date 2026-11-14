@@ -2,7 +2,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 #[test]
-fn command_string_mode_runs_a_builtin() {
+fn command_string_mode_runs_an_external_utility() {
     let output = Command::new(env!("CARGO_BIN_EXE_mysh"))
         .args(["-c", "echo hello"])
         .output()
