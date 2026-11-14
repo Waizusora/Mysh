@@ -47,10 +47,6 @@ jobs:
             rust_target: armv7-linux-androideabi
             linker_env: CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER
             linker: armv7a-linux-androideabi21-clang
-          - abi: x86_64
-            rust_target: x86_64-linux-android
-            linker_env: CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
-            linker: x86_64-linux-android21-clang
     steps:
       - name: Check out source
         uses: actions/checkout@v4
