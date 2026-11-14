@@ -1010,6 +1010,9 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
         && word.parts()[0].quoted && (word.parts()[0].text == "$@" || word.parts()[0].text == ("$".to_owned() + "{@}")) {
         return Vec::new();
     }
+    if word.parts().is_empty() && word.is_quoted() {
+        return vec![String::new()];
+    }
     split_expansion_fields(fields, keep_empty, environment)
 }
 
