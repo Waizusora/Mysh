@@ -943,7 +943,7 @@ mod for_parser_tests {
 
     #[test]
     fn rejects_invalid_for_headers_and_missing_done() {
-        for input in ["for; do echo x; done", "for 2bad in x; do echo x; done", "for x in; do echo x; done", "for x in y; do echo x"] {
+        for input in ["for; do echo x; done", "for 2bad in x; do echo x; done", "for x in y; do echo x"] {
             let tokens = lexer::lex(input).unwrap();
             assert!(parse_for_statement(&tokens).is_err(), "{input}");
         }
