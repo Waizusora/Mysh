@@ -78,9 +78,7 @@ fn is_unsupported_operator(token: &Word) -> bool {
     // The current executor only implements the default input/output
     // descriptors and the explicit stderr form "2>". Reject every other
     // descriptor/operator combination instead of passing it as argv data.
-    let operator = &value[redirection_start..];
-    !(value == "<" || value == ">" || value == ">>" || value == "2>")
-        || !matches!(operator, "<" | ">" | ">>" | ">")
+    !matches!(value.as_str(), "<" | ">" | ">>" | "2>")
 }
 
 /// Split one pipeline into its ordered stages.
