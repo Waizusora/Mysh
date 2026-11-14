@@ -1033,7 +1033,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(
-            r#"if echo 'if' \\fi; then echo "fi"; fi"#,
+            r#"if echo 'if' \fi; then echo "fi"; fi"#,
             &mut output,
             &mut errors,
         ));
