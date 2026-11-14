@@ -287,7 +287,8 @@ mod tests {
     fn adjacent_quoted_and_unquoted_fragments_form_one_word() {
         let words = lex("echo pre\"$NAME\"'post'").unwrap();
         assert_eq!(words[1].literal_value(), "pre$NAMEpost");
-        assert_eq!(words[1].parts().len(), 2);
+        assert_eq!(words[1].parts().len(), 3);
+        assert!(words[1].parts()[1].quoted);
     }
 
     #[test]
