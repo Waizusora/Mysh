@@ -65,6 +65,8 @@ impl Word {
     }
 
     /// Return the fragments in source order for the expansion phase.
+    pub fn is_quoted(&self) -> bool { self.quoted }
+
     pub fn parts(&self) -> &[WordPart] {
         &self.parts
     }
@@ -104,7 +106,7 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     Some('\n') => {
                         characters.next();
                     }
-                    _ => word.push('\\', true),
+                    _ => word.push('\\', true, true),
                 },
                 _ => word.push(character, true, true),
             },
