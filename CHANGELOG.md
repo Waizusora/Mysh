@@ -53,6 +53,11 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ## Unreleased
 
+### Added
+
+- Initial IFS field splitting for unquoted parameter-expansion results, preserving literal and quoted text and covering default, empty, whitespace, non-whitespace, and mixed delimiters.
+- Unquoted positional `$@` field-boundary preservation and unquoted `$*` IFS joining before field splitting, with regression tests for empty positional values and prefix/suffix concatenation.
+
 ### Changed
 
 - Expanded shell lexical recognition for POSIX compound-command delimiters, case terminators, descriptor redirections, and here-document operators.
