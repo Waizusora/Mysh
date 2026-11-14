@@ -969,10 +969,29 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
             let mut index = 0;
             let mut literal_start = 0;
             while index < characters.len() {
-                let short_parameter = characters.get(index) == Some(&'
+                let short_parameter = characters.get(index) == Some(&'$')
+                    && characters.get(index + 1).is_some_and(|character| matches!(character, '@' | '*'));
+                let braced_parameter = characters.get(index) == Some(&'$')
+                    && characters.get(index + 1) == Some(&'{')
+                    && characters.get(index + 2).is_some_and(|character| matches!(character, '@' | '*'))
+                    && characters.get(index + 3) == Some(&'}');
+                let parameter = if short_parameter {
+                    characters.get(index + 1).copied()
+                } else if braced_parameter {
+                    characters.get(index + 2).copied()
+                } else {
+                    None
+                };
+                let marker_len = if short_parameter { 2 } else if braced_parameter { 4 } else { 0 };
+                if marker_len == 0 {
+                    index += 1;
+                    continue;
+                }
                 if literal_start < index {
                     let literal: String = characters[literal_start..index].iter().collect();
-                    fields.last_mut().expect("an expansion field exists").push_str(&expand_variables(&literal, environment, last_status));
+                    fields.last_mut().expect("an expansion field exists").push_str(
+                        &expand_variables(&literal, environment, last_status),
+                    );
                 }
                 let parameters = positional_parameters(environment);
                 if parameter == Some('@') {
@@ -990,17 +1009,30 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
             }
             if literal_start < characters.len() {
                 let literal: String = characters[literal_start..].iter().collect();
-                fields.last_mut().expect("an expansion field exists").push_str(&expand_variables(&literal, environment, last_status));
+                fields.last_mut().expect("an expansion field exists").push_str(
+                    &expand_variables(&literal, environment, last_status),
+                );
             }
         } else {
-            let value = if part.expandable { expand_variables(&part.text, environment, last_status) } else { part.text.clone() };
+            let value = if part.expandable {
+                expand_variables(&part.text, environment, last_status)
+            } else {
+                part.text.clone()
+            };
             fields.last_mut().expect("an expansion field exists").push_str(&value);
         }
     }
-    if expanded_at && positional_count(environment) == 0 && word.parts().len() == 1 && word.parts()[0].quoted && (word.parts()[0].text == "$@" || word.parts()[0].text == "${@}") {
+    if expanded_at
+        && positional_count(environment) == 0
+        && word.parts().len() == 1
+        && word.parts()[0].quoted
+        && (word.parts()[0].text == "$@" || word.parts()[0].text == "${@}")
+    {
         return Vec::new();
     }
-    if word.parts().is_empty() && word.is_quoted() { return vec![String::new()]; }
+    if word.parts().is_empty() && word.is_quoted() {
+        return vec![String::new()];
+    }
     fields
 }
 
