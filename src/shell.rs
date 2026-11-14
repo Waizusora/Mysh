@@ -1092,7 +1092,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("case item42 in item*) if true; then echo wildcard ;; fi ;; *) echo fallback ;; esac", &mut output, &mut errors));
+        assert!(shell.execute_line("case item42 in item*) if true; then echo wildcard; fi ;; *) echo fallback ;; esac", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "wildcard\\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
