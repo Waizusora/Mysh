@@ -238,6 +238,13 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn case_parser_accepts_optional_parentheses_before_patterns() {
+        let tokens = lexer::lex("case value in (value) echo matched ;; esac").unwrap();
+        let parsed = super::parse_compound_list(&tokens).unwrap();
+        assert!(matches!(&parsed[0].command, super::CompoundCommand::Case(_)));
+    }
+
+    #[test]
     fn case_parser_rejects_missing_patterns_and_closers() {
         for input in ["case value in ) echo bad ;; esac", "case value in value) echo missing", "case value value) echo bad ;; esac"] {
             let tokens = lexer::lex(input).unwrap();
@@ -572,6 +579,8 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
             return Ok(CaseStatement { word, arms });
         }
         if index >= tokens.len() { return Err("case requires a closing esac"); }
+        // POSIX permits an optional opening parenthesis before each pattern list.
+        if tokens[index].is_unquoted_literal("(") { index += 1; }
         let mut patterns = Vec::new();
         loop {
             let pattern = tokens.get(index).ok_or("case pattern is missing")?;
@@ -873,6 +882,10 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
         || previous.is_unquoted_literal(")")
+        || previous.is_unquoted_literal("}")
+        || previous.is_unquoted_literal("fi") && is_reserved_word(tokens, index - 1, "fi")
+        || previous.is_unquoted_literal("done") && is_reserved_word(tokens, index - 1, "done")
+        || previous.is_unquoted_literal("esac") && is_reserved_word(tokens, index - 1, "esac")
         || previous.is_unquoted_literal("{")
         || previous.is_unquoted_literal("(")
     {
