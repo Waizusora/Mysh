@@ -143,22 +143,55 @@ pub fn classify_input(input: &str) -> InputState {
         }
     };
 
-    let mut depth = 0usize;
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum IfPhase {
+        AwaitThen,
+        InThen,
+        InElse,
+    }
+
+    let mut stack = Vec::new();
     for index in 0..tokens.len() {
         if is_reserved_word(&tokens, index, "if") {
-            depth += 1;
-        } else if is_reserved_word(&tokens, index, "fi") {
-            if depth == 0 {
+            stack.push(IfPhase::AwaitThen);
+        } else if is_reserved_word(&tokens, index, "then") {
+            let Some(phase) = stack.last_mut() else {
+                return InputState::Invalid;
+            };
+            if *phase != IfPhase::AwaitThen {
                 return InputState::Invalid;
             }
-            depth -= 1;
+            *phase = IfPhase::InThen;
+        } else if is_reserved_word(&tokens, index, "elif") {
+            let Some(phase) = stack.last_mut() else {
+                return InputState::Invalid;
+            };
+            if *phase != IfPhase::InThen {
+                return InputState::Invalid;
+            }
+            *phase = IfPhase::AwaitThen;
+        } else if is_reserved_word(&tokens, index, "else") {
+            let Some(phase) = stack.last_mut() else {
+                return InputState::Invalid;
+            };
+            if *phase != IfPhase::InThen {
+                return InputState::Invalid;
+            }
+            *phase = IfPhase::InElse;
+        } else if is_reserved_word(&tokens, index, "fi") {
+            let Some(phase) = stack.pop() else {
+                return InputState::Invalid;
+            };
+            if phase == IfPhase::AwaitThen {
+                return InputState::Invalid;
+            }
         }
     }
 
-    if depth > 0 {
-        InputState::Incomplete
-    } else {
+    if stack.is_empty() {
         InputState::Complete
+    } else {
+        InputState::Incomplete
     }
 }
 
@@ -197,6 +230,22 @@ mod tests {
         assert!(is_reserved_word(&after_else, 1, "if"));
         assert!(!is_reserved_word(&tokens, 8, "fi"));
         assert!(is_reserved_word(&tokens, 10, "fi"));
+    }
+
+    #[test]
+    fn malformed_if_keyword_order_is_invalid_without_waiting_for_fi() {
+        assert_eq!(classify_input("if true; else\n"), InputState::Invalid);
+        assert_eq!(classify_input("if true; then; elif false; else\n"), InputState::Invalid);
+        assert_eq!(classify_input("then\n"), InputState::Invalid);
+        assert_eq!(classify_input("else\n"), InputState::Invalid);
+    }
+
+    #[test]
+    fn quoted_newlines_do_not_split_words() {
+        assert_eq!(
+            classify_input("if true; then echo \"fi\nnot-a-keyword\"; fi\n"),
+            InputState::Complete,
+        );
     }
 
     #[test]
