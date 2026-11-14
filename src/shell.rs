@@ -962,7 +962,7 @@ fn ifs_join_separator(environment: &BTreeMap<String, String>) -> String {
 
 fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
     let mut fields: Vec<Vec<(char, bool)>> = vec![Vec::new()];
-    let mut keep_empty = vec![false];
+    let mut keep_empty = vec![word.is_quoted()];
     let mut expanded_at = false;
     for part in word.parts() {
         if part.quoted { *keep_empty.last_mut().unwrap() = true; }
@@ -2422,6 +2422,7 @@ mod tests {
         assert_eq!(expand(r"literal\ whitespace$EMPTY", &environment), ["literal whitespace"]);
         assert!(expand("$EMPTY", &environment).is_empty());
         assert_eq!(expand("\"$EMPTY\"", &environment), [""]);
+        assert_eq!(expand("\"\"$EMPTY", &environment), [""]);
         assert_eq!(expand("\"\"", &environment), [""]);
 
         environment.insert("IFS".to_owned(), ":".to_owned());
