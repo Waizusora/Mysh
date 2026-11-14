@@ -92,7 +92,7 @@ fn is_unsupported_operator(token: &Word) -> bool {
     if !token.is_unquoted_literal(&value) {
         return false;
     }
-    let Some(redirection_start) = value.find(|character: char| character == '<' || character == '>') else {
+    let Some(redirection_start) = value.find(['<', '>']) else {
         return false;
     };
     if !value[..redirection_start].chars().all(|character| character.is_ascii_digit()) {
@@ -833,10 +833,10 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
 
     if first.is_unquoted_literal("(") {
         let mut depth = 1usize;
-        for index in start + 1..tokens.len() {
-            if tokens[index].is_unquoted_literal("(") {
+        for (index, token) in tokens.iter().enumerate().skip(start + 1) {
+            if token.is_unquoted_literal("(") {
                 depth += 1;
-            } else if tokens[index].is_unquoted_literal(")") {
+            } else if token.is_unquoted_literal(")") {
                 depth -= 1;
                 if depth == 0 {
                     return Ok(index + 1);
@@ -848,10 +848,10 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
 
     if first.is_unquoted_literal("{") {
         let mut depth = 1usize;
-        for index in start + 1..tokens.len() {
-            if tokens[index].is_unquoted_literal("{") {
+        for (index, token) in tokens.iter().enumerate().skip(start + 1) {
+            if token.is_unquoted_literal("{") {
                 depth += 1;
-            } else if tokens[index].is_unquoted_literal("}") {
+            } else if token.is_unquoted_literal("}") {
                 depth -= 1;
                 if depth == 0 {
                     return Ok(index + 1);
@@ -1106,11 +1106,10 @@ pub fn classify_input(input: &str) -> InputState {
 
         if is_reserved_word(&tokens, index, "case") {
             case_pattern.push(false);
-        } else if tokens[index].is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
-            if let Some(active) = case_pattern.last_mut() {
-                *active = true;
-            }
-        } else if tokens[index].is_unquoted_literal(";;") && !case_pattern.is_empty() {
+        } else if (tokens[index].is_unquoted_literal("in")
+            && case_pattern.last() == Some(&false))
+            || (tokens[index].is_unquoted_literal(";;") && !case_pattern.is_empty())
+        {
             if let Some(active) = case_pattern.last_mut() {
                 *active = true;
             }
@@ -1118,10 +1117,8 @@ pub fn classify_input(input: &str) -> InputState {
             if let Some(active) = case_pattern.last_mut() {
                 *active = false;
             }
-        } else if is_reserved_word(&tokens, index, "esac") {
-            if case_pattern.pop().is_none() {
-                return InputState::Invalid;
-            }
+        } else if is_reserved_word(&tokens, index, "esac") && case_pattern.pop().is_none() {
+            return InputState::Invalid;
         }
 
         if tokens[index].is_unquoted_literal("(") && !opens_case_pattern {
