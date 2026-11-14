@@ -166,7 +166,9 @@ impl Shell {
             if !self.execute_compound_list(&clause.condition, stdout, stderr) {
                 return false;
             }
-            if self.loop_control.is_some() { return true; }
+            if self.function_return.is_some() || self.loop_control.is_some() {
+                return true;
+            }
             if self.last_status == 0 {
                 return self.execute_compound_list(&clause.body, stdout, stderr);
             }
