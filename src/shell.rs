@@ -1543,7 +1543,7 @@ mod tests {
         let tokens = crate::lexer::lex("echo ${MISSING:?custom_failure}").unwrap();
         assert_eq!(
             required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
-            Some("custom_failure")
+            Some("MISSING: custom_failure")
         );
         let tokens = crate::lexer::lex("echo ${EMPTY:?}").unwrap();
         assert_eq!(
@@ -1564,7 +1564,12 @@ mod tests {
         assert!(shell.execute_line("echo ${MYSH_REQUIRED_MISSING:?required_value}", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 1);
         assert!(output.is_empty());
-        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: required_value");
+        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: MYSH_REQUIRED_MISSING: required_value");
+
+        errors.clear();
+        assert!(shell.execute_line("echo ${MYSH_REQUIRED_MISSING?unset_message}", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: MYSH_REQUIRED_MISSING: unset_message");
     }
 
     #[test]
