@@ -65,6 +65,9 @@ fn is_unsupported_operator(token: &Word) -> bool {
     }
 
     let value = token.literal_value();
+    if !token.is_unquoted_literal(&value) {
+        return false;
+    }
     let Some(redirection_start) = value.find(|character: char| character == '<' || character == '>') else {
         return false;
     };
@@ -160,6 +163,12 @@ mod command_structure_tests {
         let stages = split_pipeline(lexer::lex("echo '|'").unwrap()).unwrap();
         assert_eq!(stages.stages.len(), 1);
         assert_eq!(stages.stages[0].len(), 2);
+    }
+
+    #[test]
+    fn quoted_redirection_looking_words_remain_arguments() {
+        let stages = split_pipeline(lexer::lex("echo '10>>' '3<&'").unwrap()).unwrap();
+        assert_eq!(stages.stages[0].len(), 3);
     }
 }
 
