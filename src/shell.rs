@@ -138,12 +138,12 @@ impl Shell {
     }
 
     fn execute_for_statement(&mut self, statement: &crate::parser::ForStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        apply_arithmetic_assignments(&statement.words, &mut self.variables);
         let values: Vec<String> = if statement.words.is_empty() {
             positional_parameters(&self.variables)
         } else {
             let mut values = Vec::new();
             for word in &statement.words {
+                apply_arithmetic_assignments(std::slice::from_ref(word), &mut self.variables);
                 values.extend(self.expand_word_fields_runtime(word, stderr));
             }
             values
@@ -537,6 +537,7 @@ impl Shell {
                 .find(|operator| token.is_unquoted_literal(operator));
             if let Some(operator) = operator {
                 let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+                apply_arithmetic_assignments(std::slice::from_ref(target), &mut self.variables);
                 let target = self.expand_word_scalar_runtime(target, stderr);
                 match operator {
                     "<" => redirects.input = Some(target),
@@ -547,6 +548,7 @@ impl Shell {
                 }
                 index += 2;
             } else {
+                apply_arithmetic_assignments(std::slice::from_ref(token), &mut self.variables);
                 command.extend(self.expand_word_fields_runtime(token, stderr));
                 index += 1;
             }
@@ -561,7 +563,6 @@ impl Shell {
             return true;
         }
         apply_assignment_parameter_expansions(tokens, &mut self.variables, self.last_status);
-        apply_arithmetic_assignments(tokens, &mut self.variables);
         let (mut command, redirections) = match self.parse_redirections_runtime(tokens, stderr) {
             Ok(value) => value,
             Err(message) => {
