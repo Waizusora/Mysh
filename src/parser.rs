@@ -1022,11 +1022,11 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
         || previous.is_unquoted_literal(")")
-        || previous.is_unquoted_literal("}")
         || previous.is_unquoted_literal("fi") && is_reserved_word(tokens, index - 1, "fi")
         || previous.is_unquoted_literal("done") && is_reserved_word(tokens, index - 1, "done")
         || previous.is_unquoted_literal("esac") && is_reserved_word(tokens, index - 1, "esac")
-        || previous.is_unquoted_literal("{")
+        || previous.is_unquoted_literal("{") && is_reserved_word(tokens, index - 1, "{")
+        || previous.is_unquoted_literal("}") && is_reserved_word(tokens, index - 1, "}")
         || previous.is_unquoted_literal("(")
     {
         return true;
@@ -1333,6 +1333,20 @@ mod tests {
         assert!(is_reserved_word(&after_else, 1, "if"));
         assert!(!is_reserved_word(&tokens, 8, "fi"));
         assert!(is_reserved_word(&tokens, 10, "fi"));
+    }
+
+    #[test]
+    fn brace_arguments_do_not_create_reserved_word_context() {
+        let tokens = lexer::lex("echo { then").unwrap();
+        assert!(!is_reserved_word(&tokens, 2, "then"));
+        let tokens = lexer::lex("echo } fi").unwrap();
+        assert!(!is_reserved_word(&tokens, 2, "fi"));
+    }
+
+    #[test]
+    fn reserved_words_follow_a_real_brace_group_delimiter() {
+        let tokens = lexer::lex("{ :; } then").unwrap();
+        assert!(is_reserved_word(&tokens, 4, "then"));
     }
 
     #[test]
