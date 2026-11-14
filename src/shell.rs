@@ -112,125 +112,26 @@ impl Shell {
     }
 
     fn execute_if_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        // A compound command may be terminated by a semicolon before its enclosing command ends.
-        let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
-            &tokens[..tokens.len() - 1]
-        } else {
-            tokens
-        };
-        if !tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
-            let _ = writeln!(stderr, "mysh: syntax error: expected if");
-            self.last_status = 2;
-            return true;
-        }
-
-        let mut depth = 0usize;
-        let mut matching_fi = None;
-        for (index, _token) in tokens.iter().enumerate().skip(1) {
-            if is_reserved_word(tokens, index, "if") {
-                depth += 1;
-            } else if is_reserved_word(tokens, index, "fi") {
-                if depth == 0 {
-                    matching_fi = Some(index);
-                    break;
-                }
-                depth -= 1;
-            }
-        }
-        let Some(fi_index) = matching_fi else {
-            let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
-            self.last_status = 2;
-            return true;
-        };
-        if fi_index + 1 != tokens.len() {
-            let _ = writeln!(stderr, "mysh: syntax error: unexpected tokens after fi");
-            self.last_status = 2;
-            return true;
-        }
-
-        let mut clauses: Vec<(&[Word], &[Word])> = Vec::new();
-        let mut clause_start = 1usize;
-        let mut clause_body_start = None;
-        let mut index = 1usize;
-        depth = 0;
-        let mut has_else = false;
-        while index < fi_index {
-            if is_reserved_word(tokens, index, "if") {
-                depth += 1;
-            } else if is_reserved_word(tokens, index, "fi") {
-                depth = depth.saturating_sub(1);
-            } else if depth == 0 && is_reserved_word(tokens, index, "then") {
-                if clause_body_start.is_some() || index == clause_start {
-                    let _ = writeln!(stderr, "mysh: syntax error: malformed if condition");
-                    self.last_status = 2;
-                    return true;
-                }
-                clause_body_start = Some(index + 1);
-            } else if depth == 0 && (is_reserved_word(tokens, index, "elif") || is_reserved_word(tokens, index, "else")) {
-                let Some(body_start) = clause_body_start.take() else {
-                    let _ = writeln!(stderr, "mysh: syntax error: expected then before elif or else");
-                    self.last_status = 2;
-                    return true;
-                };
-                if body_start == index {
-                    let _ = writeln!(stderr, "mysh: syntax error: if branch cannot be empty");
-                    self.last_status = 2;
-                    return true;
-                }
-                clauses.push((&tokens[clause_start..body_start - 1], &tokens[body_start..index]));
-                if is_reserved_word(tokens, index, "else") {
-                    if has_else {
-                        let _ = writeln!(stderr, "mysh: syntax error: duplicate else clause");
-                        self.last_status = 2;
-                        return true;
-                    }
-                    has_else = true;
-                    clause_start = index + 1;
-                    if clause_start == fi_index {
-                        let _ = writeln!(stderr, "mysh: syntax error: else branch cannot be empty");
-                        self.last_status = 2;
-                        return true;
-                    }
-                    clauses.push((&[], &tokens[clause_start..fi_index]));
-                    clause_start = fi_index;
-                    break;
-                }
-                if has_else {
-                    let _ = writeln!(stderr, "mysh: syntax error: elif cannot follow else");
-                    self.last_status = 2;
-                    return true;
-                }
-                clause_start = index + 1;
-            }
-            index += 1;
-        }
-
-        if clause_start < fi_index {
-            let Some(body_start) = clause_body_start else {
-                let _ = writeln!(stderr, "mysh: syntax error: if requires then");
-                self.last_status = 2;
-                return true;
-            };
-            if body_start >= fi_index {
-                let _ = writeln!(stderr, "mysh: syntax error: if branch cannot be empty");
+        let statement = match crate::parser::parse_if_statement(tokens) {
+            Ok(statement) => statement,
+            Err(error) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {error}");
                 self.last_status = 2;
                 return true;
             }
-            clauses.push((&tokens[clause_start..body_start - 1], &tokens[body_start..fi_index]));
-        } else if !has_else && clauses.is_empty() {
-            let _ = writeln!(stderr, "mysh: syntax error: incomplete if statement");
-            self.last_status = 2;
-            return true;
-        }
+        };
 
-        for (condition, branch) in clauses {
-            if condition.is_empty() {
-                return self.execute_compound_branch(branch, stdout, stderr);
+        for clause in statement.clauses {
+            if !self.execute_word_list(&clause.condition, stdout, stderr) {
+                return false;
             }
-            if !self.execute_word_list(condition, stdout, stderr) { return false; }
             if self.last_status == 0 {
-                return self.execute_compound_branch(branch, stdout, stderr);
+                return self.execute_compound_branch(&clause.body, stdout, stderr);
             }
+        }
+
+        if let Some(branch) = statement.else_body {
+            return self.execute_compound_branch(&branch, stdout, stderr);
         }
         true
     }
