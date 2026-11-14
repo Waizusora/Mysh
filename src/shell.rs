@@ -1077,8 +1077,7 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
 
 /// Apply pathname expansion after field splitting. Unmatched patterns remain literal.
 fn pathname_expand_fields(word: &Word, fields: Vec<String>) -> Vec<String> {
-    // Preserve quoted and escaped pattern characters as literal path characters.
-    // Private-use sentinels carry that distinction through path-component matching.
+    // Private-use sentinels preserve quoted and escaped pattern characters.
     const LITERAL_STAR: char = '\u{e000}';
     const LITERAL_QUESTION: char = '\u{e001}';
     const LITERAL_BRACKET: char = '\u{e002}';
@@ -1086,7 +1085,44 @@ fn pathname_expand_fields(word: &Word, fields: Vec<String>) -> Vec<String> {
     let mut encoded_pattern = String::new();
     let mut can_reconstruct = true;
     for part in word.parts() {
-        if part.expandable && part.text.contains('
+        if part.expandable && part.text.as_bytes().contains(&b'$') {
+            can_reconstruct = false;
+            break;
+        }
+        for character in part.text.chars() {
+            let is_literal = part.quoted || !part.expandable;
+            encoded_pattern.push(if is_literal {
+                match character {
+                    '*' => LITERAL_STAR,
+                    '?' => LITERAL_QUESTION,
+                    '[' => LITERAL_BRACKET,
+                    other => other,
+                }
+            } else {
+                character
+            });
+        }
+    }
+
+    let patterns: Vec<String> = if can_reconstruct {
+        fields.iter().map(|_| encoded_pattern.clone()).collect()
+    } else {
+        // Variable-produced wildcard provenance will be carried per character
+        // in a later expansion-pipeline refinement.
+        if !word.parts().iter().any(|part| !part.quoted && part.expandable) {
+            return fields;
+        }
+        fields.clone()
+    };
+
+    fields.into_iter().zip(patterns).flat_map(|(field, pattern)| {
+        if !pattern.chars().any(|character| matches!(character, '*' | '?' | '[')) {
+            return vec![field];
+        }
+        let matches = expand_path_pattern(&pattern);
+        if matches.is_empty() { vec![field] } else { matches }
+    }).collect()
+}
 
 /// Expand wildcard components without invoking another shell or external utility.
 fn expand_path_pattern(pattern: &str) -> Vec<String> {
