@@ -62,17 +62,22 @@ fn delimit_physical_newlines(input: &str) -> String {
                     quote = None;
                 }
             }
-            Some('"') => {
-                output.push(character);
-                if character == '"' {
+            Some('"') => match character {
+                '"' => {
+                    output.push(character);
                     quote = None;
-                } else if character == '\\' {
+                }
+                '\\' => {
                     if let Some(next) = characters.next() {
                         if next != '\n' {
+                            output.push('\\');
                             output.push(next);
                         }
+                    } else {
+                        output.push('\\');
                     }
                 }
+                _ => output.push(character),
             }
             None => match character {
                 '\'' | '"' => {
@@ -81,12 +86,14 @@ fn delimit_physical_newlines(input: &str) -> String {
                     output.push(character);
                 }
                 '\\' => {
-                    output.push(character);
                     if let Some(next) = characters.next() {
                         if next != '\n' {
+                            output.push('\\');
                             output.push(next);
                             word_started = true;
                         }
+                    } else {
+                        output.push('\\');
                     }
                 }
                 '#' if !word_started => {
