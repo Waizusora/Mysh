@@ -1345,7 +1345,7 @@ mod tests {
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "innerarg\\nouterarg\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "innerarg\nouterarg\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
