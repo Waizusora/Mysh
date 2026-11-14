@@ -1,6 +1,6 @@
 //! Interactive input loop, shell parsing, command dispatch, and process execution.
 use crate::builtins::{self, BuiltinOutcome};
-use crate::command::resolve_command;
+use crate::command::{resolve_command, resolve_script};
 use crate::lexer::{self, Word};
 use crate::parser::{is_reserved_word, split_command_list, ListOperator, Pipeline};
 use std::fs::{File, OpenOptions};
@@ -360,6 +360,36 @@ impl Shell {
 
     fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
+        if command[0] == "." {
+            if command.len() < 2 {
+                let _ = writeln!(err, "mysh: .: expected a file operand");
+                return StageOutcome::Continue(2);
+            }
+            if command.len() > 2 {
+                let _ = writeln!(err, "mysh: .: positional arguments are not implemented yet");
+                return StageOutcome::Continue(2);
+            }
+            let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
+            let path = match resolve_script(&command[1], &search_path) {
+                Ok(path) => path,
+                Err(error) => {
+                    let _ = writeln!(err, "mysh: .: {}: {error}", command[1]);
+                    return StageOutcome::Continue(1);
+                }
+            };
+            let script = match std::fs::read_to_string(&path) {
+                Ok(script) => script,
+                Err(error) => {
+                    let _ = writeln!(err, "mysh: .: {}: {error}", path.display());
+                    return StageOutcome::Continue(1);
+                }
+            };
+            return if self.execute_line(&script, out, err) {
+                StageOutcome::Continue(self.last_status)
+            } else {
+                StageOutcome::Exit(self.last_status)
+            };
+        }
         if command[0] == "eval" {
             let evaluated = command[1..].join(" ");
             if evaluated.is_empty() {
@@ -549,7 +579,7 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
 /// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
 /// deliberately dispatched as external commands so uutils can provide them.
 fn is_shell_builtin(name: &str) -> bool {
-    matches!(name, ":" | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue")
+    matches!(name, ":" | "." | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue")
 }
 
 /// Utilities compiled into the pinned uutils 0.12.0 Android feature set.
@@ -1368,7 +1398,7 @@ mod tests {
     fn only_posix_shell_builtins_are_dispatched_in_process() {
         use super::is_shell_builtin;
 
-        for name in [":", "cd", "pwd", "export", "unset", "true", "false", "eval", "exit", "break", "continue"] {
+        for name in [":", ".", "cd", "pwd", "export", "unset", "true", "false", "eval", "exit", "break", "continue"] {
             assert!(is_shell_builtin(name), "{name}");
         }
         for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
@@ -1417,6 +1447,29 @@ mod tests {
         assert!(shell.exported.contains("MYSH_EVAL_VALUE"));
         assert_eq!(String::from_utf8(output).unwrap(), "active\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+
+    #[test]
+    fn dot_sources_a_readable_file_into_the_current_shell() {
+        let directory = std::env::temp_dir().join(format!("mysh-dot-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("environment.sh");
+        std::fs::write(&script, "MYSH_DOT_VALUE=loaded\nexport MYSH_DOT_VALUE\n").unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(". environment.sh", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_DOT_VALUE").map(String::as_str), Some("loaded"));
+        assert!(shell.exported.contains("MYSH_DOT_VALUE"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
 }
