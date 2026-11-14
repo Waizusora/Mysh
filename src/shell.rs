@@ -1069,7 +1069,7 @@ fn split_expansion_fields(fields: Vec<Vec<(char, bool)>>, keep: Vec<bool>, envir
                 while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
             }
         }
-        if !current.is_empty() || preserve_current || !delimiter_seen { result.push(current); }
+        if !current.is_empty() || preserve_current || (!delimiter_seen && !field.is_empty()) { result.push(current); }
     }
     result
 }
@@ -1203,7 +1203,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, Shell};
+    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, requires_more_input, Shell};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
@@ -2395,6 +2395,51 @@ mod tests {
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
 
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn ifs_field_splitting_tracks_expansion_origin_and_empty_fields() {
+        let mut environment = BTreeMap::from([
+            ("VALUE".to_owned(), "  alpha   beta  ".to_owned()),
+            ("EMPTY".to_owned(), String::new()),
+        ]);
+        let expand = |source: &str, environment: &BTreeMap<String, String>| {
+            let word = crate::lexer::lex(source).unwrap().remove(0);
+            expand_word_fields(&word, environment, 0)
+        };
+
+        assert_eq!(expand("$VALUE", &environment), ["alpha", "beta"]);
+        assert_eq!(expand(r"literal\ whitespace$EMPTY", &environment), ["literal whitespace"]);
+        assert!(expand("$EMPTY", &environment).is_empty());
+        assert_eq!(expand("\"$EMPTY\"", &environment), [""]);
+
+        environment.insert("IFS".to_owned(), ":".to_owned());
+        environment.insert("VALUE".to_owned(), "left::right:".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["left", "", "right"]);
+
+        environment.insert("IFS".to_owned(), " ".to_owned());
+        environment.insert("VALUE".to_owned(), "  one   two  ".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["one", "two"]);
+
+        environment.insert("IFS".to_owned(), String::new());
+        environment.insert("VALUE".to_owned(), " one two ".to_owned());
+        assert_eq!(expand("$VALUE", &environment), [" one two "]);
+
+        environment.remove("IFS");
+        environment.insert("VALUE".to_owned(), "middle".to_owned());
+        assert_eq!(expand("pre\${VALUE}post", &environment), ["premiddlepost"]);
+    }
+
+    #[test]
+    fn quoted_positional_parameter_expansion_keeps_field_boundaries() {
+        let mut environment = BTreeMap::new();
+        super::set_positional_parameters(&mut environment, &["one two".to_owned(), String::new(), "three".to_owned()]);
+        let word = crate::lexer::lex("\"$@\"").unwrap().remove(0);
+        assert_eq!(expand_word_fields(&word, &environment, 0), ["one two", "", "three"]);
+
+        let word = crate::lexer::lex("\"$*\"").unwrap().remove(0);
+        assert_eq!(expand_word_fields(&word, &environment, 0), ["one two  three"]);
     }
 
 }
