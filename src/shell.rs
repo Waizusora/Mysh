@@ -2642,6 +2642,17 @@ mod tests {
     }
 
     #[test]
+    fn nested_parameter_operator_words_preserve_spaces_and_substitution_order() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = r#"echo ${MYSH_OUTER_SPACED:-left ${MYSH_INNER_SPACED:-middle value} right} ${MYSH_COMMAND_SPACED:-left $(printf 'middle value') right}"#;
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "left middle value right left middle value right\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn nested_command_substitution_runs_only_in_selected_parameter_words() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
