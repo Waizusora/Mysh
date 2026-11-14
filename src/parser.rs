@@ -100,7 +100,8 @@ mod tests {
         let tokens = lexer::lex("echo if; if true; then echo fi; fi").unwrap();
         assert!(!is_reserved_word(&tokens, 1, "if"));
         assert!(is_reserved_word(&tokens, 3, "if"));
-        assert!(!is_reserved_word(&tokens, 10, "fi"));
+        assert!(!is_reserved_word(&tokens, 8, "fi"));
+        assert!(is_reserved_word(&tokens, 10, "fi"));
     }
 
     #[test]
