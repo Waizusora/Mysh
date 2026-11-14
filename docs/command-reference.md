@@ -13,6 +13,7 @@ This document describes the current implementation and distinguishes shell built
 | \`pwd\` | \`pwd [-L|-P]\` | Prints the current working directory. The options are accepted; logical-versus-physical path semantics remain incomplete. |
 | \`true\` | \`true\` | Returns status 0. |
 | \`false\` | \`false\` | Returns status 1. |
+| \`eval\` | \`eval [argument ...]\` | Concatenates arguments with spaces and parses and executes the resulting command text in the current shell environment. |
 | \`break\` | \`break [n]\` | Exits the current loop or the requested number of enclosing loops. |
 | \`continue\` | \`continue [n]\` | Starts the next iteration of the current loop or the requested enclosing loop. |
 | \`exit\` | \`exit [status]\` | Exits Mysh with the requested numeric status. |
