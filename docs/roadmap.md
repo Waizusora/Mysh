@@ -54,7 +54,7 @@ Exit criteria:
 
 ## Phase 3 — POSIX expansion engine
 
-**Status: Not complete; only preliminary parameter substitution exists.**
+**Status: Not complete; basic named and positional parameter substitution, `$#`, `shift`, and limited field-preserving quoted `"$@"` expansion are implemented. Unquoted expansion, quoted `"$*"`, general field splitting, pathname expansion, and the remaining POSIX parameter operators are incomplete.**
 
 Scope:
 - Implement POSIX parameter expansion, including special and positional parameters and parameter operators.
