@@ -2359,9 +2359,14 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
+        let mut environment = BTreeMap::from([("MYSH_NESTED_VALUE".to_owned(), "2".to_owned())]);
+        assert_eq!(super::expand_parameter_word_mut("$((MYSH_NESTED_VALUE++))", &mut environment, 0), "2");
+        assert_eq!(environment.get("MYSH_NESTED_VALUE").map(String::as_str), Some("3"));
+
         let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_NESTED_OUTER:-$((MYSH_NESTED_VALUE++))} $MYSH_NESTED_VALUE";
         assert!(shell.execute_line(command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "2 3\n");
+        assert_eq!(shell.variables.get("MYSH_NESTED_VALUE").map(String::as_str), Some("3"));
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
