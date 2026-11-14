@@ -1099,19 +1099,31 @@ pub fn classify_input(input: &str) -> InputState {
     let mut brace_depth = 0usize;
     let mut case_pattern = Vec::<bool>::new();
     for index in 0..tokens.len() {
-        let opens_case_pattern = tokens[index].is_unquoted_literal("(") && case_pattern.last() == Some(&true);
-        let closes_case_pattern = tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true);
+        let opens_case_pattern =
+            tokens[index].is_unquoted_literal("(") && case_pattern.last() == Some(&true);
+        let closes_case_pattern =
+            tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true);
+
         if is_reserved_word(&tokens, index, "case") {
             case_pattern.push(false);
         } else if tokens[index].is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
-            if let Some(active) = case_pattern.last_mut() { *active = true; }
+            if let Some(active) = case_pattern.last_mut() {
+                *active = true;
+            }
         } else if tokens[index].is_unquoted_literal(";;") && !case_pattern.is_empty() {
-            if let Some(active) = case_pattern.last_mut() { *active = true; }
-        } else if tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true) {
-            if let Some(active) = case_pattern.last_mut() { *active = false; }
+            if let Some(active) = case_pattern.last_mut() {
+                *active = true;
+            }
+        } else if closes_case_pattern {
+            if let Some(active) = case_pattern.last_mut() {
+                *active = false;
+            }
         } else if is_reserved_word(&tokens, index, "esac") {
-            if case_pattern.pop().is_none() { return InputState::Invalid; }
+            if case_pattern.pop().is_none() {
+                return InputState::Invalid;
+            }
         }
+
         if tokens[index].is_unquoted_literal("(") && !opens_case_pattern {
             subshell_depth += 1;
         } else if tokens[index].is_unquoted_literal(")") && !closes_case_pattern {
