@@ -267,8 +267,23 @@ pub enum CompoundCommand {
     If(IfStatement),
     Loop(LoopStatement),
     For(ForStatement),
+    Case(CaseStatement),
     BraceGroup(CompoundList),
     Subshell(CompoundList),
+}
+
+/// One pattern arm in a POSIX case command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaseArm {
+    pub patterns: Vec<Word>,
+    pub body: CompoundList,
+}
+
+/// Parsed POSIX case command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaseStatement {
+    pub word: Word,
+    pub arms: Vec<CaseArm>,
 }
 
 /// One command and its connector to the preceding command.
@@ -518,6 +533,66 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
 
 
 
+/// Parse a POSIX case command. Patterns are retained as shell words so the
+/// execution phase can apply expansion and pattern matching in the case context.
+pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static str> {
+    if !tokens.first().is_some_and(|word| word.is_unquoted_literal("case")) {
+        return Err("expected case");
+    }
+    let word = tokens.get(1).ok_or("case requires a word")?.clone();
+    let in_index = (2..tokens.len()).find(|&index| tokens[index].is_unquoted_literal("in"))
+        .ok_or("case requires in")?;
+    let mut index = in_index + 1;
+    let mut arms = Vec::new();
+    loop {
+        while tokens.get(index).is_some_and(|token| token.is_unquoted_literal(";")) { index += 1; }
+        if tokens.get(index).is_some_and(|token| is_reserved_word(tokens, index, "esac")) {
+            if index + 1 != tokens.len() { return Err("unexpected tokens after esac"); }
+            if arms.is_empty() { return Err("case requires at least one pattern arm"); }
+            return Ok(CaseStatement { word, arms });
+        }
+        if index >= tokens.len() { return Err("case requires a closing esac"); }
+        let mut patterns = Vec::new();
+        loop {
+            let pattern = tokens.get(index).ok_or("case pattern is missing")?;
+            if pattern.is_unquoted_literal("|") || pattern.is_unquoted_literal(")") {
+                return Err("case pattern is missing");
+            }
+            patterns.push(pattern.clone());
+            index += 1;
+            match tokens.get(index) {
+                Some(token) if token.is_unquoted_literal("|") => { index += 1; }
+                Some(token) if token.is_unquoted_literal(")") => { index += 1; break; }
+                _ => return Err("case pattern list requires '|' or ')'"),
+            }
+        }
+        let body_start = index;
+        let mut nested_case = 0usize;
+        let mut terminator = None;
+        while index < tokens.len() {
+            if is_reserved_word(tokens, index, "case") { nested_case += 1; }
+            else if is_reserved_word(tokens, index, "esac") {
+                if nested_case == 0 { terminator = Some((index, false)); break; }
+                nested_case -= 1;
+            } else if tokens[index].is_unquoted_literal(";;") && nested_case == 0 {
+                terminator = Some((index, true)); break;
+            }
+            index += 1;
+        }
+        let (body_end, has_separator) = terminator.ok_or("case requires ';;' or esac")?;
+        let body = if body_end == body_start { Vec::new() } else { parse_compound_list(&tokens[body_start..body_end])? };
+        arms.push(CaseArm { patterns, body });
+        index = body_end;
+        if has_separator {
+            index += 1;
+            continue;
+        }
+        if index + 1 != tokens.len() { return Err("unexpected tokens after esac"); }
+        if arms.is_empty() { return Err("case requires at least one pattern arm"); }
+        return Ok(CaseStatement { word, arms });
+    }
+}
+
 /// Find the end of a command segment, ignoring list separators nested in groups.
 fn command_segment_end(tokens: &[Word], start: usize) -> usize {
     let mut brace_depth = 0usize;
@@ -547,7 +622,7 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
     if tokens.iter().any(|token| {
-        is_unsupported_operator(token) || token.is_unquoted_literal("&")
+        is_unsupported_operator(token) || token.is_unquoted_literal("&") || token.is_unquoted_literal(";;")
     }) {
         return Err("recognized shell operator is not implemented yet");
     }
@@ -595,6 +670,7 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
             || is_reserved_word(tokens, index, "while")
             || is_reserved_word(tokens, index, "until")
             || is_reserved_word(tokens, index, "for")
+            || is_reserved_word(tokens, index, "case")
         {
             index = compound_command_end(tokens, index)?;
             let segment = &tokens[start..index];
@@ -602,6 +678,8 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
                 CompoundCommand::If(parse_if_statement(segment)?)
             } else if is_reserved_word(tokens, start, "for") {
                 CompoundCommand::For(parse_for_statement(segment)?)
+            } else if is_reserved_word(tokens, start, "case") {
+                CompoundCommand::Case(parse_case_statement(segment)?)
             } else {
                 CompoundCommand::Loop(parse_loop_statement(segment)?)
             }
@@ -707,6 +785,18 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
         return Err("for requires a closing done");
     }
 
+    if first.is_unquoted_literal("case") && is_reserved_word(tokens, start, "case") {
+        let mut depth = 0usize;
+        for index in start + 1..tokens.len() {
+            if is_reserved_word(tokens, index, "case") { depth += 1; }
+            else if is_reserved_word(tokens, index, "esac") {
+                if depth == 0 { return Ok(index + 1); }
+                depth -= 1;
+            }
+        }
+        return Err("case requires a closing esac");
+    }
+
     if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
         || (first.is_unquoted_literal("until") && is_reserved_word(tokens, start, "until"))
     {
@@ -755,6 +845,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 
     let previous = &tokens[index - 1];
     if previous.is_unquoted_literal(";")
+        || previous.is_unquoted_literal(";;")
         || previous.is_unquoted_literal("&&")
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
@@ -766,7 +857,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 
     // Compound-list introducers establish a command position only when the
     // introducer itself was recognized as a reserved word in its own context.
-    ["if", "then", "elif", "else", "do", "while", "until", "for"]
+    ["if", "then", "elif", "else", "do", "while", "until", "for", "case"]
         .iter()
         .any(|introducer| {
             previous.is_unquoted_literal(introducer)
