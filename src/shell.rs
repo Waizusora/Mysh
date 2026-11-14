@@ -1172,6 +1172,21 @@ fn locale_compare_strings(left: &str, right: &str) -> std::cmp::Ordering {
     left.cmp(right)
 }
 
+#[cfg(unix)]
+fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_int};
+
+    let Ok(pattern) = CString::new(pattern) else { return false; };
+    let Ok(value) = CString::new(value) else { return false; };
+    extern "C" {
+        fn fnmatch(pattern: *const c_char, value: *const c_char, flags: c_int) -> c_int;
+    }
+    initialize_shell_locale();
+    unsafe { fnmatch(pattern.as_ptr(), value.as_ptr(), 0) == 0 }
+}
+
+#[cfg(not(unix))]
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
     #[derive(Clone)]
     enum Member {
@@ -2738,8 +2753,11 @@ mod tests {
     fn pathname_patterns_support_collating_and_equivalence_elements() {
         assert!(shell_pattern_matches("[.a.]", "a"));
         assert!(shell_pattern_matches("[=a=]", "a"));
-        assert!(shell_pattern_matches("[.ch.]x", "chx"));
-        assert!(!shell_pattern_matches("[.ch.]x", "cx"));
+        // The C and C.UTF-8 locales do not define "ch" as a
+        // multi-character collating element; libc fnmatch must reject it.
+        if matches!(std::env::var("LC_ALL").as_deref(), Ok("C") | Ok("C.UTF-8")) {
+            assert!(!shell_pattern_matches("[.ch.]x", "chx"));
+        }
         assert!(shell_pattern_matches("[!a]", "b"));
         assert!(!shell_pattern_matches("[!a]", "a"));
     }
