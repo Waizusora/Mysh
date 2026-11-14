@@ -2283,6 +2283,48 @@ mod tests {
     }
 
     #[test]
+    fn if_compound_command_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if true; then echo conditional; fi | cat",
+            &mut output,
+            &mut errors
+        ));
+        assert_eq!(String::from_utf8_lossy(&output), "conditional\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_compound_command_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "case value in value) echo selected ;; esac | cat",
+            &mut output,
+            &mut errors
+        ));
+        assert_eq!(String::from_utf8_lossy(&output), "selected\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn for_compound_command_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "for item in one two; do echo $item; done | cat",
+            &mut output,
+            &mut errors
+        ));
+        assert_eq!(String::from_utf8_lossy(&output), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn brace_group_can_run_as_a_pipeline_stage() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
