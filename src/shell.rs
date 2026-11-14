@@ -1112,7 +1112,7 @@ fn expand_path_pattern(pattern: &str) -> Vec<String> {
                 }
             } else {
                 let candidate = base.join(&component);
-                if candidate.exists() { next.push(candidate); }
+                if std::fs::symlink_metadata(&candidate).is_ok() { next.push(candidate); }
             }
         }
         paths = next;
@@ -1296,7 +1296,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, requires_more_input, Shell};
+    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, requires_more_input, shell_pattern_matches, Shell};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
