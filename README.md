@@ -62,9 +62,11 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - `export` and `unset` built-ins.
 - Automatic priority for `$MYSH_PREFIX/bin` in command lookup when that directory exists.
 - Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
+- Initial `if` / `then` / `elif` / `else` / `fi` compound-command support, including nested and multiline forms.
+- Context-sensitive recognition of implemented `if` compound reserved words and incremental input classification.
 - Unit and integration tests.
 
-The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently supports only basic environment-variable names; full POSIX parameter expansion and later expansion phases are not implemented. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, control-flow syntax, job control, and persistent history are not implemented.
+The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently supports only basic environment-variable names; full POSIX parameter expansion and later expansion phases are not implemented. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, `while` / `until` loops and the remaining POSIX control-flow grammar, job control, and persistent history are not implemented.
 
 ## Build on a host
 
