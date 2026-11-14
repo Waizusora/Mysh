@@ -35,7 +35,7 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; brace groups and subshells have recursive AST construction and execution semantics and can be represented as pipeline stages. The parser and executor include initial `case` support, POSIX-style function definitions and invocation, basic function positional parameters with nested-call restoration tests, and a function-scoped `return` implementation. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
+**Status: In progress; brace groups and subshells have recursive AST construction and execution semantics and can be represented as pipeline stages. The parser and executor include initial `case` support, POSIX-style function definitions and invocation, basic function positional parameters, `shift`, `$@`/`$*` scalar expansion, positional `for` iteration, nested-call restoration tests, and a function-scoped `return` implementation. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
