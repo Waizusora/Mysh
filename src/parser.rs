@@ -1024,7 +1024,7 @@ pub fn classify_input(input: &str) -> InputState {
         } else if tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true) {
             if let Some(active) = case_pattern.last_mut() { *active = false; }
         } else if is_reserved_word(&tokens, index, "esac") {
-            case_pattern.pop();
+            if case_pattern.pop().is_none() { return InputState::Invalid; }
         }
         if tokens[index].is_unquoted_literal("(") {
             subshell_depth += 1;
@@ -1214,6 +1214,12 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn unmatched_esac_is_invalid_input() {
+        assert_eq!(classify_input("esac\\n"), InputState::Invalid);
+        assert_eq!(classify_input("case value in value) echo ok ;; esac\\n"), InputState::Complete);
+    }
 
     #[test]
     fn case_patterns_do_not_conflict_with_subshell_delimiters() {
