@@ -292,11 +292,11 @@ mod tests {
         let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
         assert_eq!(
             actual,
-            ["(", "echo", "one", ")", ";", "case", "x", "in", "x)", ":", ";;", "esac"]
+            ["(", "echo", "one", ")", ";", "case", "x", "in", "x", ")", ":", ";;", "esac"]
         );
         assert!(words[0].is_unquoted_literal("("));
         assert!(words[3].is_unquoted_literal(")"));
-        assert!(words[10].is_unquoted_literal(";;"));
+        assert!(words[11].is_unquoted_literal(";;"));
     }
 
     #[test]
