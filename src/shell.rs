@@ -1010,11 +1010,7 @@ fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
     initialize_shell_locale();
     let left = [left as i32, 0];
     let right = [right as i32, 0];
-    match unsafe { wcscoll(left.as_ptr(), right.as_ptr()) }.cmp(&0) {
-        std::cmp::Ordering::Less => std::cmp::Ordering::Less,
-        std::cmp::Ordering::Equal => std::cmp::Ordering::Equal,
-        std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
-    }
+    unsafe { wcscoll(left.as_ptr(), right.as_ptr()) }.cmp(&0)
 }
 
 #[cfg(not(unix))]
@@ -1070,20 +1066,8 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
         }
         let close = close?;
         let class_matches = |name: &str| match name {
-            "alnum" => candidate.is_ascii_alphanumeric(),
-            "alpha" => candidate.is_ascii_alphabetic(),
-            "blank" => candidate == ' ' || candidate == '\t',
-            "cntrl" => candidate.is_ascii_control(),
-            "digit" => candidate.is_ascii_digit(),
-            "graph" => candidate.is_ascii_graphic(),
-            "lower" => candidate.is_ascii_lowercase(),
-            "print" => candidate.is_ascii_graphic() || candidate == ' ',
-            "punct" => candidate.is_ascii_punctuation(),
-            "space" => candidate.is_ascii_whitespace(),
-            "upper" => candidate.is_ascii_uppercase(),
-            "xdigit" => candidate.is_ascii_hexdigit(),
-            "word" => candidate.is_ascii_alphanumeric() || candidate == '_',
-            _ => false,
+            "word" => candidate.is_alphanumeric() || candidate == '_',
+            _ => locale_class_matches(name, candidate),
         };
         let mut matched = false;
         let mut member = 0usize;
