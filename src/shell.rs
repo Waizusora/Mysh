@@ -950,7 +950,6 @@ fn locale_class_matches(name: &str, candidate: char) -> bool {
     extern "C" {
         fn iswalnum(value: u32) -> c_int;
         fn iswalpha(value: u32) -> c_int;
-        fn iswblank(value: u32) -> c_int;
         fn iswcntrl(value: u32) -> c_int;
         fn iswdigit(value: u32) -> c_int;
         fn iswgraph(value: u32) -> c_int;
@@ -967,7 +966,7 @@ fn locale_class_matches(name: &str, candidate: char) -> bool {
         match name {
             "alnum" => iswalnum(value) != 0,
             "alpha" => iswalpha(value) != 0,
-            "blank" => iswblank(value) != 0,
+            "blank" => candidate == ' ' || candidate == '\t',
             "cntrl" => iswcntrl(value) != 0,
             "digit" => iswdigit(value) != 0,
             "graph" => iswgraph(value) != 0,
