@@ -1437,11 +1437,11 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(
-            "show() { printf '<%s>\\\\n' \"$@\"; }; show 'one two' '' three",
+            "show() { printf '<%s>\\n' \"$@\"; }; show 'one two' '' three",
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "<one two>\\n<>\\n<three>\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "<one two>\n<>\n<three>\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
@@ -1452,11 +1452,11 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(
-            "show() { printf '[%s]\\\\n' pre\"$@\"post; }; show first second",
+            "show() { printf '[%s]\\n' pre\"$@\"post; }; show first second",
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "[prefirst]\\n[secondpost]\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "[prefirst]\n[secondpost]\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
@@ -1466,7 +1466,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(
-            "show() { printf '<%s>\\\\n' \"$@\"; }; show",
+            "show() { printf '<%s>\\n' \"$@\"; }; show",
             &mut output,
             &mut errors,
         ));
