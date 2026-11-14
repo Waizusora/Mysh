@@ -1821,7 +1821,7 @@ fn arithmetic_assignment_parts(expression: &str) -> Option<(String, String, Stri
         }
         if depth == 0 {
             let rest: String = chars[index..].iter().collect();
-            if let Some(operator) = operators.iter().find(|operator| rest.starts_with(**operator)) {
+            if let Some(operator) = operators.iter().find(|operator| rest.starts_with(*operator)) {
                 if *operator == "=" && (
                     chars.get(index + 1) == Some(&'=')
                     || index > 0 && matches!(chars[index - 1], '=' | '!' | '<' | '>')
