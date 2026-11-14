@@ -1782,6 +1782,36 @@ mod tests {
     }
 
     #[test]
+    fn command_substitution_expands_fields_and_removes_trailing_newlines() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo pre$(echo middle)post; echo $(echo one two); echo \"$(echo first; echo second)\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "premiddlepost\none two\nfirst\nsecond\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn command_substitution_uses_an_isolated_shell_environment() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_SUBSTITUTION_SCOPE=parent; echo \"$(export MYSH_SUBSTITUTION_SCOPE=child; echo isolated)\"; echo $MYSH_SUBSTITUTION_SCOPE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "isolated\nparent\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn nested_command_substitution_is_evaluated_recursively() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo $(echo $(echo nested))", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn reports_lexer_errors_without_exiting() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(shell.execute_line("echo 'unfinished", &mut output, &mut errors));
