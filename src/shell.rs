@@ -1082,7 +1082,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "selected\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "selected\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
@@ -1093,7 +1093,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("case item42 in item*) if true; then echo wildcard; fi ;; *) echo fallback ;; esac", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
@@ -1650,10 +1650,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         let multicall = directory.join("coreutils");
-        std::fs::write(&multicall, "#!/bin/sh\nprintf 'uutils:%s\\n' \"$@\"\n").unwrap();
+        std::fs::write(&multicall, "#!/bin/sh\nprintf 'uutils:%s\n' \"$@\"\n").unwrap();
         std::fs::set_permissions(&multicall, std::fs::Permissions::from_mode(0o755)).unwrap();
         let standalone = directory.join("cat");
-        std::fs::write(&standalone, "#!/bin/sh\nprintf 'standalone\\n'\n").unwrap();
+        std::fs::write(&standalone, "#!/bin/sh\nprintf 'standalone\n'\n").unwrap();
         std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let mut shell = Shell::new();
