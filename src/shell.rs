@@ -114,7 +114,7 @@ impl Shell {
             if token.is_unquoted_literal("if") {
                 depth += 1;
             } else if token.is_unquoted_literal("fi") {
-                if depth > 0 { depth -= 1; }
+                depth = depth.saturating_sub(1);
             } else if depth == 0 && token.is_unquoted_literal("then") {
                 if clause_body_start.is_some() || index == clause_start {
                     let _ = writeln!(stderr, "mysh: syntax error: malformed if condition");
