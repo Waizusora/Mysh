@@ -86,129 +86,77 @@ impl Shell {
         true
     }
 
-    fn execute_loop_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let statement = match crate::parser::parse_loop_statement(tokens) {
-            Ok(statement) => statement,
-            Err(message) => {
-                let _ = writeln!(stderr, "mysh: syntax error: {message}");
-                self.last_status = 2;
-                return true;
-            }
-        };
+    fn execute_loop_statement(&mut self, statement: &crate::parser::LoopStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         loop {
-            if !self.execute_word_list(&statement.condition, stdout, stderr) {
+            if !self.execute_compound_list(&statement.condition, stdout, stderr) {
                 return false;
             }
             let should_enter = match statement.kind {
                 crate::parser::LoopKind::While => self.last_status == 0,
                 crate::parser::LoopKind::Until => self.last_status != 0,
             };
-            if !should_enter { break; }
-            if !self.execute_compound_branch(&statement.body, stdout, stderr) {
+            if !should_enter {
+                break;
+            }
+            if !self.execute_compound_list(&statement.body, stdout, stderr) {
                 return false;
             }
         }
         true
     }
 
-    fn execute_if_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let statement = match crate::parser::parse_if_statement(tokens) {
-            Ok(statement) => statement,
-            Err(error) => {
-                let _ = writeln!(stderr, "mysh: syntax error: {error}");
-                self.last_status = 2;
-                return true;
-            }
-        };
-
-        for clause in statement.clauses {
-            if !self.execute_word_list(&clause.condition, stdout, stderr) {
+    fn execute_if_statement(&mut self, statement: &crate::parser::IfStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        for clause in &statement.clauses {
+            if !self.execute_compound_list(&clause.condition, stdout, stderr) {
                 return false;
             }
             if self.last_status == 0 {
-                return self.execute_compound_branch(&clause.body, stdout, stderr);
+                return self.execute_compound_list(&clause.body, stdout, stderr);
             }
         }
 
-        if let Some(branch) = statement.else_body {
-            return self.execute_compound_branch(&branch, stdout, stderr);
+        if let Some(branch) = &statement.else_body {
+            return self.execute_compound_list(branch, stdout, stderr);
         }
         true
     }
 
     fn execute_compound_branch(&mut self, branch: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let mut index = 0usize;
-        let mut next_operator = None;
-
-        while index < branch.len() {
-            while index < branch.len() && branch[index].is_unquoted_literal(";") {
-                index += 1;
-                next_operator = Some(ListOperator::Sequence);
+        let commands = match crate::parser::parse_compound_list(branch) {
+            Ok(commands) => commands,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
             }
-            if index >= branch.len() {
-                break;
-            }
+        };
+        self.execute_compound_list(&commands, stdout, stderr)
+    }
 
-            let start = index;
-            let end = if branch[index].is_unquoted_literal("if")
-                || branch[index].is_unquoted_literal("while")
-                || branch[index].is_unquoted_literal("until")
-            {
-                match crate::parser::compound_command_end(branch, index) {
-                    Ok(end) => end,
-                    Err(message) => {
-                        let _ = writeln!(stderr, "mysh: syntax error: {message}");
-                        self.last_status = 2;
-                        return true;
-                    }
-                }
-            } else {
-                let mut cursor = index;
-                while cursor < branch.len()
-                    && !branch[cursor].is_unquoted_literal(";")
-                    && !branch[cursor].is_unquoted_literal("&&")
-                    && !branch[cursor].is_unquoted_literal("||")
-                {
-                    cursor += 1;
-                }
-                cursor
-            };
-
-            let should_run = match next_operator {
+    fn execute_compound_list(&mut self, commands: &crate::parser::CompoundList, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        for entry in commands {
+            let should_run = match entry.connector {
                 None | Some(ListOperator::Sequence) => true,
                 Some(ListOperator::And) => self.last_status == 0,
                 Some(ListOperator::Or) => self.last_status != 0,
             };
-            if should_run {
-                let command = &branch[start..end];
-                let keep_running = if command.first().is_some_and(|word| word.is_unquoted_literal("if")) {
-                    self.execute_if_statement(command, stdout, stderr)
-                } else if command.first().is_some_and(|word| {
-                    word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
-                }) {
-                    self.execute_loop_statement(command, stdout, stderr)
-                } else {
-                    self.execute_word_list(command, stdout, stderr)
-                };
-                if !keep_running {
-                    return false;
-                }
+            if !should_run {
+                continue;
             }
-            index = end;
-            next_operator = None;
-            if index < branch.len() {
-                if branch[index].is_unquoted_literal(";") {
-                    next_operator = Some(ListOperator::Sequence);
-                } else if branch[index].is_unquoted_literal("&&") {
-                    next_operator = Some(ListOperator::And);
-                } else if branch[index].is_unquoted_literal("||") {
-                    next_operator = Some(ListOperator::Or);
-                } else {
-                    let _ = writeln!(stderr, "mysh: syntax error: unexpected token");
-                    self.last_status = 2;
-                    return true;
+
+            let keep_running = match &entry.command {
+                crate::parser::CompoundCommand::Simple(words) => {
+                    self.execute_word_list(words, stdout, stderr)
                 }
-                index += 1;
+                crate::parser::CompoundCommand::If(statement) => {
+                    self.execute_if_statement(statement, stdout, stderr)
+                }
+                crate::parser::CompoundCommand::Loop(statement) => {
+                    self.execute_loop_statement(statement, stdout, stderr)
+                }
+            };
+            if !keep_running {
+                return false;
             }
         }
         true
