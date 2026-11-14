@@ -187,6 +187,7 @@ pub enum CompoundCommand {
     If(IfStatement),
     Loop(LoopStatement),
     For(ForStatement),
+    BraceGroup(CompoundList),
 }
 
 /// One command and its connector to the preceding command.
@@ -461,7 +462,14 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         if tokens[index].is_unquoted_literal("{") || tokens[index].is_unquoted_literal("}") {
             return Err("brace groups are not implemented yet");
         }
-        let command = if is_reserved_word(tokens, index, "if")
+        let command = if tokens[index].is_unquoted_literal("{") {
+            index = compound_command_end(tokens, index)?;
+            let closing = index - 1;
+            if closing <= start + 1 || !tokens[closing - 1].is_unquoted_literal(";") {
+                return Err("brace group requires a non-empty list terminated by ';'");
+            }
+            CompoundCommand::BraceGroup(parse_compound_list(&tokens[start + 1..closing - 1])?)
+        } else if is_reserved_word(tokens, index, "if")
             || is_reserved_word(tokens, index, "while")
             || is_reserved_word(tokens, index, "until")
             || is_reserved_word(tokens, index, "for")
@@ -524,6 +532,21 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
     let Some(first) = tokens.get(start) else {
         return Err("expected compound command");
     };
+
+    if first.is_unquoted_literal("{") {
+        let mut depth = 1usize;
+        for index in start + 1..tokens.len() {
+            if tokens[index].is_unquoted_literal("{") {
+                depth += 1;
+            } else if tokens[index].is_unquoted_literal("}") {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(index + 1);
+                }
+            }
+        }
+        return Err("brace group requires a closing '}'");
+    }
 
     if first.is_unquoted_literal("if") && is_reserved_word(tokens, start, "if") {
         let mut depth = 0usize;
@@ -1072,5 +1095,36 @@ mod for_parser_tests {
         let tokens = lexer::lex("echo before; for item in x; do echo $item; done").unwrap();
         let parsed = parse_compound_list(&tokens).unwrap();
         assert!(matches!(&parsed[1].command, CompoundCommand::For(_)));
+    }
+}
+
+#[cfg(test)]
+mod brace_group_tests {
+    use super::{parse_compound_list, CompoundCommand, InputState, classify_input};
+    use crate::lexer;
+
+    #[test]
+    fn parses_nested_brace_groups_as_compound_nodes() {
+        let tokens = lexer::lex("{ echo outer; { echo inner; }; }").unwrap();
+        let parsed = parse_compound_list(&tokens).unwrap();
+        let CompoundCommand::BraceGroup(outer) = &parsed[0].command else { panic!("expected outer brace group"); };
+        assert_eq!(outer.len(), 2);
+        assert!(matches!(&outer[1].command, CompoundCommand::BraceGroup(_)));
+    }
+
+    #[test]
+    fn rejects_empty_unterminated_and_unterminated_list_brace_groups() {
+        for input in ["{ }", "{ echo missing", "{ echo missing }"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(parse_compound_list(&tokens).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn brace_group_boundary_stops_before_following_command() {
+        let tokens = lexer::lex("{ echo inside; }; echo outside").unwrap();
+        let end = super::compound_command_end(&tokens, 0).unwrap();
+        assert!(tokens[end - 1].is_unquoted_literal("}"));
+        assert!(tokens[end].is_unquoted_literal(";"));
     }
 }
