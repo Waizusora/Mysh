@@ -112,7 +112,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut subshell_depth = 0usize;
 
     for token in tokens {
-        if is_unsupported_operator(&token) {
+        if is_unsupported_operator(&token) || token.is_unquoted_literal(";;") {
             return Err("recognized shell operator is not implemented yet");
         }
         if token.is_unquoted_literal("{") {
@@ -222,6 +222,26 @@ mod command_structure_tests {
         ] {
             let tokens = lexer::lex(input).unwrap();
             assert!(split_pipeline(tokens).is_err(), "{input}");
+        }
+    }
+
+
+    #[test]
+    fn case_parser_builds_pattern_arms_and_nested_bodies() {
+        use super::{parse_compound_list, CompoundCommand};
+        let tokens = lexer::lex("case $value in one|two) echo first ;; *) if true; then echo fallback; fi ;; esac").unwrap();
+        let parsed = parse_compound_list(&tokens).unwrap();
+        let CompoundCommand::Case(statement) = &parsed[0].command else { panic!("expected case node"); };
+        assert_eq!(statement.arms.len(), 2);
+        assert_eq!(statement.arms[0].patterns.len(), 2);
+        assert!(matches!(&statement.arms[1].body[0].command, CompoundCommand::If(_)));
+    }
+
+    #[test]
+    fn case_parser_rejects_missing_patterns_and_closers() {
+        for input in ["case value in ) echo bad ;; esac", "case value in value) echo missing", "case value value) echo bad ;; esac"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(super::parse_compound_list(&tokens).is_err(), "{input}");
         }
     }
 
@@ -600,7 +620,7 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
     for index in start..tokens.len() {
         let token = &tokens[index];
         if brace_depth == 0 && subshell_depth == 0
-            && (token.is_unquoted_literal(";")
+            && (token.is_unquoted_literal(";;") || token.is_unquoted_literal(";")
                 || token.is_unquoted_literal("&&")
                 || token.is_unquoted_literal("||"))
         {
