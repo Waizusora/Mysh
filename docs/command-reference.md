@@ -71,3 +71,17 @@ The shell tracks shell variables separately from exported variables. `NAME=value
 ## Limitations
 
 Mysh is not yet POSIX-conformant. Concurrent pipelines, complete POSIX quoting and expansion phases, field splitting, pathname expansion, command substitution, `while` and `until` loops, `case`, functions, here-documents, job control, and persistent history remain unimplemented.
+## Target Command Ownership
+
+The target architecture is a POSIX.1-2024 shell with uutils Coreutils as the external provider for utilities it implements. This section distinguishes the current transitional implementation from the intended command ownership; it does not claim that migration is complete.
+
+- POSIX shell built-ins belong to Mysh and must implement the shell-state and execution semantics required by POSIX.
+- Utilities provided by uutils Coreutils must run as external commands resolved through PATH. Mysh must not keep duplicate implementations of those utilities after migration.
+- Utilities not provided by uutils are not automatically shell built-ins. They require a separate POSIX utility coverage decision.
+- Bash-only commands, syntax, and expansions are outside the supported language and command contract.
+
+### Migration status
+
+The built-in list and filesystem behavior documented above describe the current source tree. Filesystem commands such as ls, mkdir, rmdir, touch, cp, mv, rm, and cat are transitional implementations in Mysh and are planned to move to uutils external executables. Existing tests that depend on these transitional built-ins must be migrated to test the external utility layer before the implementations are removed.
+
+Mysh is not yet POSIX-conformant. The command reference must be updated as implementation and conformance tests land; a command appearing in this document is not by itself evidence of full POSIX behavior.
