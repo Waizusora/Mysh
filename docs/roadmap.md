@@ -35,7 +35,7 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; current grammar is partial.**
+**Status: In progress; lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
@@ -43,6 +43,8 @@ Scope:
 - Implement function definitions and invocation.
 - Support grammar nesting and valid compound commands in every permitted grammar position.
 - Preserve incremental interactive parsing for incomplete input while rejecting invalid syntax.
+- Recognize POSIX compound-command, case terminator, and descriptor-redirection operator tokens without treating quoted lookalikes as operators.
+- Reject descriptor-redirection forms that the current execution engine cannot implement, rather than passing them through as command arguments.
 - Define syntax-error handling and parser recovery without silently accepting malformed input.
 
 Exit criteria:
@@ -153,4 +155,4 @@ Exit criteria:
 
 ## Current implementation boundary
 
-The roadmap is not a statement that phases 1 through 7 are complete. The current implementation has a native execution foundation, initial compound-command support, basic expansion, buffered sequential pipelines, limited redirection, and a subset of built-ins. The README, architecture document, and command reference remain the source of detail about the current code. Update those documents whenever implementation changes materially alter this boundary.
+The roadmap is not a statement that phases 1 through 7 are complete. The current implementation has a native execution foundation, initial compound-command support, basic expansion, buffered sequential pipelines, limited redirection, and a subset of built-ins. The lexer recognizes a broader set of POSIX operators, while the parser explicitly rejects unsupported descriptor-redirection forms. The README, architecture document, and command reference remain the source of detail about the current code. Update those documents whenever implementation changes materially alter this boundary.
