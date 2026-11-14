@@ -2480,6 +2480,10 @@ mod tests {
         environment.insert("IFS".to_owned(), ":".to_owned());
         let word = crate::lexer::lex("$@").unwrap().remove(0);
         assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "right"]);
+        super::set_positional_parameters(&mut environment, &["left".to_owned(), "right".to_owned()]);
+        let word = crate::lexer::lex("pre$@post").unwrap().remove(0);
+        assert_eq!(expand_word_fields(&word, &environment, 0), ["preleft", "rightpost"]);
+        super::set_positional_parameters(&mut environment, &["left".to_owned(), String::new(), "right".to_owned()]);
         let word = crate::lexer::lex("$*").unwrap().remove(0);
         assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "", "right"]);
 
