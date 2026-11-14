@@ -87,6 +87,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Unified command-list parsing for complete compound-command spans and enabled implemented compound-command families as pipeline stages, including `if`, `case`, `for`, `while`, `until`, function definitions, brace groups, and subshells.
 - Made brace-group delimiter recognition context-sensitive so ordinary `{` and `}` arguments do not change parser nesting.
 - Added regression coverage for case-pattern alternation and compound commands on either side of a pipeline.
+- Preserved POSIX asynchronous-list (`&`) markers in command-list ASTs while explicitly deferring background execution to job-control work.
 - Added initial single-level, single-line `if` / `then` / optional `else` / `fi` compound command execution, selected using the condition's exit status.
 - Added regression tests for successful and failing conditions and malformed compound-command syntax.
 - Documented current limitations: nested `if` statements and multiline compound commands are not supported.
