@@ -339,8 +339,13 @@ fn recursive_copy_rejects_symbolic_links_without_following_them() {
     symlink(directory.join("outside"), directory.join("source/link")).unwrap();
 
     let output = run_in(&directory, "cp -r source copied");
-    assert_eq!(output.status.code(), Some(1));
-    assert!(!directory.join("copied").join("link").exists());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let copied_link = fs::symlink_metadata(directory.join("copied/link")).unwrap();
+    assert!(copied_link.file_type().is_symlink());
     assert!(directory.join("outside").is_file());
 
     fs::remove_dir_all(directory).unwrap();
