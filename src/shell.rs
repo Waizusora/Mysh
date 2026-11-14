@@ -2575,20 +2575,28 @@ mod tests {
         for name in ["alpha.txt", "alpine.txt", "beta.log", ".hidden.txt"] {
             std::fs::write(directory.join(name), "").unwrap();
         }
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&directory).unwrap();
         let environment = BTreeMap::new();
         let expand = |source: &str| {
             let word = crate::lexer::lex(source).unwrap().remove(0);
             expand_word_fields(&word, &environment, 0)
         };
-        assert_eq!(expand("al*.txt"), ["alpha.txt", "alpine.txt"]);
-        assert_eq!(expand("a?pha.txt"), ["alpha.txt"]);
-        assert_eq!(expand("[ab]eta.log"), ["beta.log"]);
-        assert_eq!(expand("missing-*.txt"), ["missing-*.txt"]);
+        let pattern = directory.join("al*.txt").to_string_lossy().into_owned();
+        let mut expected = vec![
+            directory.join("alpha.txt").to_string_lossy().into_owned(),
+            directory.join("alpine.txt").to_string_lossy().into_owned(),
+        ];
+        expected.sort();
+        assert_eq!(expand(&pattern), expected);
+        let pattern = directory.join("a?pha.txt").to_string_lossy().into_owned();
+        assert_eq!(expand(&pattern), [directory.join("alpha.txt").to_string_lossy().into_owned()]);
+        let pattern = directory.join("[ab]eta.log").to_string_lossy().into_owned();
+        assert_eq!(expand(&pattern), [directory.join("beta.log").to_string_lossy().into_owned()]);
+        let pattern = directory.join("missing-*.txt").to_string_lossy().into_owned();
+        assert_eq!(expand(&pattern), [pattern]);
         assert_eq!(expand(r#""*.txt""#), ["*.txt"]);
-        std::env::set_current_dir(original).unwrap();
+        let pattern = directory.join("*.txt").to_string_lossy().into_owned();
+        let hidden = directory.join(".hidden.txt").to_string_lossy().into_owned();
+        assert!(!expand(&pattern).contains(&hidden));
         std::fs::remove_dir_all(directory).unwrap();
     }
-
 }
