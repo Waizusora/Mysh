@@ -1246,4 +1246,24 @@ mod tests {
         assert!(output.is_empty());
         assert!(errors.is_empty());
     }
+
+    #[test]
+    fn loop_compound_can_be_sequenced_with_commands_and_nested_if() {
+        let marker = std::env::temp_dir().join(format!("mysh-loop-if-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "echo before; while test ! -e '{}'; do if test ! -e '{}'; then touch '{}'; echo inside; fi; done; echo after",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninside\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
 }
