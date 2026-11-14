@@ -144,7 +144,11 @@ impl Shell {
     }
 
     fn execute_for_statement(&mut self, statement: &crate::parser::ForStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let values: Vec<String> = statement.words.iter().map(|word| expand_word(word, &self.variables, self.last_status)).collect();
+        let values: Vec<String> = if statement.words.is_empty() {
+            positional_parameters(&self.variables)
+        } else {
+            statement.words.iter().map(|word| expand_word(word, &self.variables, self.last_status)).collect()
+        };
         self.loop_depth += 1;
         let mut keep_running = true;
         for value in values {
@@ -589,6 +593,34 @@ impl Shell {
                 StageOutcome::Exit(self.last_status)
             };
         }
+        if command[0] == "shift" {
+            if command.len() > 2 {
+                let _ = writeln!(err, "mysh: shift: expected at most one operand");
+                self.last_status = 2;
+                return StageOutcome::Continue(2);
+            }
+            let amount = match command.get(1) {
+                None => 1,
+                Some(value) => match value.parse::<usize>() {
+                    Ok(amount) => amount,
+                    Err(_) => {
+                        let _ = writeln!(err, "mysh: shift: operand must be a non-negative integer");
+                        self.last_status = 2;
+                        return StageOutcome::Continue(2);
+                    }
+                },
+            };
+            let count = positional_count(&self.variables);
+            if amount > count {
+                let _ = writeln!(err, "mysh: shift: amount exceeds positional parameter count");
+                self.last_status = 1;
+                return StageOutcome::Continue(1);
+            }
+            let remaining = positional_parameters(&self.variables).into_iter().skip(amount).collect::<Vec<_>>();
+            set_positional_parameters(&mut self.variables, &remaining);
+            self.last_status = 0;
+            return StageOutcome::Continue(0);
+        }
         if command[0] == "return" {
             if self.function_depth == 0 {
                 let _ = writeln!(err, "mysh: return: not in a function");
@@ -621,15 +653,8 @@ impl Shell {
             }
         }
         if let Some(function_body) = self.functions.get(&command[0]).cloned() {
-            let saved_positionals: Vec<(String, Option<String>)> = (1..=9)
-                .map(|index| (index.to_string(), self.variables.get(&index.to_string()).cloned()))
-                .chain(std::iter::once(("#".to_owned(), self.variables.get("#").cloned())))
-                .collect();
-            for index in 1..=9 {
-                let value = command.get(index).cloned().unwrap_or_default();
-                self.variables.insert(index.to_string(), value);
-            }
-            self.variables.insert("#".to_owned(), command.len().saturating_sub(1).to_string());
+            let saved_positionals = positional_parameters(&self.variables);
+            set_positional_parameters(&mut self.variables, &command[1..]);
             let entries = vec![CompoundListEntry { command: function_body, connector: None }];
             self.function_depth += 1;
             let keep_running = self.execute_compound_list(&entries, out, err);
@@ -637,13 +662,7 @@ impl Shell {
             if let Some(status) = self.function_return.take() {
                 self.last_status = status;
             }
-            for (name, value) in saved_positionals {
-                if let Some(value) = value {
-                    self.variables.insert(name, value);
-                } else {
-                    self.variables.remove(&name);
-                }
-            }
+            set_positional_parameters(&mut self.variables, &saved_positionals);
             return if keep_running {
                 StageOutcome::Continue(self.last_status)
             } else {
@@ -858,7 +877,7 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
 /// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
 /// deliberately dispatched as external commands so uutils can provide them.
 fn is_shell_builtin(name: &str) -> bool {
-    matches!(name, ":" | "." | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue" | "return")
+    matches!(name, ":" | "." | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue" | "return" | "shift")
 }
 
 /// Utilities compiled into the pinned uutils 0.12.0 Android feature set.
@@ -886,7 +905,7 @@ fn is_uutils_utility(name: &str) -> bool {
 
 /// POSIX special built-ins execute in the current shell environment.
 fn is_special_builtin(name: &str) -> bool {
-    matches!(name, ":" | "." | "break" | "continue" | "eval" | "exit" | "export" | "unset" | "return")
+    matches!(name, ":" | "." | "break" | "continue" | "eval" | "exit" | "export" | "unset" | "return" | "shift")
 }
 
 fn assignment(value: &str) -> Option<(&str, &str)> {
@@ -898,6 +917,27 @@ fn assignment(value: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((name, assigned))
+}
+
+fn positional_count(environment: &BTreeMap<String, String>) -> usize {
+    environment.get("#").and_then(|value| value.parse::<usize>().ok()).unwrap_or(0)
+}
+
+fn positional_parameters(environment: &BTreeMap<String, String>) -> Vec<String> {
+    (1..=positional_count(environment))
+        .map(|index| environment.get(&index.to_string()).cloned().unwrap_or_default())
+        .collect()
+}
+
+fn set_positional_parameters(environment: &mut BTreeMap<String, String>, parameters: &[String]) {
+    let old_count = positional_count(environment);
+    for index in 1..=old_count.max(parameters.len()) {
+        environment.remove(&index.to_string());
+    }
+    for (index, value) in parameters.iter().enumerate() {
+        environment.insert((index + 1).to_string(), value.clone());
+    }
+    environment.insert("#".to_owned(), parameters.len().to_string());
 }
 
 fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> String {
@@ -971,6 +1011,14 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             continue;
         }
 
+        if chars.get(index + 1).is_some_and(|character| matches!(character, '@' | '*')) {
+            let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+            let joined = positional_parameters(environment).join(&separator.to_string());
+            result.push_str(&joined);
+            index += 2;
+            continue;
+        }
+
         if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
             let name = chars[index + 1].to_string();
             result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
@@ -986,6 +1034,9 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
                     result.push_str(&last_status.to_string());
                 } else if name == "#" {
                     result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+                } else if name == "@" || name == "*" {
+                    let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+                    result.push_str(&positional_parameters(environment).join(&separator.to_string()));
                 } else if (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
                     || valid_parameter_name(&name)
                 {
@@ -1332,6 +1383,50 @@ mod tests {
         ));
         assert_eq!(String::from_utf8(output).unwrap(), "alpha beta 2\n 0\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn shift_updates_positional_parameters_and_count() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $1:$2:$#; shift; echo $1:$2:$#; }; show alpha beta gamma", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha:beta:3\\nbeta:gamma:2\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn shift_inside_nested_function_restores_outer_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("inner() { shift; echo $1:$#; }; outer() { inner x y; echo $1:$2:$#; }; outer a b c", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "y:1\\na:b:3\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn positional_star_and_at_expand_using_ifs_separator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $*; echo $@; }; show one two three", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one two three\\none two three\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn for_without_word_list_iterates_over_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("iterate() { for item; do echo $item; done; }; iterate first second third", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\\nsecond\\nthird\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
     }
 
     #[test]
