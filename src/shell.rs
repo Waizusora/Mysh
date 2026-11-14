@@ -1063,10 +1063,11 @@ fn initialize_shell_locale() {
         fn setlocale(category: i32, locale: *const std::ffi::c_char) -> *mut std::ffi::c_char;
     }
     INITIALIZE.call_once(|| unsafe {
-        // LC_CTYPE is zero on POSIX. An empty locale name selects the
-        // process environment (LC_ALL, LC_CTYPE, then LANG).
-        let empty = b"\\0";
+        // POSIX LC_CTYPE is zero and LC_COLLATE is three. An empty
+        // locale name selects the process environment for both categories.
+        let empty = b"\0";
         let _ = setlocale(0, empty.as_ptr().cast());
+        let _ = setlocale(3, empty.as_ptr().cast());
     });
 }
 
