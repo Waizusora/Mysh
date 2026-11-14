@@ -952,8 +952,7 @@ fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status:
     expanded
 }
 
-/// Expand a word into its argument fields, preserving the boundaries produced
-/// by a quoted positional-parameter expansion.
+/// Expand a word into its argument fields, preserving quoted positional-parameter boundaries.
 fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
     let mut fields = vec![String::new()];
     let mut expanded_at = false;
@@ -963,7 +962,38 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
             let mut index = 0;
             let mut literal_start = 0;
             while index < characters.len() {
-                let marker_len = if characters.get(index..index + 2) == Some(&['
+                let short_at = characters.get(index) == Some(&'$') && characters.get(index + 1) == Some(&'@');
+                let braced_at = characters.get(index) == Some(&'$') && characters.get(index + 1) == Some(&'{') && characters.get(index + 2) == Some(&'@') && characters.get(index + 3) == Some(&'}');
+                let marker_len = if short_at { 2 } else if braced_at { 4 } else { 0 };
+                if marker_len == 0 { index += 1; continue; }
+                if literal_start < index {
+                    let literal: String = characters[literal_start..index].iter().collect();
+                    fields.last_mut().expect("an expansion field exists").push_str(&expand_variables(&literal, environment, last_status));
+                }
+                let parameters = positional_parameters(environment);
+                expanded_at = true;
+                if let Some(first) = parameters.first() {
+                    fields.last_mut().expect("an expansion field exists").push_str(first);
+                    fields.extend(parameters.into_iter().skip(1));
+                }
+                index += marker_len;
+                literal_start = index;
+            }
+            if literal_start < characters.len() {
+                let literal: String = characters[literal_start..].iter().collect();
+                fields.last_mut().expect("an expansion field exists").push_str(&expand_variables(&literal, environment, last_status));
+            }
+        } else {
+            let value = if part.expandable { expand_variables(&part.text, environment, last_status) } else { part.text.clone() };
+            fields.last_mut().expect("an expansion field exists").push_str(&value);
+        }
+    }
+    if expanded_at && positional_count(environment) == 0 && word.parts().len() == 1 && word.parts()[0].quoted && (word.parts()[0].text == "$@" || word.parts()[0].text == "${@}") {
+        return Vec::new();
+    }
+    if word.parts().is_empty() && word.is_quoted() { return vec![String::new()]; }
+    fields
+}
 
 fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
