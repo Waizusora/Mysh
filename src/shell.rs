@@ -192,10 +192,86 @@ impl Shell {
     }
 
     fn execute_compound_branch(&mut self, branch: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        if branch.first().is_some_and(|word| word.is_unquoted_literal("if")) {
-            return self.execute_if_statement(branch, stdout, stderr);
+        let mut index = 0usize;
+        let mut next_operator = None;
+
+        while index < branch.len() {
+            while index < branch.len() && branch[index].is_unquoted_literal(";") {
+                index += 1;
+                next_operator = Some(ListOperator::Sequence);
+            }
+            if index >= branch.len() {
+                break;
+            }
+
+            let start = index;
+            let end;
+            if branch[index].is_unquoted_literal("if") {
+                let mut depth = 0usize;
+                let mut matching_fi = None;
+                for (offset, token) in branch.iter().enumerate().skip(index + 1) {
+                    if token.is_unquoted_literal("if") {
+                        depth += 1;
+                    } else if token.is_unquoted_literal("fi") {
+                        if depth == 0 {
+                            matching_fi = Some(offset);
+                            break;
+                        }
+                        depth -= 1;
+                    }
+                }
+                let Some(fi_index) = matching_fi else {
+                    let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
+                    self.last_status = 2;
+                    return true;
+                };
+                end = fi_index + 1;
+            } else {
+                let mut cursor = index;
+                while cursor < branch.len()
+                    && !branch[cursor].is_unquoted_literal(";")
+                    && !branch[cursor].is_unquoted_literal("&&")
+                    && !branch[cursor].is_unquoted_literal("||")
+                {
+                    cursor += 1;
+                }
+                end = cursor;
+            }
+
+            let should_run = match next_operator {
+                None | Some(ListOperator::Sequence) => true,
+                Some(ListOperator::And) => self.last_status == 0,
+                Some(ListOperator::Or) => self.last_status != 0,
+            };
+            if should_run {
+                let command = &branch[start..end];
+                let keep_running = if command.first().is_some_and(|word| word.is_unquoted_literal("if")) {
+                    self.execute_if_statement(command, stdout, stderr)
+                } else {
+                    self.execute_word_list(command, stdout, stderr)
+                };
+                if !keep_running {
+                    return false;
+                }
+            }
+            index = end;
+            next_operator = None;
+            if index < branch.len() {
+                if branch[index].is_unquoted_literal(";") {
+                    next_operator = Some(ListOperator::Sequence);
+                } else if branch[index].is_unquoted_literal("&&") {
+                    next_operator = Some(ListOperator::And);
+                } else if branch[index].is_unquoted_literal("||") {
+                    next_operator = Some(ListOperator::Or);
+                } else {
+                    let _ = writeln!(stderr, "mysh: syntax error: unexpected token");
+                    self.last_status = 2;
+                    return true;
+                }
+                index += 1;
+            }
         }
-        self.execute_word_list(branch, stdout, stderr)
+        true
     }
 
     fn execute_word_list(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
