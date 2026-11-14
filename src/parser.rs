@@ -900,6 +900,34 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
     tokens.len()
 }
 
+/// Find the end of a pipeline whose first stage is already parsed as a compound command.
+fn pipeline_segment_end_after_compound(
+    tokens: &[Word],
+    first_compound_end: usize,
+) -> Result<usize, &'static str> {
+    let mut index = first_compound_end;
+    while index < tokens.len() {
+        if tokens[index].is_unquoted_literal(";")
+            || tokens[index].is_unquoted_literal("&&")
+            || tokens[index].is_unquoted_literal("||")
+        {
+            return Ok(index);
+        }
+        if tokens[index].is_unquoted_literal("|") {
+            index += 1;
+            if index >= tokens.len() {
+                return Err("pipeline cannot end with |");
+            }
+            if is_compound_command_start(tokens, index) {
+                index = compound_command_end(tokens, index)?;
+            }
+        } else {
+            index += 1;
+        }
+    }
+    Ok(tokens.len())
+}
+
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
     if tokens.iter().any(|token| {
@@ -926,23 +954,32 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
 
         let start = index;
         let command = if is_function_definition_start(tokens, index) {
-            let name = tokens[index].literal_value();
             let body_start = index + 3;
             let body_end = compound_command_end(tokens, body_start)?;
-            let body_entries = parse_compound_list(&tokens[body_start..body_end])?;
-            if body_entries.len() != 1 || body_entries[0].connector.is_some() {
-                return Err("function body must be one compound command");
+            if tokens.get(body_end).is_some_and(|word| word.is_unquoted_literal("|")) {
+                index = pipeline_segment_end_after_compound(tokens, body_end)?;
+                let pipeline_words = tokens[start..index].to_vec();
+                split_pipeline(pipeline_words.clone())?;
+                CompoundCommand::Simple(pipeline_words)
+            } else {
+                let name = tokens[index].literal_value();
+                let body_entries = parse_compound_list(&tokens[body_start..body_end])?;
+                if body_entries.len() != 1 || body_entries[0].connector.is_some() {
+                    return Err("function body must be one compound command");
+                }
+                index = body_end;
+                CompoundCommand::FunctionDefinition(FunctionDefinition {
+                    name,
+                    body: Box::new(body_entries[0].command.clone()),
+                })
             }
-            index = body_end;
-            CompoundCommand::FunctionDefinition(FunctionDefinition {
-                name,
-                body: Box::new(body_entries[0].command.clone()),
-            })
         } else if tokens[index].is_unquoted_literal("(") {
             index = compound_command_end(tokens, index)?;
             if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("|")) {
-                index = command_segment_end(tokens, start);
-                CompoundCommand::Simple(tokens[start..index].to_vec())
+                index = pipeline_segment_end_after_compound(tokens, index)?;
+                let pipeline_words = tokens[start..index].to_vec();
+                split_pipeline(pipeline_words.clone())?;
+                CompoundCommand::Simple(pipeline_words)
             } else {
                 let closing = index - 1;
                 let body = &tokens[start + 1..closing];
@@ -969,16 +1006,24 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
             || is_reserved_word(tokens, index, "for")
             || is_reserved_word(tokens, index, "case")
         {
-            index = compound_command_end(tokens, index)?;
-            let segment = &tokens[start..index];
-            if is_reserved_word(tokens, start, "if") {
-                CompoundCommand::If(parse_if_statement(segment)?)
-            } else if is_reserved_word(tokens, start, "for") {
-                CompoundCommand::For(parse_for_statement(segment)?)
-            } else if is_reserved_word(tokens, start, "case") {
-                CompoundCommand::Case(parse_case_statement(segment)?)
+            let compound_end = compound_command_end(tokens, index)?;
+            if tokens.get(compound_end).is_some_and(|word| word.is_unquoted_literal("|")) {
+                index = pipeline_segment_end_after_compound(tokens, compound_end)?;
+                let pipeline_words = tokens[start..index].to_vec();
+                split_pipeline(pipeline_words.clone())?;
+                CompoundCommand::Simple(pipeline_words)
             } else {
-                CompoundCommand::Loop(parse_loop_statement(segment)?)
+                index = compound_end;
+                let segment = &tokens[start..index];
+                if is_reserved_word(tokens, start, "if") {
+                    CompoundCommand::If(parse_if_statement(segment)?)
+                } else if is_reserved_word(tokens, start, "for") {
+                    CompoundCommand::For(parse_for_statement(segment)?)
+                } else if is_reserved_word(tokens, start, "case") {
+                    CompoundCommand::Case(parse_case_statement(segment)?)
+                } else {
+                    CompoundCommand::Loop(parse_loop_statement(segment)?)
+                }
             }
         } else {
             index = command_segment_end(tokens, start);
