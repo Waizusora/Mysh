@@ -2485,7 +2485,7 @@ mod tests {
 
         environment.insert("IFS".to_owned(), String::new());
         let word = crate::lexer::lex("$@").unwrap().remove(0);
-        assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "", "right"]);
+        assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "right"]);
         let word = crate::lexer::lex("$*").unwrap().remove(0);
         assert_eq!(expand_word_fields(&word, &environment, 0), ["leftright"]);
     }
