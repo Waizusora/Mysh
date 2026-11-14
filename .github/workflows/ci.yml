@@ -112,6 +112,7 @@ jobs:
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
             glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            printf 'Bionic pathname expansion output: <%s>\\n' "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
