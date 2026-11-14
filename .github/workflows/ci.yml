@@ -73,7 +73,7 @@ jobs:
           ref: dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69
           path: .build/uutils-coreutils
       - name: Build uutils Coreutils
-        run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --features feat_os_unix_android
+        run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_Tier1,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Build MYPK executable
