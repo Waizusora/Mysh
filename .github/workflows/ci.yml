@@ -99,8 +99,9 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          arch: ${{ matrix.abi == 'arm64-v8a' && 'arm64-v8a' || 'x86_64' }}
-          profile: pixel_2
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
           disable-animations: true
           script: |
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
@@ -110,9 +111,13 @@ jobs:
             output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
-            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            adb shell ls -la /data/local/tmp/mysh-glob
+            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"
             printf 'Bionic pathname expansion output: <%s>\\n' "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
+            class_glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
+            test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Package Android runtime
