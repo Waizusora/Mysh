@@ -523,7 +523,7 @@ impl Shell {
     }
 
     fn parse_redirections_runtime(
-        &self,
+        &mut self,
         tokens: &[Word],
         stderr: &mut dyn Write,
     ) -> Result<(Vec<String>, Redirections), &'static str> {
@@ -537,6 +537,7 @@ impl Shell {
                 .find(|operator| token.is_unquoted_literal(operator));
             if let Some(operator) = operator {
                 let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+                apply_arithmetic_assignments(std::slice::from_ref(target), &mut self.variables);
                 let target = self.expand_word_scalar_runtime(target, stderr);
                 match operator {
                     "<" => redirects.input = Some(target),
@@ -547,6 +548,7 @@ impl Shell {
                 }
                 index += 2;
             } else {
+                apply_arithmetic_assignments(std::slice::from_ref(token), &mut self.variables);
                 command.extend(self.expand_word_fields_runtime(token, stderr));
                 index += 1;
             }
