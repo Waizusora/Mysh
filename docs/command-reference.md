@@ -64,7 +64,7 @@ Basic redirection operators \`<\`, \`>\`, \`>>\`, and \`2>\` are recognized. Oth
 
 The shell tracks shell variables separately from exported variables. \`NAME=value\` creates or updates a persistent shell variable without exporting it. \`NAME=value command\` applies a temporary assignment to that command invocation. Assignments preceding implemented POSIX special built-ins persist in the current shell environment. External commands receive only exported variables.
 
-When \`MYSH_PREFIX\` is set and \`$MYSH_PREFIX/bin\` exists, Mysh prepends that directory to \`PATH\` at startup. Pipeline stages currently use isolated snapshots, and pipelines remain sequential and buffered.
+When \`MYSH_PREFIX\` is set and \`$MYSH_PREFIX/bin\` exists, Mysh prepends that directory to \`PATH\` at startup. Multi-stage pipeline stages use isolated snapshots, including brace-group and subshell stages. Pipeline execution remains sequential and buffered; compound stages currently support output into a following simple stage, but do not yet receive the preceding stage's input.
 
 Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-exit-status parameter \`$?\` / \`\${?}\` are currently substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: positional parameters, parameter operators, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
 
