@@ -941,7 +941,7 @@ mod tests {
             &mut errors,
         ));
         assert_eq!(String::from_utf8(output).unwrap(), "before\ninner\nnested\nafter\n");
-        assert!(errors.is_empty());
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
         assert_eq!(shell.last_status(), 0);
     }
 
