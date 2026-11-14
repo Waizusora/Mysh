@@ -2154,7 +2154,7 @@ mod tests {
 
     #[test]
     fn passwd_home_lookup_matches_exact_user_field() {
-        let passwd = "root:x:0:0:root:/root:/bin/sh\\nalice:x:1000:1000:Alice:/home/alice:/bin/sh";
+        let passwd = "root:x:0:0:root:/root:/bin/sh\nalice:x:1000:1000:Alice:/home/alice:/bin/sh";
         assert_eq!(super::passwd_home("alice", passwd).as_deref(), Some("/home/alice"));
         assert_eq!(super::passwd_home("ali", passwd), None);
         assert_eq!(super::passwd_home("missing", passwd), None);
