@@ -2664,9 +2664,6 @@ mod tests {
         }
     }
 
-    if can_reconstruct && encoded_pattern != word.literal_value() {
-        return fields;
-    }
     let patterns: Vec<String> = if can_reconstruct {
         fields.iter().map(|_| encoded_pattern.clone()).collect()
     } else {
