@@ -1192,6 +1192,40 @@ mod tests {
     }
 
     #[test]
+    fn brace_group_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ echo one; echo two; } | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn subshell_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("( echo hello ) | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_compound_stage_does_not_leak_shell_state() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ export MYSH_PIPE_GROUP=value; echo inside; } | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo $MYSH_PIPE_GROUP", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inside\n\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_GROUP"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn pipeline_passes_external_cat_stdin() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
