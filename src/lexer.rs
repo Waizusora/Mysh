@@ -148,9 +148,59 @@ fn consume_parameter_expansion<I: Iterator<Item = char>>(
     word: &mut Word,
     quoted: bool,
 ) -> Result<(), LexError> {
-    word.push('
+    word.push(char::from(36), true, quoted);
+    if characters.next() != Some('{') {
+        return Err(LexError("invalid parameter expansion opener"));
+    }
+    word.push('{', true, quoted);
+
+    let mut quote: Option<u32> = None;
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        let code = character as u32;
+        if escaped {
+            word.push(character, true, quoted);
+            escaped = false;
+            continue;
+        }
+        if quote == Some(34) && code == 92 {
+            word.push(character, true, quoted);
+            if characters.peek().is_some_and(|next| matches!(*next as u32, 36 | 96 | 34 | 92 | 10)) {
+                escaped = true;
+            }
+            continue;
+        }
+        if quote == Some(39) {
+            word.push(character, true, quoted);
+            if code == 39 { quote = None; }
+            continue;
+        }
+        if quote == Some(34) {
+            match code {
+                34 => { word.push(character, true, quoted); quote = None; }
+                36 if characters.peek() == Some(&'{') => consume_parameter_expansion(characters, word, quoted)?,
+                36 if characters.peek() == Some(&'(') => consume_dollar_parenthesis(characters, word, quoted)?,
+                96 => consume_backquote_substitution(characters, word, quoted)?,
+                _ => word.push(character, true, quoted),
+            }
+            continue;
+        }
+        match code {
+            39 | 34 => { word.push(character, true, quoted); quote = Some(code); }
+            92 => { word.push(character, true, quoted); escaped = true; }
+            36 if characters.peek() == Some(&'{') => consume_parameter_expansion(characters, word, quoted)?,
+            36 if characters.peek() == Some(&'(') => consume_dollar_parenthesis(characters, word, quoted)?,
+            96 => consume_backquote_substitution(characters, word, quoted)?,
+            125 => { word.push(character, true, quoted); return Ok(()); }
+            _ => word.push(character, true, quoted),
+        }
+    }
+    Err(LexError("unterminated parameter expansion"))
+}
+
+/// Split a command line into words while retaining quote and escape metadata.
 ///
-/// This is a lexical foundation, not a complete POSIX shell parser. Operator
+/// /// This is a lexical foundation, not a complete POSIX shell parser. Operator
 /// recognition and grammar parsing are handled by later parser stages.
 #[allow(clippy::while_let_on_iterator)]
 pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
