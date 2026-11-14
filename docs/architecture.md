@@ -63,7 +63,6 @@ The committed BSD target is FreeBSD only. Support for OpenBSD or NetBSD is not c
 | --- | --- |
 | ARMv8-A / arm64-v8a | `aarch64-linux-android` |
 | x86-64 / x86_64 | `x86_64-linux-android` |
-| x86-64 / x86_64 | `x86_64-linux-android` |
 
 Android executables are linked directly as standalone ELF binaries against Android's Bionic C library. CI uses the NDK LLVM toolchain's API-level Clang linker wrappers and Cargo's Rust Android target configuration. The build does not produce an Android shared library, JNI module, or APK.
 
