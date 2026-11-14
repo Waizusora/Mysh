@@ -525,7 +525,7 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
 /// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
 /// deliberately dispatched as external commands so uutils can provide them.
 fn is_shell_builtin(name: &str) -> bool {
-    matches!(name, "cd" | "export" | "unset" | "pwd" | "exit" | "break" | "continue")
+    matches!(name, ":" | "cd" | "export" | "unset" | "pwd" | "exit" | "break" | "continue")
 }
 
 /// POSIX special built-ins execute in the current shell environment.
@@ -667,7 +667,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
-    fn executes_builtin_commands() {
+    fn executes_external_echo_utility() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(shell.execute_line("echo hello", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
@@ -1014,7 +1014,7 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_passes_builtin_output_to_cat_stdin() {
+    fn pipeline_passes_external_cat_stdin() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
@@ -1051,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_passes_input_through_multiple_builtin_stages() {
+    fn pipeline_passes_input_through_external_utility_stages() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
@@ -1321,7 +1321,7 @@ mod tests {
     fn only_posix_shell_builtins_are_dispatched_in_process() {
         use super::is_shell_builtin;
 
-        for name in ["cd", "pwd", "export", "unset", "exit", "break", "continue"] {
+        for name in [":", "cd", "pwd", "export", "unset", "exit", "break", "continue"] {
             assert!(is_shell_builtin(name), "{name}");
         }
         for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
