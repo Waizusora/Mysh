@@ -57,7 +57,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 /// Return true for POSIX operators that the lexer recognizes but the
 /// current execution engine does not implement yet.
 fn is_unsupported_operator(token: &Word) -> bool {
-    if [")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
+    if [";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
         .iter()
         .any(|operator| token.is_unquoted_literal(operator))
     {
@@ -94,6 +94,9 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         } else { stages.last_mut().expect("pipeline has a stage").push(token); }
     }
     if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
+    if stages.iter().flatten().any(|word| word.is_unquoted_literal("(") || word.is_unquoted_literal(")")) {
+        return Err("subshell delimiters must form a complete compound command");
+    }
     if stages.first().and_then(|stage| stage.first()).is_some_and(|word| {
         word.is_unquoted_literal("!")
             || word.is_unquoted_literal("{")
