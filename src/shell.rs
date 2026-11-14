@@ -1037,10 +1037,16 @@ fn locale_compare_strings(left: &str, right: &str) -> std::cmp::Ordering {
 }
 
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
-    fn bracket_matches(expression: &[char], candidate: char) -> Option<(bool, usize)> {
-        #[derive(Clone)]
-        enum Member { Character(char), Class(String) }
-        if expression.first() != Some(&'[') { return None; }
+    #[derive(Clone)]
+    enum Member {
+        Character(char),
+        Class(String),
+        Collating(String),
+        Equivalence(String),
+    }
+
+    fn bracket_matches(expression: &[char], value: &[char]) -> Option<(bool, usize, usize)> {
+        if expression.first() != Some(&'[') || value.is_empty() { return None; }
         let mut index = 1usize;
         let negate = expression.get(index).is_some_and(|character| *character == '!' || *character == '^');
         if negate { index += 1; }
@@ -1052,23 +1058,38 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
         let mut close = None;
         while index < expression.len() {
             if expression[index] == ']' { close = Some(index); break; }
-            if expression[index] == '[' && expression.get(index + 1) == Some(&':') {
-                if let Some(offset) = expression[index + 2..].windows(2).position(|pair| pair == [':', ']']) {
-                    let name: String = expression[index + 2..index + 2 + offset].iter().collect();
-                    members.push(Member::Class(name));
-                    index += offset + 4;
-                    continue;
+            if expression[index] == '[' {
+                let marker = expression.get(index + 1).copied();
+                let terminator = match marker {
+                    Some(':') => Some(':'),
+                    Some('.') => Some('.'),
+                    Some('=') => Some('='),
+                    _ => None,
+                };
+                if let Some(terminator) = terminator {
+                    let tail = index + 2;
+                    if let Some(offset) = expression[tail..].windows(2)
+                        .position(|pair| pair == [terminator, ']'])
+                    {
+                        let name: String = expression[tail..tail + offset].iter().collect();
+                        match marker.unwrap() {
+                            ':' => members.push(Member::Class(name)),
+                            '.' => members.push(Member::Collating(name)),
+                            '=' => members.push(Member::Equivalence(name)),
+                            _ => unreachable!(),
+                        }
+                        index = tail + offset + 2;
+                        continue;
+                    }
                 }
             }
             members.push(Member::Character(expression[index]));
             index += 1;
         }
         let close = close?;
-        let class_matches = |name: &str| match name {
-            "word" => candidate.is_alphanumeric() || candidate == '_',
-            _ => locale_class_matches(name, candidate),
-        };
+        let candidate = value[0];
         let mut matched = false;
+        let mut consumed_value = 1usize;
         let mut member = 0usize;
         while member < members.len() {
             match &members[member] {
@@ -1085,11 +1106,31 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                     }
                     member += 3;
                 }
-                Member::Character(character) => { matched |= *character == candidate; member += 1; }
-                Member::Class(name) => { matched |= class_matches(name); member += 1; }
+                Member::Character(character) => {
+                    matched |= *character == candidate;
+                    member += 1;
+                }
+                Member::Class(name) => {
+                    matched |= match name.as_str() {
+                        "word" => candidate.is_alphanumeric() || candidate == '_',
+                        _ => locale_class_matches(name, candidate),
+                    };
+                    member += 1;
+                }
+                Member::Collating(symbol) | Member::Equivalence(symbol) => {
+                    let max = symbol.chars().count().max(1).min(value.len());
+                    for length in 1..=max {
+                        let candidate_element: String = value[..length].iter().collect();
+                        if locale_compare_strings(&candidate_element, symbol) == std::cmp::Ordering::Equal {
+                            matched = true;
+                            consumed_value = consumed_value.max(length);
+                        }
+                    }
+                    member += 1;
+                }
             }
         }
-        Some((if negate { !matched } else { matched }, close + 1))
+        Some((if negate { !matched } else { matched }, close + 1, if matched { consumed_value } else { 1 }))
     }
 
     fn matches(pattern: &[char], value: &[char]) -> bool {
@@ -1098,8 +1139,8 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
             '*' => (0..=value.len()).any(|offset| matches(&pattern[1..], &value[offset..])),
             '?' => !value.is_empty() && matches(&pattern[1..], &value[1..]),
             '[' if !value.is_empty() => {
-                if let Some((matched, consumed)) = bracket_matches(pattern, value[0]) {
-                    matched && matches(&pattern[consumed..], &value[1..])
+                if let Some((matched, pattern_consumed, value_consumed)) = bracket_matches(pattern, value) {
+                    matched && matches(&pattern[pattern_consumed..], &value[value_consumed..])
                 } else {
                     value[0] == '[' && matches(&pattern[1..], &value[1..])
                 }
@@ -1112,7 +1153,7 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                     other => other,
                 };
                 !value.is_empty() && literal == value[0] && matches(&pattern[1..], &value[1..])
-            },
+            }
         }
     }
 
