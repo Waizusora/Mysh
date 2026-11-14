@@ -101,9 +101,9 @@ CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/x86_64-linux-android21-
 
 Each executable is emitted under its Rust target directory in `target/<target-triple>/release/mysh`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
 
-The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils and MYPK for each ABI and publishes a runtime archive named `mysh-runtime-<abi>.tar.gz`. The archive contains `usr/bin/mysh`, `usr/bin/coreutils`, and `usr/bin/mypk`.
+The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils and MYPK for each ABI and publishes a runtime archive named `mysh-runtime-<abi>.tar.gz`. The archive contains `bin/mysh`, `bin/coreutils`, and `bin/mypk`.
 
-Extract the archive into the Android application's private files directory (for example, `<filesDir>/usr`). Set `MYSH_PREFIX` to that `usr` directory in the environment used to launch Mysh. Mysh then prepends `<MYSH_PREFIX>/bin` to `PATH`. The archive is not an APK; the Android application is responsible for extraction and must comply with platform executable-file policies.
+Extract the archive into the Android application's private files directory (`<filesDir>`). Set `MYSH_PREFIX` to `<filesDir>` in the environment used to launch Mysh. Mysh then prepends `<MYSH_PREFIX>/bin` to `PATH`. The archive is not an APK; the Android application is responsible for extraction and must comply with platform executable-file policies.
 
 
 ## Usage
