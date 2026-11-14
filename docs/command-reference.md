@@ -54,7 +54,7 @@ These rules are partial and do not yet implement the complete POSIX token-recogn
 
 ## Command lists, pipelines, and redirections
 
-The command-list parser supports sequential commands separated by \`;\`, plus left-associative conditional lists using \`&&\` and \`||\`. The implemented \`if\` evaluator accepts \`if\`, \`elif\`, and \`else\` clauses, including nested and multiline input. \`for\`, \`while\`, and \`until\` compound commands are partially implemented. Reserved words are recognized only at command boundaries; quoted and escaped keyword-looking words remain ordinary words.
+The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. The implemented compound-command subset includes `{ list; }` brace groups, `( list )` subshells, `if`/`elif`/`else`, and partial `for`, `while`, and `until` commands. Brace groups execute in the current shell environment. Subshells execute with copied shell variables and export attributes, isolate loop-control state, and restore the parent working directory; the child exit status becomes the subshell command status. Parentheses must form a complete compound command. Reserved words are recognized only at command boundaries; quoted and escaped keyword-looking words remain ordinary words.
 
 The current implementation supports sequential, buffered pipelines. Pipeline output is collected between stages rather than streamed through concurrently connected operating-system pipes. External utilities such as \`cat\` receive pipeline input through standard input.
 
