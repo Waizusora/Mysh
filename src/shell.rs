@@ -2,7 +2,7 @@
 use crate::builtins::{self, BuiltinOutcome};
 use crate::command::{resolve_command, resolve_script};
 use crate::lexer::{self, Word};
-use crate::parser::{is_reserved_word, split_command_list, ListOperator, Pipeline};
+use crate::parser::{is_reserved_word, split_command_list, CompoundCommand, CompoundListEntry, ListOperator, Pipeline, PipelineStage};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -275,13 +275,55 @@ impl Shell {
     fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let stages = &pipeline.stages;
         if stages.len() == 1 {
-            return self.execute_stage(&stages[0], stdout, stderr);
+            return match &stages[0] {
+                PipelineStage::Simple(words) => self.execute_stage(words, stdout, stderr),
+                PipelineStage::Compound(command) => {
+                    let entries = vec![CompoundListEntry { command: command.clone(), connector: None }];
+                    self.execute_compound_list(&entries, stdout, stderr)
+                }
+            };
         }
 
         let mut input: Option<Vec<u8>> = None;
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
+            if let PipelineStage::Compound(compound) = stage {
+                let original_directory = match std::env::current_dir() {
+                    Ok(directory) => directory,
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: pipeline: cannot determine current directory: {error}");
+                        self.last_status = 1;
+                        return true;
+                    }
+                };
+                let mut child = Shell {
+                    history: self.history.clone(),
+                    last_status: self.last_status,
+                    variables: self.variables.clone(),
+                    exported: self.exported.clone(),
+                    loop_depth: 0,
+                    loop_control: None,
+                };
+                let entries = vec![CompoundListEntry { command: compound.clone(), connector: None }];
+                let mut stage_output = Vec::new();
+                let mut stage_error = Vec::new();
+                let _ = child.execute_compound_list(&entries, &mut stage_output, &mut stage_error);
+                final_status = child.last_status;
+                if let Err(error) = std::env::set_current_dir(&original_directory) {
+                    let _ = writeln!(stderr, "mysh: pipeline: cannot restore current directory: {error}");
+                    self.last_status = 1;
+                    return true;
+                }
+                if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
+                if is_last {
+                    if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
+                } else {
+                    input = Some(stage_output);
+                }
+                continue;
+            }
+            let PipelineStage::Simple(stage) = stage else { unreachable!() };
             let (command, redirections) = match parse_redirections(stage, &self.variables, self.last_status) {
                 Ok(value) => value,
                 Err(message) => {
