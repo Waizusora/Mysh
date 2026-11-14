@@ -120,11 +120,34 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     }
                     None => return Err(LexError("trailing escape character")),
                 },
-                '2' if !started && characters.peek() == Some(&'>') => {
-                    characters.next();
-                    tokens.push(Word::operator("2>"));
+                value if value.is_ascii_digit() && !started => {
+                    let mut digits = value.to_string();
+                    while characters.peek().is_some_and(|next| next.is_ascii_digit()) {
+                        digits.push(characters.next().expect("peeked digit"));
+                    }
+                    if matches!(characters.peek(), Some('<' | '>')) {
+                        let redirection = characters.next().expect("peeked redirection operator");
+                        let mut operator = digits;
+                        operator.push(redirection);
+                        if matches!(
+                            (redirection, characters.peek().copied()),
+                            ('>', Some('>')) | ('>', Some('|')) | ('>', Some('&'))
+                                | ('<', Some('<')) | ('<', Some('>')) | ('<', Some('&'))
+                        ) {
+                            operator.push(characters.next().expect("peeked redirection suffix"));
+                            if operator.ends_with("<<") && characters.peek() == Some(&'-') {
+                                operator.push(characters.next().expect("peeked here-document modifier"));
+                            }
+                        }
+                        tokens.push(Word::operator(&operator));
+                    } else {
+                        for digit in digits.chars() {
+                            word.push(digit, true);
+                        }
+                        started = true;
+                    }
                 }
-                '|' | '<' | '>' | ';' | '&' => {
+                '|' | '<' | '>' | ';' | '&' | '(' | ')' => {
                     if started {
                         tokens.push(std::mem::take(&mut word));
                         started = false;
@@ -132,11 +155,15 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     let mut operator = character.to_string();
                     let paired = matches!(
                         (character, characters.peek().copied()),
-                        ('>', Some('>')) | ('|', Some('|')) | ('&', Some('&'))
+                        ('>', Some('>')) | ('>', Some('|')) | ('>', Some('&'))
+                            | ('<', Some('<')) | ('<', Some('>')) | ('<', Some('&'))
+                            | ('|', Some('|')) | ('&', Some('&')) | (';', Some(';'))
                     );
                     if paired {
-                        characters.next();
-                        operator.push(character);
+                        operator.push(characters.next().expect("peeked operator suffix"));
+                        if operator == "<<" && characters.peek() == Some(&'-') {
+                            operator.push(characters.next().expect("peeked here-document modifier"));
+                        }
                     }
                     tokens.push(Word::operator(&operator));
                 }
