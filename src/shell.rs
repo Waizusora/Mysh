@@ -2456,6 +2456,8 @@ mod tests {
         assert_eq!(shell.last_status(), 0);
         assert!(shell.execute_line("! true", &mut Vec::new(), &mut errors));
         assert_eq!(shell.last_status(), 1);
+        assert!(shell.execute_line("! if true; then false; fi", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 0);
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
