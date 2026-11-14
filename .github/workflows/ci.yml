@@ -65,7 +65,11 @@ jobs:
       - name: Configure Android linker
         run: |
           NDK_TOOLCHAIN="${ANDROID_HOME}/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TARGET_UNDERSCORE="$(echo "${{ matrix.rust_target }}" | tr '-' '_')"
           echo "${{ matrix.linker_env }}=${NDK_TOOLCHAIN}/${{ matrix.linker }}" >> "$GITHUB_ENV"
+          echo "CC_${TARGET_UNDERSCORE}=${NDK_TOOLCHAIN}/${{ matrix.linker }}" >> "$GITHUB_ENV"
+          echo "CXX_${TARGET_UNDERSCORE}=${NDK_TOOLCHAIN}/${{ matrix.linker }}++" >> "$GITHUB_ENV"
+          echo "AR_${TARGET_UNDERSCORE}=${NDK_TOOLCHAIN}/llvm-ar" >> "$GITHUB_ENV"
       - name: Check out uutils Coreutils
         uses: actions/checkout@v4
         with:
