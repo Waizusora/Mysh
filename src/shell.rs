@@ -1013,6 +1013,36 @@ mod tests {
     }
 
     #[test]
+    fn keyword_looking_arguments_do_not_change_if_structure() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo if; then echo fi; echo then; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if\nfi\nthen\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn quoted_and_escaped_keyword_looking_arguments_remain_words() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            r#"if echo 'if' \\fi; then echo "fi"; fi"#,
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if fi\nfi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
     fn if_rejects_missing_then_or_fi() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
