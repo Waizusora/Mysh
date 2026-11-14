@@ -10,6 +10,8 @@ pub enum ListOperator { Sequence, And, Or }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pipeline {
     pub stages: Vec<PipelineStage>,
+    /// True when the POSIX pipeline-negation reserved word prefixes this pipeline.
+    pub negated: bool,
 }
 
 /// A pipeline stage is either a simple command or a supported compound command.
@@ -179,6 +181,8 @@ pub fn is_function_definition_start(tokens: &[Word], index: usize) -> bool {
 
 /// Split one pipeline into its ordered stages.
 pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
+    let negated = tokens.first().is_some_and(|word| word.is_unquoted_literal("!"));
+    let tokens = if negated { tokens.into_iter().skip(1).collect::<Vec<_>>() } else { tokens };
     let mut raw_stages: Vec<Vec<Word>> = vec![Vec::new()];
     let mut index = 0usize;
 
@@ -242,7 +246,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         }
     }
 
-    Ok(Pipeline { stages })
+    Ok(Pipeline { stages, negated })
 }
 
 #[cfg(test)]
@@ -302,6 +306,14 @@ mod command_structure_tests {
             statement.clauses[0].body[1].connector,
             Some(ListOperator::Sequence)
         );
+    }
+
+    #[test]
+    fn pipeline_negation_is_reserved_only_at_the_pipeline_start() {
+        let negated = split_pipeline(lexer::lex("! false").unwrap()).unwrap();
+        assert!(negated.negated);
+        let ordinary = split_pipeline(lexer::lex("echo !").unwrap()).unwrap();
+        assert!(!ordinary.negated);
     }
 
     #[test]
