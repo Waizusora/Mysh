@@ -40,6 +40,9 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     while index < tokens.len() {
         let at_pipeline_stage_start = current.is_empty()
             || current.last().is_some_and(|word: &Word| word.is_unquoted_literal("|"));
+        if at_pipeline_stage_start && is_reserved_word(&tokens, index, "}") {
+            return Err("unmatched closing brace");
+        }
         if at_pipeline_stage_start && is_compound_command_start(&tokens, index) {
             let end = compound_command_end(&tokens, index)?;
             current.extend_from_slice(&tokens[index..end]);
