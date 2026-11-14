@@ -1217,11 +1217,11 @@ fn required_parameter_expansion_error(tokens: &[Word], environment: &BTreeMap<St
                         if !is_set || (colon && value.is_empty()) {
                             let supplied = &expression[position + operator_len..];
                             let message = if supplied.is_empty() {
-                                format!("{name}: parameter {} or not set", if colon { "null" } else { "unset" })
+                                format!("parameter {} or not set", if colon { "null" } else { "unset" })
                             } else {
                                 expand_variables(supplied, environment, last_status)
                             };
-                            return Some(message);
+                            return Some(format!("{name}: {message}"));
                         }
                     }
                 }
