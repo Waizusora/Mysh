@@ -918,3 +918,47 @@ mod compound_boundary_tests {
         assert!(tokens[end].is_unquoted_literal(";"));
     }
 }
+
+
+#[cfg(test)]
+mod for_parser_tests {
+    use super::{parse_for_statement, parse_compound_list, CompoundCommand, InputState, classify_input};
+    use crate::lexer;
+
+    #[test]
+    fn parses_for_word_list_and_typed_body() {
+        let tokens = lexer::lex("for item in alpha beta; do echo $item; done").unwrap();
+        let parsed = parse_for_statement(&tokens).unwrap();
+        assert_eq!(parsed.name, "item");
+        assert_eq!(parsed.words.len(), 2);
+        assert!(matches!(&parsed.body[0].command, CompoundCommand::Simple(_)));
+    }
+
+    #[test]
+    fn parses_nested_for_commands_recursively() {
+        let tokens = lexer::lex("for a in one; do for b in two; do echo $a $b; done; done").unwrap();
+        let parsed = parse_for_statement(&tokens).unwrap();
+        assert!(matches!(&parsed.body[0].command, CompoundCommand::For(_)));
+    }
+
+    #[test]
+    fn rejects_invalid_for_headers_and_missing_done() {
+        for input in ["for; do echo x; done", "for 2bad in x; do echo x; done", "for x in; do echo x; done", "for x in y; do echo x"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(parse_for_statement(&tokens).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn classifies_open_and_closed_for_compounds() {
+        assert_eq!(classify_input("for item in a b; do echo $item"), InputState::Incomplete);
+        assert_eq!(classify_input("for item in a b; do echo $item; done"), InputState::Complete);
+    }
+
+    #[test]
+    fn compound_list_recognizes_for_after_a_separator() {
+        let tokens = lexer::lex("echo before; for item in x; do echo $item; done").unwrap();
+        let parsed = parse_compound_list(&tokens).unwrap();
+        assert!(matches!(&parsed[1].command, CompoundCommand::For(_)));
+    }
+}
