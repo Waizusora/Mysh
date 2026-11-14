@@ -241,9 +241,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
                 return Err("pipeline compound stage must contain exactly one compound command");
             }
             stages.push(PipelineStage::Compound(parsed[0].command.clone()));
-        } else if stage.iter().any(|word| word.is_unquoted_literal("{")
-            || word.is_unquoted_literal("}")
-            || word.is_unquoted_literal("(")
+        } else if stage.iter().any(|word| word.is_unquoted_literal("(")
             || word.is_unquoted_literal(")"))
         {
             return Err("compound delimiters must form a complete pipeline stage");
@@ -299,7 +297,7 @@ mod command_structure_tests {
     #[test]
     fn parser_rejects_lexically_recognized_but_unimplemented_operators() {
         for input in [
-            "case value in value) echo matched ;; esac",
+            "echo one ;; echo two",
             "cat <<EOF",
             "cat <<-EOF",
             "cmd 3>&1",
@@ -1007,6 +1005,11 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
     let Some(first) = tokens.get(start) else {
         return Err("expected compound command");
     };
+
+    if is_function_definition_start(tokens, start) {
+        let body_start = start + 3;
+        return compound_command_end(tokens, body_start);
+    }
 
     if first.is_unquoted_literal("(") {
         let mut depth = 1usize;
