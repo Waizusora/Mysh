@@ -1191,7 +1191,7 @@ mod tests {
             marker.display(),
         );
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "iterated\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert!(marker.exists());
         let _ = std::fs::remove_file(marker);
@@ -1210,7 +1210,7 @@ mod tests {
             marker.display(),
         );
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "iterated\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert!(marker.exists());
         let _ = std::fs::remove_file(marker);
@@ -1230,7 +1230,7 @@ mod tests {
             marker.display(),
         );
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "nested\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert!(marker.exists());
         let _ = std::fs::remove_file(marker);
