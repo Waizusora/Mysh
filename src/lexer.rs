@@ -18,6 +18,7 @@ impl std::error::Error for LexError {}
 pub struct WordPart {
     pub text: String,
     pub expandable: bool,
+    pub quoted: bool,
 }
 
 /// A shell word made from one or more quoted or unquoted fragments.
@@ -28,9 +29,9 @@ pub struct Word {
 }
 
 impl Word {
-    fn push(&mut self, text: char, expandable: bool) {
+    fn push(&mut self, text: char, expandable: bool, quoted: bool) {
         if let Some(part) = self.parts.last_mut() {
-            if part.expandable == expandable {
+            if part.expandable == expandable && part.quoted == quoted {
                 part.text.push(text);
                 return;
             }
@@ -38,6 +39,7 @@ impl Word {
         self.parts.push(WordPart {
             text: text.to_string(),
             expandable,
+            quoted,
         });
     }
 
@@ -48,7 +50,7 @@ impl Word {
     fn operator(value: &str) -> Self {
         let mut word = Self::default();
         for character in value.chars() {
-            word.push(character, true);
+            word.push(character, true, false);
         }
         word
     }
@@ -90,21 +92,21 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                 if character == '\'' {
                     quote = None;
                 } else {
-                    word.push(character, false);
+                    word.push(character, false, true);
                 }
             }
             Some('"') => match character {
                 '"' => quote = None,
                 '\\' => match characters.peek().copied() {
                     Some('$' | '`' | '"' | '\\') => {
-                        word.push(characters.next().expect("peeked character"), false);
+                        word.push(characters.next().expect("peeked character"), false, true);
                     }
                     Some('\n') => {
                         characters.next();
                     }
                     _ => word.push('\\', true),
                 },
-                _ => word.push(character, true),
+                _ => word.push(character, true, true),
             },
             None => match character {
                 '\'' | '"' => {
@@ -115,7 +117,7 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                 '\\' => match characters.next() {
                     Some('\n') => {}
                     Some(escaped) => {
-                        word.push(escaped, false);
+                        word.push(escaped, false, false);
                         started = true;
                     }
                     None => return Err(LexError("trailing escape character")),
@@ -142,7 +144,7 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                         tokens.push(Word::operator(&operator));
                     } else {
                         for digit in digits.chars() {
-                            word.push(digit, true);
+                            word.push(digit, true, false);
                         }
                         started = true;
                     }
@@ -175,7 +177,7 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                     }
                 }
                 _ => {
-                    word.push(character, true);
+                    word.push(character, true, false);
                     started = true;
                 }
             },
