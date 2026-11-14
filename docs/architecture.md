@@ -112,4 +112,6 @@ POSIX.1-2024 is the normative language and behavior reference. The implementatio
 
 The current source tree is a partial implementation and is not to be described as POSIX-conformant until the relevant conformance tests pass. Integration of uutils must separately validate the selected release, its license and transitive dependencies, Android Bionic compatibility, and both supported Android ABIs (aarch64-linux-android and armv7-linux-androideabi). A successful build for one Android ABI does not establish support for the other.
 
+The initial Android build integration pins uutils Coreutils 0.12.0 at commit `dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69` and enables its `feat_os_unix_android` feature set. CI builds the multicall `coreutils` executable for each Android matrix target and publishes it as a separate artifact. This is a build-validation and artifact-production step; it does not yet install the binary into the Mysh runtime prefix or create command-name symlinks.
+
 No Bash compatibility layer, Bash-specific syntax, GNU Coreutils dependency, or BSD shell extension is to be introduced as part of this architecture.
