@@ -743,7 +743,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, external_status_code, split_pipeline, Shell};
+    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, split_pipeline, Shell};
     use std::collections::{BTreeMap, BTreeSet};
     use crate::lexer;
 
@@ -992,6 +992,27 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "condition\nnested\nselected\nfinal\n");
         assert!(String::from_utf8(errors).unwrap().contains("command not found"));
         assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn multiline_if_is_buffered_until_its_closing_fi() {
+        let input = "if echo condition; then\necho before\nif echo nested; then\necho selected\nfi\necho after\nfi\n";
+        let mut reader = std::io::Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut shell = Shell::new();
+        assert_eq!(shell.run(&mut reader, &mut output, false).unwrap(), 0);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "condition\nbefore\nnested\nselected\nafter\n",
+        );
+    }
+
+    #[test]
+    fn continuation_detection_tracks_compound_if_depth() {
+        assert!(requires_more_input("if echo condition; then\necho body\n"));
+        assert!(requires_more_input("if echo outer; then\nif echo inner; then\necho body\nfi\n"));
+        assert!(!requires_more_input("if echo condition; then\necho body\nfi\n"));
+        assert!(!requires_more_input("echo ordinary command\n"));
     }
 
     #[test]
