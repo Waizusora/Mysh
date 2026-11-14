@@ -1196,8 +1196,7 @@ fn required_parameter_expansion_error(tokens: &[Word], environment: &BTreeMap<St
             let mut index = 0;
             while index + 2 < chars.len() {
                 if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') else { break; };
-                let end = index + 2 + relative_end;
+                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
                 let expression: String = chars[index + 2..end].iter().collect();
                 let operator = if let Some(position) = expression.find(":?") {
                     Some((position, 2, true))
@@ -1236,8 +1235,7 @@ fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTre
             let mut index = 0;
             while index + 2 < chars.len() {
                 if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') else { break; };
-                let end = index + 2 + relative_end;
+                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
                 let expression: String = chars[index + 2..end].iter().collect();
                 if let Some(operator_index) = expression.find(":=") {
                     let name = &expression[..operator_index];
@@ -1493,8 +1491,9 @@ impl<'a> ArithmeticParser<'a> {
         self.whitespace();
         for (operator, precedence) in [
             ("||", 1), ("&&", 2), ("|", 3), ("^", 4), ("&", 5),
-            ("==", 6), ("!=", 6), ("<=", 7), (">=", 7), ("<", 7), (">", 7),
-            ("<<", 8), (">>", 8), ("+", 9), ("-", 9), ("*", 10), ("/", 10), ("%", 10),
+            ("==", 6), ("!=", 6), ("<<", 8), (">>", 8),
+            ("<=", 7), (">=", 7), ("<", 7), (">", 7),
+            ("+", 9), ("-", 9), ("*", 10), ("/", 10), ("%", 10),
         ] {
             let candidate: Vec<char> = operator.chars().collect();
             if self.chars[self.index..].starts_with(&candidate) { return Some((operator, precedence)); }
@@ -1634,6 +1633,33 @@ mod tests {
     fn exit_returns_the_requested_status() {
         let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
         assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
+    }
+
+    #[test]
+    fn nested_parameter_expansions_and_parameter_lengths_are_supported() {
+        let environment = BTreeMap::from([
+            ("OUTER".to_owned(), String::new()),
+            ("INNER".to_owned(), "nested".to_owned()),
+            ("1".to_owned(), "one".to_owned()),
+            ("10".to_owned(), "ten".to_owned()),
+        ]);
+        assert_eq!(expand_variables("${OUTER:-${INNER:-fallback}}", &environment, 0), "nested");
+        assert_eq!(expand_variables("${#INNER}", &environment, 0), "6");
+        assert_eq!(expand_variables("${10}", &environment, 0), "ten");
+        assert_eq!(expand_variables("$0", &environment, 0), "mysh");
+    }
+
+    #[test]
+    fn arithmetic_expansion_obeys_precedence_and_parentheses() {
+        let environment = BTreeMap::from([
+            ("VALUE".to_owned(), "7".to_owned()),
+            ("OTHER".to_owned(), "3".to_owned()),
+        ]);
+        assert_eq!(expand_variables("$((1 + 2 * 3))", &environment, 0), "7");
+        assert_eq!(expand_variables("$(( (1 + 2) * 3 ))", &environment, 0), "9");
+        assert_eq!(expand_variables("$((VALUE * OTHER + 1))", &environment, 0), "22");
+        assert_eq!(expand_variables("$((8 / 2 + 5 % 3))", &environment, 0), "6");
+        assert_eq!(expand_variables("$((1 < 2 && 4 != 5))", &environment, 0), "1");
     }
 
     #[test]
