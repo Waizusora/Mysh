@@ -1796,7 +1796,7 @@ fn parse_arithmetic_integer(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
-fn arithmetic_assignment_parts(expression: &str) -> Option<(&str, &str, &str)> {
+fn arithmetic_assignment_parts(expression: &str) -> Option<(String, String, String)> {
     let chars: Vec<char> = expression.chars().collect();
     let mut depth = 0usize;
     let operators = ["<<=", ">>=", "+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "="];
@@ -1822,7 +1822,7 @@ fn arithmetic_assignment_parts(expression: &str) -> Option<(&str, &str, &str)> {
                 if valid_parameter_name(name) {
                     let right_start = index + operator.chars().count();
                     let right: String = chars[right_start..].iter().collect();
-                    return Some((name, *operator, Box::leak(right.into_boxed_str())));
+                    return Some((name.to_owned(), (*operator).to_owned(), right.trim().to_owned()));
                 }
             }
         }
@@ -1845,9 +1845,9 @@ fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<Stri
                 let Some(end) = matching_arithmetic_end(&chars, index) else { break; };
                 let expression: String = chars[index + 3..end - 1].iter().collect();
                 if let Some((name, operator, right)) = arithmetic_assignment_parts(&expression) {
-                    if let Some(rhs) = evaluate_arithmetic(right.trim(), environment) {
-                        let current = environment.get(name).and_then(|value| parse_arithmetic_integer(value)).unwrap_or(0);
-                        let assigned = match operator {
+                    if let Some(rhs) = evaluate_arithmetic(&right, environment) {
+                        let current = environment.get(&name).and_then(|value| parse_arithmetic_integer(value)).unwrap_or(0);
+                        let assigned = match operator.as_str() {
                             "=" => Some(rhs),
                             "+=" => current.checked_add(rhs),
                             "-=" => current.checked_sub(rhs),
@@ -1861,7 +1861,7 @@ fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<Stri
                             ">>=" => current.checked_shr(rhs as u32),
                             _ => None,
                         };
-                        if let Some(value) = assigned { environment.insert(name.to_owned(), value.to_string()); }
+                        if let Some(value) = assigned { environment.insert(name, value.to_string()); }
                     }
                 }
                 index = end + 1;
@@ -1872,7 +1872,7 @@ fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<Stri
 
 fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>) -> Option<i64> {
     if let Some((name, _, _)) = arithmetic_assignment_parts(expression) {
-        return environment.get(name).and_then(|value| parse_arithmetic_integer(value));
+        return environment.get(&name).and_then(|value| parse_arithmetic_integer(value));
     }
     let mut parser = ArithmeticParser::new(expression, environment);
     let value = parser.expression(1)?;
