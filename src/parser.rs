@@ -596,8 +596,10 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
     {
         return Err("expected case");
     }
-    let word = tokens.get(1).ok_or("case requires a word")?;
-    let word = word.clone();
+    let word = tokens
+        .get(1)
+        .cloned()
+        .ok_or("case requires a word")?;
     let in_index = (2..tokens.len())
         .find(|&index| tokens[index].is_unquoted_literal("in"))
         .ok_or("case requires in")?;
@@ -639,7 +641,7 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
             if pattern.is_unquoted_literal("|") || pattern.is_unquoted_literal(")") {
                 return Err("case pattern is missing");
             }
-            patterns.push(pattern.clone());
+            patterns.push((*pattern).clone());
             index += 1;
 
             match tokens.get(index) {
