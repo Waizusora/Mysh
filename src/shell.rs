@@ -886,12 +886,29 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             continue;
         }
 
+        if chars.get(index + 1) == Some(&'#') {
+            result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
+            let name = chars[index + 1].to_string();
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+            index += 2;
+            continue;
+        }
+
         if chars.get(index + 1) == Some(&'{') {
             if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
                 let end = index + 2 + relative_end;
                 let name: String = chars[index + 2..end].iter().collect();
                 if name == "?" {
                     result.push_str(&last_status.to_string());
+                } else if name == "#" {
+                    result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+                } else if name.len() == 1 && name.as_bytes()[0].is_ascii_digit() {
+                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
                 } else if valid_parameter_name(&name) {
                     result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
                 } else {
