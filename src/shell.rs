@@ -1778,7 +1778,7 @@ fn matching_brace_end(chars: &[char], opening: usize) -> Option<usize> {
             continue;
         }
         if quote == Some('"') && character == '\\' {
-            if chars.get(index + 1).is_some_and(|next| matches!(*next, ') {
+            if chars.get(index + 1).is_some_and(|next| matches!(*next as u32, 36 | 96 | 34 | 92 | 10)) {
                 escaped = true;
             }
             index += 1;
