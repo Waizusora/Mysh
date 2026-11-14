@@ -9,7 +9,14 @@ pub enum ListOperator { Sequence, And, Or }
 /// A pipeline is an ordered sequence of command stages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pipeline {
-    pub stages: Vec<Vec<Word>>,
+    pub stages: Vec<PipelineStage>,
+}
+
+/// A pipeline stage is either a simple command or a supported compound command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PipelineStage {
+    Simple(Vec<Word>),
+    Compound(CompoundCommand),
 }
 
 /// One pipeline and the operator that controls whether it follows the previous entry.
@@ -83,28 +90,62 @@ fn is_unsupported_operator(token: &Word) -> bool {
 
 /// Split one pipeline into its ordered stages.
 pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
-    let mut stages = vec![Vec::new()];
+    let mut raw_stages: Vec<Vec<Word>> = vec![Vec::new()];
+    let mut brace_depth = 0usize;
+    let mut subshell_depth = 0usize;
+
     for token in tokens {
         if is_unsupported_operator(&token) {
             return Err("recognized shell operator is not implemented yet");
         }
-        if token.is_unquoted_literal("|") {
-            if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
-            stages.push(Vec::new());
-        } else { stages.last_mut().expect("pipeline has a stage").push(token); }
+        if token.is_unquoted_literal("{") {
+            brace_depth += 1;
+        } else if token.is_unquoted_literal("}") {
+            if brace_depth == 0 { return Err("unmatched closing brace"); }
+            brace_depth -= 1;
+        } else if token.is_unquoted_literal("(") {
+            subshell_depth += 1;
+        } else if token.is_unquoted_literal(")") {
+            if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
+            subshell_depth -= 1;
+        }
+
+        if token.is_unquoted_literal("|") && brace_depth == 0 && subshell_depth == 0 {
+            if raw_stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
+            raw_stages.push(Vec::new());
+        } else {
+            raw_stages.last_mut().expect("pipeline has a stage").push(token);
+        }
     }
-    if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
-    if stages.iter().flatten().any(|word| word.is_unquoted_literal("(") || word.is_unquoted_literal(")")) {
-        return Err("subshell delimiters must form a complete compound command");
-    }
-    if stages.first().and_then(|stage| stage.first()).is_some_and(|word| {
-        word.is_unquoted_literal("!")
-            || word.is_unquoted_literal("{")
+
+    if brace_depth != 0 || subshell_depth != 0 { return Err("compound command in pipeline is not closed"); }
+    if raw_stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
+
+    let mut stages = Vec::with_capacity(raw_stages.len());
+    for stage in raw_stages {
+        let Some(first) = stage.first() else { return Err("empty pipeline stage"); };
+        if first.is_unquoted_literal("{") || first.is_unquoted_literal("(") {
+            let parsed = parse_compound_list(&stage)?;
+            if parsed.len() != 1 || parsed[0].connector.is_some() {
+                return Err("pipeline compound stage must contain exactly one compound command");
+            }
+            match &parsed[0].command {
+                CompoundCommand::BraceGroup(_) | CompoundCommand::Subshell(_) => {
+                    stages.push(PipelineStage::Compound(parsed[0].command.clone()));
+                }
+                _ => return Err("unsupported compound command in pipeline"),
+            }
+        } else if stage.iter().any(|word| word.is_unquoted_literal("{")
             || word.is_unquoted_literal("}")
             || word.is_unquoted_literal("(")
-    }) {
-        return Err("recognized compound-command syntax is not implemented yet");
+            || word.is_unquoted_literal(")"))
+        {
+            return Err("compound delimiters must form a complete pipeline stage");
+        } else {
+            stages.push(PipelineStage::Simple(stage));
+        }
     }
+
     Ok(Pipeline { stages })
 }
 
@@ -131,9 +172,9 @@ mod command_structure_tests {
     fn pipeline_split_preserves_stage_order() {
         let stages = split_pipeline(lexer::lex("echo one | cat | wc").unwrap()).unwrap();
         assert_eq!(stages.stages.len(), 3);
-        assert_eq!(stages.stages[0].len(), 2);
-        assert_eq!(stages.stages[1].len(), 1);
-        assert_eq!(stages.stages[2].len(), 1);
+        assert!(matches!(&stages.stages[0], super::PipelineStage::Simple(words) if words.len() == 2));
+        assert!(matches!(&stages.stages[1], super::PipelineStage::Simple(words) if words.len() == 1));
+        assert!(matches!(&stages.stages[2], super::PipelineStage::Simple(words) if words.len() == 1));
     }
     #[test]
     fn pipeline_split_rejects_empty_stages() {
@@ -144,7 +185,6 @@ mod command_structure_tests {
     #[test]
     fn parser_rejects_lexically_recognized_but_unimplemented_operators() {
         for input in [
-            "( echo grouped )",
             "case value in value) echo matched ;; esac",
             "cat <<EOF",
             "cat <<-EOF",
@@ -157,6 +197,20 @@ mod command_structure_tests {
         ] {
             let tokens = lexer::lex(input).unwrap();
             assert!(split_pipeline(tokens).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn compound_group_stages_are_preserved_in_pipeline_ast() {
+        use super::{CompoundCommand, PipelineStage};
+        for input in [
+            "{ echo one; echo two; } | wc -l",
+            "( echo hello ) | cat",
+            "echo before | { cat; }",
+        ] {
+            let parsed = split_pipeline(lexer::lex(input).unwrap()).unwrap();
+            assert_eq!(parsed.stages.len(), 2, "{input}");
+            assert!(matches!(&parsed.stages[0], PipelineStage::Compound(CompoundCommand::BraceGroup(_) | CompoundCommand::Subshell(_)) | PipelineStage::Simple(_)), "{input}");
         }
     }
 
