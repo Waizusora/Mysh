@@ -2347,7 +2347,7 @@ mod tests {
         assert_eq!(super::evaluate_arithmetic_mut("++(X) + (Y)-- * 2", &mut environment), Some(11));
         assert_eq!(environment.get("X").map(String::as_str), Some("5"));
         assert_eq!(environment.get("Y").map(String::as_str), Some("2"));
-        assert_eq!(super::evaluate_arithmetic_mut("((X))++ + --((Y))", &mut environment), Some(7));
+        assert_eq!(super::evaluate_arithmetic_mut("((X))++ + --((Y))", &mut environment), Some(6));
         assert_eq!(environment.get("X").map(String::as_str), Some("6"));
         assert_eq!(environment.get("Y").map(String::as_str), Some("1"));
     }
