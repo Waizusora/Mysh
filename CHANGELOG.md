@@ -53,6 +53,12 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ## Unreleased
 
+### Changed
+
+- Expanded shell lexical recognition for POSIX compound-command delimiters, case terminators, descriptor redirections, and here-document operators.
+- Made the parser reject recognized but unsupported shell operators and compound-command forms explicitly instead of passing them through as ordinary command arguments.
+- Added lexer and parser regression tests for operator boundaries, descriptor numbers, quoting, and unsupported syntax rejection.
+
 ### Documentation
 
 - Added a seven-phase Mysh maturity roadmap covering the native shell foundation, POSIX grammar, expansion, execution semantics, built-ins, interactive job control, and conformance and release stabilization.
