@@ -399,4 +399,33 @@ mod tests {
     fn unterminated_quotes_are_incomplete_input() {
         assert_eq!(classify_input("echo 'unfinished"), InputState::Incomplete);
     }
+
+    #[test]
+    fn while_and_until_compounds_are_classified_incrementally() {
+        assert_eq!(classify_input("while true; do echo ok; done\\n"), InputState::Complete);
+        assert_eq!(classify_input("until false; do echo ok; done\\n"), InputState::Complete);
+        assert_eq!(classify_input("while true; do\\n"), InputState::Incomplete);
+        assert_eq!(classify_input("while true;\\n"), InputState::Incomplete);
+        assert_eq!(classify_input("done\\n"), InputState::Invalid);
+        assert_eq!(classify_input("while true; done\\n"), InputState::Invalid);
+    }
+
+    #[test]
+    fn nested_loop_and_if_compounds_keep_their_own_closers() {
+        assert_eq!(
+            classify_input("while true; do if true; then until false; do echo x; done; fi; done\\n"),
+            InputState::Complete,
+        );
+        assert_eq!(
+            classify_input("while true; do while false; do echo x; done\\n"),
+            InputState::Incomplete,
+        );
+    }
+
+    #[test]
+    fn quoted_loop_keywords_are_not_compound_delimiters() {
+        for input in ["echo 'while'\\n", "echo \"done\"\\n", r"echo \\until"] {
+            assert_eq!(classify_input(input), InputState::Complete);
+        }
+    }
 }
