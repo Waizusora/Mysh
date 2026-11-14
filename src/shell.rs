@@ -60,7 +60,8 @@ impl Shell {
         let has_compound_command = tokens.iter().enumerate().any(|(index, _)| {
             is_reserved_word(&tokens, index, "if")
                 || is_reserved_word(&tokens, index, "while")
-                || is_reserved_word(&tokens, index, "until")\n                || is_reserved_word(&tokens, index, "for")
+                || is_reserved_word(&tokens, index, "until")
+                || is_reserved_word(&tokens, index, "for")
         });
         if has_compound_command {
             return self.execute_compound_branch(&tokens, stdout, stderr);
@@ -1092,7 +1093,8 @@ mod tests {
         assert!(shell.execute_line("for item; do echo unexpected; done; echo after", &mut output, &mut Vec::new()));
         assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
     }
-\n    #[test]
+
+    #[test]
     fn break_exits_the_current_loop_and_skips_remaining_body_commands() {
         let marker = std::env::temp_dir().join(format!("mysh-break-test-{}", std::process::id()));
         let _ = std::fs::remove_file(&marker);
