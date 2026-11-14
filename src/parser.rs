@@ -767,7 +767,7 @@ mod compound_boundary_tests {
             let end = compound_command_end(&tokens, 0).unwrap();
             assert!(tokens[end - 1].is_unquoted_literal(closing));
             assert!(end < tokens.len());
-            assert_eq!(tokens[end].as_str(), "echo");
+            assert_eq!(tokens[end].literal_value(), "echo");
         }
     }
 
