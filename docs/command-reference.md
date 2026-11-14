@@ -56,6 +56,19 @@ These rules are partial and do not yet implement the complete POSIX token-recogn
 
 The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. The implemented compound-command subset includes `{ list; }` brace groups, `( list )` subshells, `if`/`elif`/`else`, `case`/`in`/`esac`, and partial `for`, `while`, and `until` commands. A `case` command expands its subject word, checks pattern alternatives in source order, and executes only the body of the first matching arm; `*`, `?`, and basic bracket ranges are supported by the current matcher. POSIX quote-sensitive pattern interpretation, locale-sensitive bracket classes, and the full pattern grammar remain incomplete. Incremental input classification tracks nested brace-group delimiters and case pattern/arm boundaries: open constructs request more input, while unmatched closing delimiters are rejected. Quoted brace characters remain ordinary word content. Brace groups execute in the current shell environment. Subshells execute with copied shell variables and export attributes, isolate loop-control state, and restore the parent working directory; the child exit status becomes the subshell command status. Parentheses must form a complete compound command. Reserved words are recognized only at command boundaries, including immediately after a brace-group or subshell opener; quoted and escaped keyword-looking words remain ordinary words.
 
+### Shell functions
+
+The parser accepts POSIX `name() compound-command` definitions, for example:
+
+```sh
+greet() {
+    echo "Hello, $1"
+}
+greet world
+```
+
+Definitions are stored in the current shell and can be invoked later in that shell. Function bodies execute in the current shell environment, so ordinary variable changes persist. Special built-ins retain precedence over functions; functions are checked before the remaining built-ins and external command lookup. During invocation, `$1` through `$9` and `$#` are temporarily set from the arguments and restored afterward. The implementation does not yet provide the complete POSIX positional-parameter model, `$@`, `$*`, the `return` special built-in, or all function execution and error semantics.
+
 The current implementation supports sequential, buffered pipelines with simple-command stages and brace-group or subshell stages. Pipeline output is collected between stages rather than streamed through concurrently connected operating-system pipes. External utilities such as \`cat\` receive pipeline input through standard input.
 
 Basic redirection operators \`<\`, \`>\`, \`>>\`, and \`2>\` are recognized. Other descriptor forms, descriptor duplication/closure, \`>|\`, \`<>\`, and here-document operators are not implemented and are rejected during parsing. Redirection behavior inside multi-stage pipelines is not yet complete.
