@@ -1843,11 +1843,11 @@ fn expand_parameter_word_mut(word: &str, environment: &mut BTreeMap<String, Stri
             if !expandable.is_empty() { result.push_str(&expand_variables_mut(&expandable, environment, last_status)); expandable.clear(); }
             quote = code;
         } else if code == 92 {
-            if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); expandable.clear(); }
+            if !expandable.is_empty() { result.push_str(&expand_variables_mut(&expandable, environment, last_status)); expandable.clear(); }
             if let Some(next) = chars.next() { if next != '\n' { result.push(next); } }
         } else { expandable.push(character); }
     }
-    if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); }
+    if !expandable.is_empty() { result.push_str(&expand_variables_mut(&expandable, environment, last_status)); }
     result
 }
 fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> Option<String> {
