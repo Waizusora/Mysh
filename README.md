@@ -26,7 +26,7 @@ Canonical commands are sync, upgrade, find, install, delete, reinstall, list, in
 Mysh follows this platform order:
 
 1. **POSIX compatibility:** implement and test the portable shell-language and utility behavior that forms the project's compatibility baseline.
-2. **Android:** complete and maintain the three Android executable targets listed below.
+2. **Android:** complete and maintain the three Android executables per ABI listed below.
 3. **Linux:** validate the shared implementation on mainstream Linux environments.
 4. **FreeBSD:** add and test a dedicated FreeBSD target after the POSIX foundation is stable.
 
@@ -37,7 +37,6 @@ FreeBSD is the only BSD operating system currently planned as an explicit target
 | Android ABI | Rust target |
 | --- | --- |
 | ARMv8-A (arm64-v8a) | `aarch64-linux-android` |
-| ARMv7-A (armeabi-v7a) | `armv7-linux-androideabi` |
 | x86-64 (x86_64) | `x86_64-linux-android` |
 
 The Android NDK is required to produce Android executables. Host builds are supported for development and testing.
@@ -46,11 +45,8 @@ The Android NDK is required to produce Android executables. Host builds are supp
 
 - Interactive and non-interactive command input.
 - Quoted arguments and backslash escaping.
-- Built-in commands: `cd`, `pwd`, `ls`, `mkdir`, `rmdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `echo`, `clear`, `history`, `help`, and `exit`.
-- Hidden-file listing with `ls -a`.
-- Recursive directory copying and multiple-source copy/move operations.
-- Combined `rm` options and consistent `--` option termination across filesystem commands.
-- Safeguards against deleting the current working directory, its ancestors, or filesystem roots.
+- Implemented shell built-ins include `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, and `continue`.
+- External utilities are provided by the pinned uutils Coreutils Android multicall build where supported; they are not duplicated as Mysh built-ins.
 - Conventional child-process signal status mapping on Unix-like targets.
 - Explicit external executable lookup through `PATH`, including ordered search, explicit paths, and conventional 126/127 error statuses.
 - Command exit-status reporting.
@@ -87,7 +83,7 @@ The resulting host executable is located at `target/release/mysh`.
 Install the Android SDK and NDK. Add the Rust standard-library targets required by the Android ABIs:
 
 ```sh
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+rustup target add aarch64-linux-android x86_64-linux-android
 ```
 
 Set the NDK toolchain location and build each standalone executable. The linker names below select Android API level 21:
@@ -99,14 +95,16 @@ NDK_TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/aarch64-linux-android21-clang" \
   cargo build --target aarch64-linux-android --release
 
-CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_TOOLCHAIN/armv7a-linux-androideabi21-clang" \
-  cargo build --target armv7-linux-androideabi --release
-
 CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/x86_64-linux-android21-clang" \
   cargo build --target x86_64-linux-android --release
 ```
 
 Each executable is emitted under its Rust target directory in `target/<target-triple>/release/mysh`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
+
+The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils and MYPK for each ABI and publishes a runtime archive named `mysh-runtime-<abi>.tar.gz`. The archive contains `usr/bin/mysh`, `usr/bin/coreutils`, and `usr/bin/mypk`.
+
+Extract the archive into the Android application's private files directory (for example, `<filesDir>/usr`). Set `MYSH_PREFIX` to that `usr` directory in the environment used to launch Mysh. Mysh then prepends `<MYSH_PREFIX>/bin` to `PATH`. The archive is not an APK; the Android application is responsible for extraction and must comply with platform executable-file policies.
+
 
 ## Usage
 
