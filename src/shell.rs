@@ -2681,3 +2681,4 @@ mod tests {
         assert!(!expand(&pattern).contains(&hidden));
         std::fs::remove_dir_all(directory).unwrap();
     }
+}
