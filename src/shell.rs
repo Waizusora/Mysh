@@ -2361,6 +2361,17 @@ mod tests {
     }
 
     #[test]
+    fn nested_parameter_and_arithmetic_expansions_preserve_left_to_right_effects() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_OUTER:-${MYSH_NESTED_VALUE}} $((MYSH_NESTED_VALUE++)) $MYSH_NESTED_VALUE";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "2 2 3\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn arithmetic_increment_and_decrement_accept_parenthesized_lvalues_and_complex_operands() {
         let mut environment = BTreeMap::from([
             ("X".to_owned(), "4".to_owned()),
@@ -3820,8 +3831,15 @@ mod tests {
         environment.insert("IFS".to_owned(), String::new());
         environment.insert("VALUE".to_owned(), " one two ".to_owned());
         assert_eq!(expand("$VALUE", &environment), [" one two "]);
+        assert_eq!(expand("\"$VALUE\"", &environment), [" one two "]);
+
+        environment.insert("IFS".to_owned(), ":".to_owned());
+        environment.insert("VALUE".to_owned(), "::left::right".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["", "", "left", "", "right"]);
 
         environment.remove("IFS");
+        environment.insert("VALUE".to_owned(), "  alpha\\tbeta\\ngamma  ".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["alpha", "beta", "gamma"]);
         environment.insert("VALUE".to_owned(), "middle".to_owned());
         assert_eq!(expand("pre${VALUE}post", &environment), ["premiddlepost"]);
     }
