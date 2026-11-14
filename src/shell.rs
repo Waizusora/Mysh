@@ -87,58 +87,24 @@ impl Shell {
     }
 
     fn execute_loop_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
-            &tokens[..tokens.len() - 1]
-        } else {
-            tokens
-        };
-        let is_until = tokens.first().is_some_and(|word| word.is_unquoted_literal("until"));
-        if !tokens.first().is_some_and(|word| {
-            word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
-        }) {
-            let _ = writeln!(stderr, "mysh: syntax error: expected while or until");
-            self.last_status = 2;
-            return true;
-        }
-
-        let mut depth = 1usize;
-        let mut do_index = None;
-        let mut done_index = None;
-        for index in 1..tokens.len() {
-            if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
-                depth += 1;
-            } else if is_reserved_word(tokens, index, "do") && depth == 1 && do_index.is_none() {
-                do_index = Some(index);
-            } else if is_reserved_word(tokens, index, "done") {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    done_index = Some(index);
-                    break;
-                }
+        let statement = match crate::parser::parse_loop_statement(tokens) {
+            Ok(statement) => statement,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
             }
-        }
-
-        let (Some(body_start), Some(body_end)) = (do_index, done_index) else {
-            let _ = writeln!(stderr, "mysh: syntax error: while or until requires do and done");
-            self.last_status = 2;
-            return true;
         };
-        if body_end + 1 != tokens.len() || body_start <= 1 {
-            let _ = writeln!(stderr, "mysh: syntax error: malformed while or until compound command");
-            self.last_status = 2;
-            return true;
-        }
-        let condition = &tokens[1..body_start];
-        let body = &tokens[body_start + 1..body_end];
         loop {
-            if !self.execute_word_list(condition, stdout, stderr) {
+            if !self.execute_word_list(&statement.condition, stdout, stderr) {
                 return false;
             }
-            let should_enter = if is_until { self.last_status != 0 } else { self.last_status == 0 };
-            if !should_enter {
-                break;
-            }
-            if !self.execute_compound_branch(body, stdout, stderr) {
+            let should_enter = match statement.kind {
+                crate::parser::LoopKind::While => self.last_status == 0,
+                crate::parser::LoopKind::Until => self.last_status != 0,
+            };
+            if !should_enter { break; }
+            if !self.execute_compound_branch(&statement.body, stdout, stderr) {
                 return false;
             }
         }
