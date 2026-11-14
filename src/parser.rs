@@ -121,12 +121,17 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 
 /// Recognize a compound command only at the beginning of a pipeline stage.
 fn is_compound_command_start(tokens: &[Word], index: usize) -> bool {
-    tokens.get(index).is_some_and(|word| word.is_unquoted_literal("("))
-        || is_reserved_word(tokens, index, "{")
+    let command_index = if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("!")) {
+        index + 1
+    } else {
+        index
+    };
+    tokens.get(command_index).is_some_and(|word| word.is_unquoted_literal("("))
+        || is_reserved_word(tokens, command_index, "{")
         || ["if", "case", "for", "while", "until"]
             .iter()
-            .any(|keyword| is_reserved_word(tokens, index, keyword))
-        || is_function_definition_start(tokens, index)
+            .any(|keyword| is_reserved_word(tokens, command_index, keyword))
+        || is_function_definition_start(tokens, command_index)
 }
 
 /// Return true for POSIX operators that the lexer recognizes but the
@@ -306,6 +311,17 @@ mod command_structure_tests {
             statement.clauses[0].body[1].connector,
             Some(ListOperator::Sequence)
         );
+    }
+
+    #[test]
+    fn negated_compound_commands_are_kept_as_one_pipeline_stage() {
+        let tokens = lexer::lex("! if true; then :; fi").unwrap();
+        let parsed = split_command_list(tokens).unwrap();
+        assert!(parsed[0].pipeline.negated);
+        assert!(matches!(
+            &parsed[0].pipeline.stages[0],
+            super::PipelineStage::Compound(super::CompoundCommand::If(_))
+        ));
     }
 
     #[test]
@@ -1127,6 +1143,10 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
     let Some(first) = tokens.get(start) else {
         return Err("expected compound command");
     };
+
+    if first.is_unquoted_literal("!") {
+        return compound_command_end(tokens, start + 1);
+    }
 
     if is_function_definition_start(tokens, start) {
         let body_start = start + 3;
