@@ -83,6 +83,7 @@ impl Word {
 }
 
 /// Consume a balanced command or arithmetic substitution as one word fragment.
+#[allow(clippy::while_let_on_iterator)]
 fn consume_dollar_parenthesis<I: Iterator<Item = char>>(
     characters: &mut std::iter::Peekable<I>,
     word: &mut Word,
@@ -131,7 +132,7 @@ fn consume_backquote_substitution<I: Iterator<Item = char>>(
 ) -> Result<(), LexError> {
     word.push(char::from(96), true, quoted);
     let mut escaped = false;
-    while let Some(character) = characters.next() {
+    for character in characters.by_ref() {
         word.push(character, true, quoted);
         if escaped { escaped = false; continue; }
         if character == '\\' { escaped = true; continue; }
