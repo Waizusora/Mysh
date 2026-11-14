@@ -481,20 +481,54 @@ impl Shell {
     /// Read and execute commands until end-of-input or an exit command.
     pub fn run<R: BufRead, W: Write>(&mut self, reader: &mut R, writer: &mut W, interactive: bool) -> io::Result<i32> {
         let mut line = String::new();
+        let mut pending = String::new();
         loop {
             if interactive {
-                let current = std::env::current_dir().map(|path| path.display().to_string()).unwrap_or_else(|_| "?".to_owned());
-                write!(writer, "mysh:{current}$ ")?;
+                if pending.is_empty() {
+                    let current = std::env::current_dir().map(|path| path.display().to_string()).unwrap_or_else(|_| "?".to_owned());
+                    write!(writer, "mysh:{current}$ ")?;
+                } else {
+                    write!(writer, "> ")?;
+                }
                 writer.flush()?;
             }
             line.clear();
-            if reader.read_line(&mut line)? == 0 { break; }
-            while line.ends_with('\n') || line.ends_with('\r') { line.pop(); }
+            if reader.read_line(&mut line)? == 0 {
+                if !pending.is_empty() {
+                    let mut stderr = io::stderr().lock();
+                    let _ = self.execute_line(&pending, writer, &mut stderr);
+                }
+                break;
+            }
+            pending.push_str(&line);
+            if requires_more_input(&pending) {
+                continue;
+            }
             let mut stderr = io::stderr().lock();
-            if !self.execute_line(&line, writer, &mut stderr) { break; }
+            let keep_running = self.execute_line(&pending, writer, &mut stderr);
+            pending.clear();
+            if !keep_running {
+                break;
+            }
         }
         Ok(self.last_status)
     }
+}
+
+fn requires_more_input(input: &str) -> bool {
+    let tokens = match lexer::lex(input) {
+        Ok(tokens) => tokens,
+        Err(_) => return true,
+    };
+    let mut depth = 0usize;
+    for token in tokens {
+        if token.is_unquoted_literal("if") {
+            depth += 1;
+        } else if token.is_unquoted_literal("fi") {
+            depth = depth.saturating_sub(1);
+        }
+    }
+    depth > 0
 }
 
 #[derive(Default)]
