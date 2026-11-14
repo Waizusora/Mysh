@@ -66,6 +66,14 @@ jobs:
         run: |
           NDK_TOOLCHAIN="${ANDROID_HOME}/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
           echo "${{ matrix.linker_env }}=${NDK_TOOLCHAIN}/${{ matrix.linker }}" >> "$GITHUB_ENV"
+      - name: Check out uutils Coreutils
+        uses: actions/checkout@v4
+        with:
+          repository: uutils/coreutils
+          ref: dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69
+          path: .build/uutils-coreutils
+      - name: Build uutils Coreutils
+        run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --features feat_os_unix_android
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Build MYPK executable
@@ -75,6 +83,12 @@ jobs:
         with:
           name: mysh-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mysh
+          if-no-files-found: error
+      - name: Upload uutils Coreutils executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: uutils-coreutils-${{ matrix.abi }}
+          path: .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils
           if-no-files-found: error
       - name: Upload MYPK executable
         uses: actions/upload-artifact@v4
