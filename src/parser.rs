@@ -467,7 +467,20 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
         return Err("if requires a closing fi");
     }
 
-    if first.is_unquoted_literal("for") && is_reserved_word(tokens, start, "for") {\n        let mut depth = 1usize;\n        for index in start + 1..tokens.len() {\n            if is_reserved_word(tokens, index, "for") || is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") { depth += 1; }\n            else if is_reserved_word(tokens, index, "done") { depth -= 1; if depth == 0 { return Ok(index + 1); } }\n        }\n        return Err("for requires a closing done");\n    }\n\n    if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
+    if first.is_unquoted_literal("for") && is_reserved_word(tokens, start, "for") {
+        let mut depth = 1usize;
+        for index in start + 1..tokens.len() {
+            if is_reserved_word(tokens, index, "for") || is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "done") {
+                depth -= 1;
+                if depth == 0 { return Ok(index + 1); }
+            }
+        }
+        return Err("for requires a closing done");
+    }
+
+    if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
         || (first.is_unquoted_literal("until") && is_reserved_word(tokens, start, "until"))
     {
         let mut depth = 1usize;
