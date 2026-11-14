@@ -186,13 +186,12 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         } else if is_reserved_word(&tokens, index, "case") {
             case_depth += 1;
             case_pattern.push(false);
-        } else if token.is_unquoted_literal("in")
+        } else if (token.is_unquoted_literal("in")
             && index >= 2
             && tokens[index - 2].is_unquoted_literal("case")
-            && case_pattern.last() == Some(&false)
+            && case_pattern.last() == Some(&false))
+            || (token.is_unquoted_literal(";;") && case_depth > 0)
         {
-            if let Some(active) = case_pattern.last_mut() { *active = true; }
-        } else if token.is_unquoted_literal(";;") && case_depth > 0 {
             if let Some(active) = case_pattern.last_mut() { *active = true; }
         }
         if is_unsupported_operator(token)
