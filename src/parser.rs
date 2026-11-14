@@ -75,6 +75,13 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         } else { stages.last_mut().expect("pipeline has a stage").push(token); }
     }
     if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
+    if stages.first().and_then(|stage| stage.first()).is_some_and(|word| {
+        word.is_unquoted_literal("!")
+            || word.is_unquoted_literal("{")
+            || word.is_unquoted_literal("}")
+    }) {
+        return Err("recognized compound-command syntax is not implemented yet");
+    }
     Ok(Pipeline { stages })
 }
 
@@ -421,6 +428,9 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         }
 
         let start = index;
+        if tokens[index].is_unquoted_literal("{") || tokens[index].is_unquoted_literal("}") {
+            return Err("brace groups are not implemented yet");
+        }
         let command = if is_reserved_word(tokens, index, "if")
             || is_reserved_word(tokens, index, "while")
             || is_reserved_word(tokens, index, "until")
