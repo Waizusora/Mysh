@@ -1177,4 +1177,73 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         assert_eq!(external_status_code(std::process::ExitStatus::from_raw(9)), 137);
     }
+
+    #[test]
+    fn while_loop_repeats_until_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-while-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn until_loop_repeats_while_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-until-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "until test -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn nested_until_loop_executes_inside_while_body() {
+        let marker = std::env::temp_dir().join(format!("mysh-nested-loop-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do until test -e '{}'; do touch '{}'; echo nested; done; done",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn false_while_and_true_until_skip_their_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("while false; do echo wrong; done", &mut output, &mut errors));
+        assert!(shell.execute_line("until true; do echo wrong; done", &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+    }
 }
