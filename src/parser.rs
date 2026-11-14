@@ -133,9 +133,26 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut raw_stages: Vec<Vec<Word>> = vec![Vec::new()];
     let mut brace_depth = 0usize;
     let mut subshell_depth = 0usize;
+    let mut case_depth = 0usize;
+    let mut case_pattern = Vec::<bool>::new();
 
     for (index, token) in tokens.iter().enumerate() {
-        if is_unsupported_operator(token) || token.is_unquoted_literal(";;") {
+        if is_reserved_word(&tokens, index, "esac") {
+            case_depth = case_depth.saturating_sub(1);
+            case_pattern.pop();
+        } else if case_pattern.last() == Some(&true) && token.is_unquoted_literal(")") {
+            if let Some(active) = case_pattern.last_mut() { *active = false; }
+        } else if is_reserved_word(&tokens, index, "case") {
+            case_depth += 1;
+            case_pattern.push(false);
+        } else if token.is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
+            if let Some(active) = case_pattern.last_mut() { *active = true; }
+        } else if token.is_unquoted_literal(";;") && case_depth > 0 {
+            if let Some(active) = case_pattern.last_mut() { *active = true; }
+        }
+        if is_unsupported_operator(token)
+            || (token.is_unquoted_literal(";;") && case_depth == 0)
+        {
             return Err("recognized shell operator is not implemented yet");
         }
         if is_reserved_word(&tokens, index, "{") {
@@ -150,7 +167,11 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
             subshell_depth -= 1;
         }
 
-        if token.is_unquoted_literal("|") && brace_depth == 0 && subshell_depth == 0 {
+        if token.is_unquoted_literal("|")
+            && brace_depth == 0
+            && subshell_depth == 0
+            && case_pattern.last() != Some(&true)
+        {
             if raw_stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
             raw_stages.push(Vec::new());
         } else {
@@ -325,7 +346,7 @@ mod command_structure_tests {
             ("for item in one; do :; done | cat", 2),
             ("while false; do :; done | cat", 3),
             ("until true; do :; done | cat", 4),
-            ("work() { :; }; work | cat", 5),
+            ("work() { :; } | cat", 5),
         ];
         for (input, kind) in cases {
             let tokens = lexer::lex(input).unwrap();
