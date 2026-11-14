@@ -91,6 +91,14 @@ jobs:
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
+      - name: Package Android runtime
+        run: bash scripts/package-android-runtime.sh "${{ matrix.abi }}"
+      - name: Upload Android runtime package
+        uses: actions/upload-artifact@v6
+        with:
+          name: mysh-runtime-${{ matrix.abi }}
+          path: dist/mysh-runtime-${{ matrix.abi }}.tar.gz
+          if-no-files-found: error
       - name: Upload Mysh executable
         uses: actions/upload-artifact@v6
         with:
