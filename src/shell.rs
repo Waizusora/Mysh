@@ -932,9 +932,9 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
                     result.push_str(&last_status.to_string());
                 } else if name == "#" {
                     result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
-                } else if name.len() == 1 && name.as_bytes()[0].is_ascii_digit() {
-                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
-                } else if valid_parameter_name(&name) {
+                } else if (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
+                    || valid_parameter_name(&name)
+                {
                     result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
                 } else {
                     result.extend(chars[index..=end].iter());
