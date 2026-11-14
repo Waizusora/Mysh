@@ -122,12 +122,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 /// Recognize a compound command only at the beginning of a pipeline stage.
 fn is_compound_command_start(tokens: &[Word], index: usize) -> bool {
     let leading_negation = tokens.get(index).is_some_and(|word| word.is_unquoted_literal("!"))
-        && (index == 0
-            || tokens.get(index - 1).is_some_and(|word| {
-                word.is_unquoted_literal(";")
-                    || word.is_unquoted_literal("&&")
-                    || word.is_unquoted_literal("||")
-            }));
+        && is_pipeline_negation_start(tokens, index);
     let command_index = if leading_negation { index + 1 } else { index };
     tokens.get(command_index).is_some_and(|word| word.is_unquoted_literal("("))
         || is_reserved_word(tokens, command_index, "{")
@@ -1289,6 +1284,26 @@ pub enum InputState {
 ///
 /// A word used as an ordinary argument is never treated as a reserved word.
 /// Quoted and escaped words are excluded by the lexer metadata.
+/// Return true when an unquoted exclamation mark begins a pipeline at a command position.
+fn is_pipeline_negation_start(tokens: &[Word], index: usize) -> bool {
+    if index == 0 {
+        return true;
+    }
+    let previous_index = index - 1;
+    let previous = &tokens[previous_index];
+    if previous.is_unquoted_literal(";")
+        || previous.is_unquoted_literal("&&")
+        || previous.is_unquoted_literal("||")
+        || previous.is_unquoted_literal("(")
+        || (previous.is_unquoted_literal("{") && is_reserved_word(tokens, previous_index, "{"))
+    {
+        return true;
+    }
+    ["if", "then", "elif", "else", "do", "while", "until", "for"]
+        .iter()
+        .any(|keyword| is_reserved_word(tokens, previous_index, keyword))
+}
+
 pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
     let Some(token) = tokens.get(index) else {
         return false;
@@ -1307,12 +1322,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
         || previous.is_unquoted_literal("!")
-            && (index == 1
-                || tokens.get(index - 2).is_some_and(|word| {
-                    word.is_unquoted_literal(";")
-                        || word.is_unquoted_literal("&&")
-                        || word.is_unquoted_literal("||")
-                }))
+            && is_pipeline_negation_start(tokens, index - 1)
         || previous.is_unquoted_literal(")")
         || previous.is_unquoted_literal("fi") && is_reserved_word(tokens, index - 1, "fi")
         || previous.is_unquoted_literal("done") && is_reserved_word(tokens, index - 1, "done")
