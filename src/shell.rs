@@ -987,7 +987,7 @@ fn locale_class_matches(name: &str, candidate: char) -> bool {
     match name {
         "alnum" => candidate.is_alphanumeric(),
         "alpha" => candidate.is_alphabetic(),
-        "blank" => candidate == ' ' || candidate == '\\t',
+        "blank" => candidate == ' ' || candidate == '\t',
         "cntrl" => candidate.is_control(),
         "digit" => candidate.is_numeric(),
         "graph" => !candidate.is_whitespace() && !candidate.is_control(),
