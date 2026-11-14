@@ -143,7 +143,6 @@ impl Shell {
         } else {
             let mut values = Vec::new();
             for word in &statement.words {
-                apply_arithmetic_assignments(std::slice::from_ref(word), &mut self.variables);
                 values.extend(self.expand_word_fields_runtime(word, stderr));
             }
             values
@@ -192,11 +191,9 @@ impl Shell {
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> bool {
-        apply_arithmetic_assignments(std::slice::from_ref(&statement.word), &mut self.variables);
         let value = self.expand_word_scalar_runtime(&statement.word, stderr);
         for arm in &statement.arms {
             let matched = arm.patterns.iter().any(|pattern| {
-                apply_arithmetic_assignments(std::slice::from_ref(pattern), &mut self.variables);
                 let pattern = self.expand_word_scalar_runtime(pattern, stderr);
                 shell_pattern_matches(&pattern, &value)
             });
@@ -512,14 +509,20 @@ impl Shell {
         (Word::from_parts(parts, word.is_quoted()), environment)
     }
 
-    fn expand_word_fields_runtime(&self, word: &Word, stderr: &mut dyn Write) -> Vec<String> {
-        let (substituted, environment) = self.substitute_command_words(word, stderr);
-        expand_word_fields(&substituted, &environment, self.last_status)
+    fn expand_word_fields_runtime(&mut self, word: &Word, stderr: &mut dyn Write) -> Vec<String> {
+        let (substituted, mut environment) = self.substitute_command_words(word, stderr);
+        let fields = expand_word_fields_mut(&substituted, &mut environment, self.last_status);
+        environment.retain(|name, _| !name.starts_with("__MYSH_COMMAND_SUBSTITUTION_"));
+        self.variables = environment;
+        fields
     }
 
-    fn expand_word_scalar_runtime(&self, word: &Word, stderr: &mut dyn Write) -> String {
-        let (substituted, environment) = self.substitute_command_words(word, stderr);
-        expand_word(&substituted, &environment, self.last_status)
+    fn expand_word_scalar_runtime(&mut self, word: &Word, stderr: &mut dyn Write) -> String {
+        let (substituted, mut environment) = self.substitute_command_words(word, stderr);
+        let value = expand_word_mut(&substituted, &mut environment, self.last_status);
+        environment.retain(|name, _| !name.starts_with("__MYSH_COMMAND_SUBSTITUTION_"));
+        self.variables = environment;
+        value
     }
 
     fn parse_redirections_runtime(
@@ -537,7 +540,6 @@ impl Shell {
                 .find(|operator| token.is_unquoted_literal(operator));
             if let Some(operator) = operator {
                 let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
-                apply_arithmetic_assignments(std::slice::from_ref(target), &mut self.variables);
                 let target = self.expand_word_scalar_runtime(target, stderr);
                 match operator {
                     "<" => redirects.input = Some(target),
@@ -548,7 +550,6 @@ impl Shell {
                 }
                 index += 2;
             } else {
-                apply_arithmetic_assignments(std::slice::from_ref(token), &mut self.variables);
                 command.extend(self.expand_word_fields_runtime(token, stderr));
                 index += 1;
             }
@@ -1132,6 +1133,11 @@ fn tilde_prefix(part: &str, environment: &BTreeMap<String, String>) -> Option<(S
 }
 
 fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    let mut environment = environment.clone();
+    expand_word_mut(word, &mut environment, last_status)
+}
+
+fn expand_word_mut(word: &Word, environment: &mut BTreeMap<String, String>, last_status: i32) -> String {
     let mut expanded = String::new();
     let mut at_word_start = true;
     for part in word.parts() {
@@ -1143,7 +1149,7 @@ fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status:
                 expanded.push_str(&part.text);
             }
         } else if part.expandable {
-            expanded.push_str(&expand_variables(&part.text, environment, last_status));
+            expanded.push_str(&expand_variables_mut(&part.text, environment, last_status));
         } else {
             expanded.push_str(&part.text);
         }
@@ -1161,6 +1167,11 @@ fn ifs_join_separator(environment: &BTreeMap<String, String>) -> String {
 }
 
 fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
+    let mut environment = environment.clone();
+    expand_word_fields_mut(word, &mut environment, last_status)
+}
+
+fn expand_word_fields_mut(word: &Word, environment: &mut BTreeMap<String, String>, last_status: i32) -> Vec<String> {
     // (character, field-splitting eligible, pathname-pattern eligible)
     let mut fields: Vec<Vec<(char, bool, bool)>> = vec![Vec::new()];
     let mut keep_empty = vec![word.is_quoted()];
@@ -1193,7 +1204,7 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
                 let length = if short { 2 } else if braced { 4 } else { 0 };
                 if length == 0 { index += 1; continue; }
                 let literal: String = chars[literal_start..index].iter().collect();
-                let value = expand_variables(&literal, environment, last_status);
+                let value = expand_variables_mut(&literal, environment, last_status);
                 fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
                 let params = positional_parameters(environment);
                 if parameter == Some('@') {
@@ -1216,7 +1227,7 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
             let value = expand_variables(&literal, environment, last_status);
             fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
         } else if part.expandable {
-            append_unquoted_expansion(&mut fields, &mut keep_empty, &text, environment, last_status);
+            append_unquoted_expansion_mut(&mut fields, &mut keep_empty, &text, environment, last_status);
         } else {
             fields.last_mut().unwrap().extend(text.chars().map(|c| (c, false, false)));
         }
@@ -1231,11 +1242,11 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
     pathname_expand_fields(split_expansion_fields(fields, keep_empty, environment))
 }
 
-fn append_unquoted_expansion(
+fn append_unquoted_expansion_mut(
     fields: &mut Vec<Vec<(char, bool, bool)>>,
     keep_empty: &mut Vec<bool>,
     source: &str,
-    environment: &BTreeMap<String, String>,
+    environment: &mut BTreeMap<String, String>,
     last_status: i32,
 ) {
     let chars: Vec<char> = source.chars().collect();
@@ -1249,7 +1260,7 @@ fn append_unquoted_expansion(
         if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
             if let Some(end) = matching_arithmetic_end(&chars, index) {
                 let expression: String = chars[index + 3..end - 1].iter().collect();
-                let value = evaluate_arithmetic(&expression, environment).unwrap_or(0).to_string();
+                let value = evaluate_arithmetic_mut(&expression, environment).unwrap_or(0).to_string();
                 fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true, true)));
                 index = end + 1;
                 continue;
@@ -1286,7 +1297,7 @@ fn append_unquoted_expansion(
                 }
             }
         } else {
-            let value = expand_variables(&expression, environment, last_status);
+            let value = expand_variables_mut(&expression, environment, last_status);
             fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true, true)));
         }
         index = end;
@@ -1467,7 +1478,7 @@ fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTre
                         let value = parameter_value(name, environment, last_status);
                         if !is_set || value.is_empty() {
                             let word = &expression[operator_index + 2..];
-                            let expanded = expand_parameter_word(word, environment, last_status);
+                            let expanded = expand_parameter_word_mut(word, environment, last_status);
                             environment.insert(name.to_owned(), expanded);
                         }
                     }
@@ -1608,6 +1619,11 @@ fn matching_arithmetic_end(chars: &[char], opening: usize) -> Option<usize> {
 }
 
 fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    let mut environment = environment.clone();
+    expand_variables_mut(value, &mut environment, last_status)
+}
+
+fn expand_variables_mut(value: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut result = String::new();
     let mut index = 0;
@@ -1620,7 +1636,7 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
         if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
             if let Some(end) = matching_arithmetic_end(&chars, index) {
                 let expression: String = chars[index + 3..end - 1].iter().collect();
-                if let Some(value) = evaluate_arithmetic(&expression, environment) {
+                if let Some(value) = evaluate_arithmetic_mut(&expression, environment) {
                     result.push_str(&value.to_string());
                 } else {
                     result.push('0');
@@ -1673,7 +1689,7 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
         if chars.get(index + 1) == Some(&'{') {
             if let Some(end) = matching_brace_end(&chars, index + 1) {
                 let expression: String = chars[index + 2..end].iter().collect();
-                if let Some(expanded) = expand_braced_parameter(&expression, environment, last_status) {
+                if let Some(expanded) = expand_braced_parameter_mut(&expression, environment, last_status) {
                     result.push_str(&expanded);
                 } else {
                     result.extend(chars[index..=end].iter());
@@ -1702,6 +1718,11 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
 /// Expand the operand of a braced parameter operator, applying shell quote removal.
 /// Expand a braced parameter operator operand with quote removal.
 fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    let mut environment = environment.clone();
+    expand_parameter_word_mut(word, &mut environment, last_status)
+}
+
+fn expand_parameter_word_mut(word: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> String {
     let mut result = String::new();
     let mut expandable = String::new();
     let mut quote = 0u32;
@@ -1720,7 +1741,7 @@ fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, las
                 }
             } else { expandable.push(character); }
         } else if code == 39 || code == 34 {
-            if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); expandable.clear(); }
+            if !expandable.is_empty() { result.push_str(&expand_variables_mut(&expandable, environment, last_status)); expandable.clear(); }
             quote = code;
         } else if code == 92 {
             if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); expandable.clear(); }
@@ -1731,6 +1752,11 @@ fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, las
     result
 }
 fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
+    let mut environment = environment.clone();
+    expand_braced_parameter_mut(expression, &mut environment, last_status)
+}
+
+fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> Option<String> {
     for (operator, colon, mode) in [
         (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
         (":+", true, "alternate"), ("+", false, "alternate"),
@@ -1760,7 +1786,7 @@ fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, Stri
             if !valid_parameter_reference(name) { continue; }
             let pattern = &expression[index + operator.len()..];
             let value = parameter_value(name, environment, last_status);
-            let pattern = expand_variables(pattern, environment, last_status);
+            let pattern = expand_variables_mut(pattern, environment, last_status);
             return Some(remove_parameter_pattern(&value, &pattern, longest, prefix));
         }
     }
