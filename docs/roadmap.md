@@ -2,7 +2,7 @@
 
 ## Goal
 
-Mysh aims to become a mature, independently implemented POSIX shell for Android, with later Linux and FreeBSD validation. The normative shell-language target is the Shell Command Language in POSIX.1-2024.
+Mysh aims to become a mature, independently implemented POSIX shell, prioritizing Android's Bionic runtime and Linux systems using musl libc. The normative shell-language target is the Shell Command Language in POSIX.1-2024.
 
 Mysh must interpret shell programs itself. Bash, Zsh, BusyBox, and host `/bin/sh` are not runtime interpreters or compatibility targets. Comparison shells may be used only as independent behavioral references during testing.
 
@@ -172,9 +172,9 @@ Exit criteria:
 ## Separate utility and platform work
 
 - **External utilities:** maintain a separately documented inventory of POSIX utilities, uutils-provided commands, and utility gaps. Utility coverage does not determine shell-language conformance.
-- **Android:** keep ARM64 (`aarch64-linux-android`) and x86-64 (`x86_64-linux-android`) as the supported Android targets.
-- **Linux:** validate the shared implementation after the POSIX shell foundation is stable.
-- **FreeBSD:** add a dedicated platform integration after the portable core is stable. OpenBSD and NetBSD are not committed targets.
+- **Android / Bionic:** prioritize ARM64 (`aarch64-linux-android`) and x86-64 (`x86_64-linux-android`) builds and runtime validation against Android's Bionic libc.
+- **Linux / musl:** prioritize portable-core and runtime validation for musl-based Linux targets; add explicit musl build targets and CI coverage as the packaging design is finalized.
+- **Deferred platforms:** FreeBSD, OpenBSD, and NetBSD are not current targets. Do not add platform-specific integration or CI for them while Bionic and musl support are the priorities.
 - **MYPK:** continue as a separate package manager and do not couple its repository or package semantics to the shell parser.
 
 ## Current implementation boundary
