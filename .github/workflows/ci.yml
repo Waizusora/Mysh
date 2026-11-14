@@ -111,27 +111,28 @@ jobs:
           emulator-boot-timeout: 900
           script: |
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
-            adb shell chmod 755 /data/local/tmp/mysh
+            adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
+            adb shell chmod 755 /data/local/tmp/mysh /data/local/tmp/mysh-prefix/bin/coreutils
             adb shell mkdir -p /data/local/tmp/mysh-glob
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
-            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
+            output="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
             adb shell ls -la /data/local/tmp/mysh-glob
-            literal="$(adb shell "/data/local/tmp/mysh -c 'echo literal-ok'" | tr -d '\r')"
+            literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" | tr -d '\r')"
             printf 'Bionic literal echo output: <%s>\\n' "$literal"
             test "$literal" = "literal-ok"
-            exact="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
+            exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
             printf 'Bionic exact-path output: <%s>\\n' "$exact"
             test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
-            if glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
+            if glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
               glob_status=0
             else
               glob_status=$?
             fi
             printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
-            class_glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            class_glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
             printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
             test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
