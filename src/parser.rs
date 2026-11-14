@@ -303,6 +303,19 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn negated_compound_commands_are_retained_inside_compound_bodies() {
+        let tokens = lexer::lex("if true; then ! if false; then :; fi; fi").unwrap();
+        let parsed = super::parse_compound_list(&tokens).unwrap();
+        let super::CompoundCommand::If(statement) = &parsed[0].command else {
+            panic!("expected outer if command");
+        };
+        assert!(matches!(
+            &statement.clauses[0].body[0].command,
+            super::CompoundCommand::Simple(words) if words.first().is_some_and(|word| word.is_unquoted_literal("!"))
+        ));
+    }
+
+    #[test]
     fn asynchronous_markers_are_retained_inside_compound_bodies() {
         let tokens = lexer::lex("if true; then echo background & echo foreground; fi").unwrap();
         let parsed = super::parse_compound_list(&tokens).unwrap();
@@ -1030,7 +1043,19 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         }
 
         let start = index;
-        let command = if is_function_definition_start(tokens, index) {
+        let command = if tokens[index].is_unquoted_literal("!")
+            && is_compound_command_start(tokens, index)
+        {
+            let compound_end = compound_command_end(tokens, index)?;
+            if tokens.get(compound_end).is_some_and(|word| word.is_unquoted_literal("|")) {
+                index = pipeline_segment_end_after_compound(tokens, compound_end)?;
+            } else {
+                index = compound_end;
+            }
+            let pipeline_words = tokens[start..index].to_vec();
+            split_pipeline(pipeline_words.clone())?;
+            CompoundCommand::Simple(pipeline_words)
+        } else if is_function_definition_start(tokens, index) {
             let body_start = index + 3;
             let body_end = compound_command_end(tokens, body_start)?;
             if tokens.get(body_end).is_some_and(|word| word.is_unquoted_literal("|")) {
