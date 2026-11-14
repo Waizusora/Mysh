@@ -54,10 +54,21 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     Ok(commands)
 }
 
+/// Return true for POSIX operators that the lexer recognizes but the
+/// current execution engine does not implement yet.
+fn is_unsupported_operator(token: &Word) -> bool {
+    ["(", ")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|", "2>>", "2>&"]
+        .iter()
+        .any(|operator| token.is_unquoted_literal(operator))
+}
+
 /// Split one pipeline into its ordered stages.
 pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut stages = vec![Vec::new()];
     for token in tokens {
+        if is_unsupported_operator(&token) {
+            return Err("recognized shell operator is not implemented yet");
+        }
         if token.is_unquoted_literal("|") {
             if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
             stages.push(Vec::new());
@@ -100,6 +111,20 @@ mod command_structure_tests {
             assert!(split_pipeline(lexer::lex(input).unwrap()).is_err(), "{input}");
         }
     }
+    #[test]
+    fn parser_rejects_lexically_recognized_but_unimplemented_operators() {
+        for input in [
+            "( echo grouped )",
+            "case value in value) echo matched ;; esac",
+            "cat <<EOF",
+            "cmd 3>&1",
+            "cmd 2>>errors",
+        ] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(split_pipeline(tokens).is_err(), "{input}");
+        }
+    }
+
     #[test]
     fn quoted_pipe_remains_a_word() {
         let stages = split_pipeline(lexer::lex("echo '|'").unwrap()).unwrap();
@@ -376,6 +401,11 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
 
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
+    if tokens.iter().any(|token| {
+        is_unsupported_operator(token) || token.is_unquoted_literal("&")
+    }) {
+        return Err("recognized shell operator is not implemented yet");
+    }
     let mut entries = Vec::new();
     let mut index = 0usize;
     let mut connector = None;
