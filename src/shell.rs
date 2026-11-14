@@ -14,6 +14,8 @@ pub struct Shell {
     variables: BTreeMap<String, String>,
     exported: BTreeSet<String>,
     functions: BTreeMap<String, crate::parser::CompoundCommand>,
+    function_depth: usize,
+    function_return: Option<i32>,
     loop_depth: usize,
     loop_control: Option<LoopControl>,
 }
@@ -23,7 +25,7 @@ impl Default for Shell {
         let mut variables: BTreeMap<String, String> = std::env::vars().collect();
         let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
         configure_prefix_path(&mut variables, &mut exported);
-        Self { history: Vec::new(), last_status: 0, variables, exported, functions: BTreeMap::new(), loop_depth: 0, loop_control: None }
+        Self { history: Vec::new(), last_status: 0, variables, exported, functions: BTreeMap::new(), function_depth: 0, function_return: None, loop_depth: 0, loop_control: None }
     }
 }
 
@@ -209,6 +211,8 @@ impl Shell {
             variables: self.variables.clone(),
             exported: self.exported.clone(),
             functions: self.functions.clone(),
+            function_depth: self.function_depth,
+            function_return: None,
             loop_depth: 0,
             loop_control: None,
         };
@@ -278,6 +282,9 @@ impl Shell {
             if !keep_running {
                 return false;
             }
+            if self.function_return.is_some() {
+                return true;
+            }
             if self.loop_control.is_some() {
                 return true;
             }
@@ -339,6 +346,8 @@ impl Shell {
                     variables: self.variables.clone(),
                     exported: self.exported.clone(),
                     functions: self.functions.clone(),
+                    function_depth: self.function_depth,
+                    function_return: None,
                     loop_depth: 0,
                     loop_control: None,
                 };
@@ -566,6 +575,32 @@ impl Shell {
                 StageOutcome::Exit(self.last_status)
             };
         }
+        if command[0] == "return" {
+            if self.function_depth == 0 {
+                let _ = writeln!(err, "mysh: return: not in a function");
+                self.last_status = 1;
+                return StageOutcome::Continue(1);
+            }
+            if command.len() > 2 {
+                let _ = writeln!(err, "mysh: return: expected at most one status");
+                self.last_status = 2;
+                return StageOutcome::Continue(2);
+            }
+            let status = match command.get(1) {
+                Some(value) => match value.parse::<i32>() {
+                    Ok(status) => status.clamp(0, 255),
+                    Err(_) => {
+                        let _ = writeln!(err, "mysh: return: status must be an integer");
+                        self.last_status = 2;
+                        return StageOutcome::Continue(2);
+                    }
+                },
+                None => self.last_status,
+            };
+            self.function_return = Some(status);
+            self.last_status = status;
+            return StageOutcome::Continue(status);
+        }
         if is_shell_builtin(&command[0]) && is_special_builtin(&command[0]) {
             if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
                 return outcome;
@@ -582,7 +617,12 @@ impl Shell {
             }
             self.variables.insert("#".to_owned(), command.len().saturating_sub(1).to_string());
             let entries = vec![CompoundListEntry { command: function_body, connector: None }];
+            self.function_depth += 1;
             let keep_running = self.execute_compound_list(&entries, out, err);
+            self.function_depth -= 1;
+            if let Some(status) = self.function_return.take() {
+                self.last_status = status;
+            }
             for (name, value) in saved_positionals {
                 if let Some(value) = value {
                     self.variables.insert(name, value);
@@ -804,7 +844,7 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
 /// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
 /// deliberately dispatched as external commands so uutils can provide them.
 fn is_shell_builtin(name: &str) -> bool {
-    matches!(name, ":" | "." | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue")
+    matches!(name, ":" | "." | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "eval" | "exit" | "break" | "continue" | "return")
 }
 
 /// Utilities compiled into the pinned uutils 0.12.0 Android feature set.
@@ -832,7 +872,7 @@ fn is_uutils_utility(name: &str) -> bool {
 
 /// POSIX special built-ins execute in the current shell environment.
 fn is_special_builtin(name: &str) -> bool {
-    matches!(name, ":" | "." | "break" | "continue" | "eval" | "exit" | "export" | "unset")
+    matches!(name, ":" | "." | "break" | "continue" | "eval" | "exit" | "export" | "unset" | "return")
 }
 
 fn assignment(value: &str) -> Option<(&str, &str)> {
