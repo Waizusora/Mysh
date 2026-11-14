@@ -35,14 +35,14 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; brace groups and subshells now have recursive AST construction and execution semantics. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
+**Status: In progress; brace groups and subshells have recursive AST construction and execution semantics, and incremental input classification tracks nested brace and parenthesis delimiters. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
 - Complete command lists, pipelines, and all compound-command forms: brace groups, subshells, `if`, `case`, `for`, `while`, and `until`.
 - Implement function definitions and invocation.
 - Support grammar nesting and valid compound commands in every permitted grammar position.
-- Preserve incremental interactive parsing for incomplete input while rejecting invalid syntax.
+- Preserve incremental interactive parsing for incomplete quotes, brace groups, subshells, and compound commands while rejecting unmatched closing delimiters and invalid syntax.
 - Recognize POSIX compound-command, case terminator, and descriptor-redirection operator tokens without treating quoted lookalikes as operators.
 - Reject descriptor-redirection forms that the current execution engine cannot implement, rather than passing them through as command arguments.
 - Define syntax-error handling and parser recovery without silently accepting malformed input.
