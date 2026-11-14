@@ -1124,9 +1124,21 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
     let mut keep_empty = vec![word.is_quoted()];
     let mut expanded_at = false;
     for part in word.parts() {
+        let tilde = fields.iter().all(Vec::is_empty)
+            && !part.quoted
+            && part.expandable
+            && text.starts_with('~')
+            && (text.len() == 1 || text.as_bytes().get(1) == Some(&b'/'));
+        let text = if tilde {
+            let home = environment.get("HOME").cloned().unwrap_or_else(|| "~".to_owned());
+            fields.last_mut().unwrap().extend(home.chars().map(|character| (character, false, false)));
+            text[1..].to_owned()
+        } else {
+            text.clone()
+        };
         if part.quoted { *keep_empty.last_mut().unwrap() = true; }
         if part.expandable && part.quoted {
-            let chars: Vec<char> = part.text.chars().collect();
+            let chars: Vec<char> = text.chars().collect();
             let mut index = 0;
             let mut literal_start = 0;
             while index < chars.len() {
@@ -1160,9 +1172,9 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
             let value = expand_variables(&literal, environment, last_status);
             fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
         } else if part.expandable {
-            append_unquoted_expansion(&mut fields, &mut keep_empty, &part.text, environment, last_status);
+            append_unquoted_expansion(&mut fields, &mut keep_empty, &text, environment, last_status);
         } else {
-            fields.last_mut().unwrap().extend(part.text.chars().map(|c| (c, false, false)));
+            fields.last_mut().unwrap().extend(text.chars().map(|c| (c, false, false)));
         }
     }
     if expanded_at && positional_count(environment) == 0 && word.parts().len() == 1
@@ -2006,6 +2018,16 @@ mod tests {
         assert_eq!(expand_variables("$0", &environment, 0), "mysh");
     }
 
+    #[test]
+    fn tilde_expansion_is_unquoted_and_only_at_word_start() {
+        let environment = BTreeMap::from([("HOME".to_owned(), "/home/mysh".to_owned())]);
+        let unquoted = crate::lexer::lex("~/documents").unwrap();
+        assert_eq!(expand_word_fields(&unquoted[0], &environment, 0), ["/home/mysh/documents"]);
+        let quoted = crate::lexer::lex("'~/documents'").unwrap();
+        assert_eq!(expand_word_fields(&quoted[0], &environment, 0), ["~/documents"]);
+        let embedded = crate::lexer::lex("prefix~/documents").unwrap();
+        assert_eq!(expand_word_fields(&embedded[0], &environment, 0), ["prefix~/documents"]);
+    }
     #[test]
     fn arithmetic_assignment_expansion_updates_shell_variables() {
         let mut shell = Shell::new();
