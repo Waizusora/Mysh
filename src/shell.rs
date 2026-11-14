@@ -499,7 +499,17 @@ impl Shell {
                 }
                 break;
             }
-            pending.push_str(&line);
+            let line = line.trim_end_matches(['\\r', '\\n']);
+            if !pending.is_empty() {
+                let previous = pending.trim_end();
+                if previous.ends_with("then") {
+                    pending.push(' ');
+                } else {
+                    pending.push(';');
+                }
+            }
+            pending.push_str(line);
+            pending.push('\\n');
             if requires_more_input(&pending) {
                 continue;
             }
