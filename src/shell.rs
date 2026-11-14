@@ -1196,8 +1196,7 @@ fn required_parameter_expansion_error(tokens: &[Word], environment: &BTreeMap<St
             let mut index = 0;
             while index + 2 < chars.len() {
                 if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') else { break; };
-                let end = index + 2 + relative_end;
+                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
                 let expression: String = chars[index + 2..end].iter().collect();
                 let operator = if let Some(position) = expression.find(":?") {
                     Some((position, 2, true))
@@ -1236,8 +1235,7 @@ fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTre
             let mut index = 0;
             while index + 2 < chars.len() {
                 if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') else { break; };
-                let end = index + 2 + relative_end;
+                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
                 let expression: String = chars[index + 2..end].iter().collect();
                 if let Some(operator_index) = expression.find(":=") {
                     let name = &expression[..operator_index];
@@ -1534,11 +1532,11 @@ impl<'a> ArithmeticParser<'a> {
             self.index += operator.chars().count();
             let right = self.expression(precedence + 1)?;
             left = match operator {
-                "||" => i64::from(left != 0 || right != 0), "&&" => i64::from(left != 0 && right != 0),
+                "||" => if left != 0 || right != 0 { 1 } else { 0 }, "&&" => if left != 0 && right != 0 { 1 } else { 0 },
                 "|" => left | right, "^" => left ^ right, "&" => left & right,
-                "==" => i64::from(left == right), "!=" => i64::from(left != right),
-                "<" => i64::from(left < right), "<=" => i64::from(left <= right),
-                ">" => i64::from(left > right), ">=" => i64::from(left >= right),
+                "==" => if left == right { 1 } else { 0 }, "!=" => if left != right { 1 } else { 0 },
+                "<" => if left < right { 1 } else { 0 }, "<=" => if left <= right { 1 } else { 0 },
+                ">" => if left > right { 1 } else { 0 }, ">=" => if left >= right { 1 } else { 0 },
                 "<<" => left.checked_shl(right as u32)?, ">>" => left.checked_shr(right as u32)?,
                 "+" => left.checked_add(right)?, "-" => left.checked_sub(right)?, "*" => left.checked_mul(right)?,
                 "/" => left.checked_div(right)?, "%" => left.checked_rem(right)?, _ => return None,
@@ -1552,7 +1550,7 @@ impl<'a> ArithmeticParser<'a> {
             if self.chars.get(self.index).copied() == operator.chars().next() {
                 self.index += 1;
                 let value = self.unary()?;
-                return match operator { "+" => Some(value), "-" => value.checked_neg(), "!" => Some(i64::from(value == 0)), "~" => Some(!value), _ => None };
+                return match operator { "+" => Some(value), "-" => value.checked_neg(), "!" => Some(if value == 0 { 1 } else { 0 }), "~" => Some(!value), _ => None };
             }
         }
         self.primary()
@@ -1661,6 +1659,32 @@ mod tests {
         assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
     }
 
+    #[test]
+    fn nested_parameter_expansions_and_parameter_lengths_are_supported() {
+        let environment = BTreeMap::from([
+            ("OUTER".to_owned(), String::new()),
+            ("INNER".to_owned(), "nested".to_owned()),
+            ("1".to_owned(), "one".to_owned()),
+            ("10".to_owned(), "ten".to_owned()),
+        ]);
+        assert_eq!(expand_variables("${OUTER:-${INNER:-fallback}}", &environment, 0), "nested");
+        assert_eq!(expand_variables("${#INNER}", &environment, 0), "6");
+        assert_eq!(expand_variables("${10}", &environment, 0), "ten");
+        assert_eq!(expand_variables("$0", &environment, 0), "mysh");
+    }
+
+    #[test]
+    fn arithmetic_expansion_obeys_precedence_and_parentheses() {
+        let environment = BTreeMap::from([
+            ("VALUE".to_owned(), "7".to_owned()),
+            ("OTHER".to_owned(), "3".to_owned()),
+        ]);
+        assert_eq!(expand_variables("$((1 + 2 * 3))", &environment, 0), "7");
+        assert_eq!(expand_variables("$(( (1 + 2) * 3 ))", &environment, 0), "9");
+        assert_eq!(expand_variables("$((VALUE * OTHER + 1))", &environment, 0), "22");
+        assert_eq!(expand_variables("$((8 / 2 + 5 % 3))", &environment, 0), "6");
+        assert_eq!(expand_variables("$((1 < 2 && 4 != 5))", &environment, 0), "1");
+    }
     #[test]
     fn variable_expansion_supports_braced_and_unbraced_names() {
         let environment = BTreeMap::from([(String::from("MYSH_TEST_VALUE"), String::from("expanded"))]);
