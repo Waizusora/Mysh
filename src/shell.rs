@@ -75,7 +75,15 @@ impl Shell {
                 Some(ListOperator::And) => self.last_status == 0,
                 Some(ListOperator::Or) => self.last_status != 0,
             };
-            if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
+            if !should_run {
+                continue;
+            }
+            if entry.asynchronous {
+                let _ = writeln!(stderr, "mysh: asynchronous command execution is not implemented yet");
+                self.last_status = 2;
+                continue;
+            }
+            if !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
             if self.function_return.is_some() {
@@ -240,6 +248,11 @@ impl Shell {
             if !should_run {
                 continue;
             }
+            if entry.asynchronous {
+                let _ = writeln!(stderr, "mysh: asynchronous command execution is not implemented yet");
+                self.last_status = 2;
+                continue;
+            }
 
             let keep_running = match &entry.command {
                 crate::parser::CompoundCommand::Simple(words) => {
@@ -313,7 +326,7 @@ impl Shell {
             return match &stages[0] {
                 PipelineStage::Simple(words) => self.execute_stage(words, stdout, stderr),
                 PipelineStage::Compound(command) => {
-                    let entries = vec![CompoundListEntry { command: command.clone(), connector: None }];
+                    let entries = vec![CompoundListEntry { command: command.clone(), connector: None, asynchronous: false }];
                     self.execute_compound_list(&entries, stdout, stderr)
                 }
             };
