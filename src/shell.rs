@@ -1202,22 +1202,52 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
     pathname_expand_fields(split_expansion_fields(fields, keep_empty, environment))
 }
 
-fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool, bool)>>, keep_empty: &mut Vec<bool>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
+fn append_unquoted_expansion(
+    fields: &mut Vec<Vec<(char, bool, bool)>>,
+    keep_empty: &mut Vec<bool>,
+    source: &str,
+    environment: &BTreeMap<String, String>,
+    last_status: i32,
+) {
     let chars: Vec<char> = source.chars().collect();
-    let mut index = 0;
+    let mut index = 0usize;
     while index < chars.len() {
-        if chars[index] != '
+        if chars[index] as u32 != 36 {
+            fields.last_mut().unwrap().push((chars[index], false, true));
+            index += 1;
+            continue;
+        }
+        if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
+            if let Some(end) = matching_arithmetic_end(&chars, index) {
+                let expression: String = chars[index + 3..end - 1].iter().collect();
+                let value = evaluate_arithmetic(&expression, environment).unwrap_or(0).to_string();
+                fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true, true)));
+                index = end + 1;
+                continue;
+            }
+        }
+        let end = if chars.get(index + 1).is_some_and(|character| {
+            matches!(*character as u32, 63 | 35 | 64 | 42 | 36 | 33 | 45)
+                || character.is_ascii_digit()
+        }) {
+            index + 2
+        } else if chars.get(index + 1) == Some(&'{') {
+            matching_brace_end(&chars, index + 1).map(|end| end + 1).unwrap_or(index + 1)
+        } else if chars.get(index + 1).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             let mut end = index + 2;
-            while chars.get(end).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { end += 1; }
+            while chars.get(end).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
+                end += 1;
+            }
             end
         } else {
-            fields.last_mut().unwrap().push(('$', false, true));
+            fields.last_mut().unwrap().push((char::from(36), false, true));
             index += 1;
             continue;
         };
 
         let expression: String = chars[index..end].iter().collect();
-        if expression == "$@" || expression == concat!("$", "{@}") {
+        let expression_bytes = expression.as_bytes();
+        if expression_bytes == [36, b'@'] || expression_bytes == [36, b'{', b'@', b'}'] {
             let parameters = positional_parameters(environment);
             if let Some(first) = parameters.first() {
                 fields.last_mut().unwrap().extend(first.chars().map(|character| (character, true, true)));
@@ -1233,6 +1263,7 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool, bool)>>, keep_emp
         index = end;
     }
 }
+
 
 /// Apply pathname expansion after field splitting while preserving per-character quoting.
 fn pathname_expand_fields(fields: Vec<Vec<(char, bool, bool)>>) -> Vec<String> {
