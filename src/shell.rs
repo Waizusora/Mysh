@@ -1041,7 +1041,55 @@ mod tests {
     }
 
 
+
     #[test]
+    fn for_loop_expands_explicit_word_list_and_retains_final_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; done; echo final-$item", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nbeta\\nfinal-beta\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn for_loop_supports_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; break; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nafter\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do continue; echo skipped; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
+    }
+
+    #[test]
+    fn nested_for_supports_multilevel_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x y; do echo $outer-$inner; break 2; done; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "a-x\\nafter\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x; do echo $outer; continue 2; done; echo skipped; done", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "a\\nb\\n");
+    }
+
+    #[test]
+    fn for_without_explicit_word_list_runs_zero_times_without_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item; do echo unexpected; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
+    }
+\n    #[test]
     fn break_exits_the_current_loop_and_skips_remaining_body_commands() {
         let marker = std::env::temp_dir().join(format!("mysh-break-test-{}", std::process::id()));
         let _ = std::fs::remove_file(&marker);
