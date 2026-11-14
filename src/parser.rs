@@ -76,7 +76,7 @@ mod command_structure_tests {
     }
     #[test]
     fn pipeline_split_rejects_empty_stages() {
-        for input in ["| cat", "echo |", "echo || cat"] {
+        for input in ["| cat", "echo |", "echo | | cat"] {
             assert!(split_pipeline(lexer::lex(input).unwrap()).is_err(), "{input}");
         }
     }
