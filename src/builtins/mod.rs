@@ -1,6 +1,6 @@
 //! POSIX shell built-ins that must execute in the Mysh process.
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Write};
+use std::io::Write;
 
 pub enum BuiltinOutcome {
     Continue(i32),
