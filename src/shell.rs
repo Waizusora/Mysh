@@ -2065,6 +2065,19 @@ fn evaluate_arithmetic_mut(expression: &str, environment: &mut BTreeMap<String, 
 }
 
 fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>) -> Option<i64> {
+    let mut depth = 0usize;
+    let mut last_sequence_part = expression;
+    for (index, character) in expression.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => last_sequence_part = &expression[index + character.len_utf8()..],
+            _ => {}
+        }
+    }
+    if let Some((name, _, _)) = arithmetic_assignment_parts(last_sequence_part) {
+        return environment.get(&name).and_then(|value| parse_arithmetic_integer(value));
+    }
     let mut environment = environment.clone();
     evaluate_arithmetic_mut(expression, &mut environment)
 }
