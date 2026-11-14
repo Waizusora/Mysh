@@ -296,13 +296,13 @@ impl Shell {
                 return true;
             }
         };
-        for (pipeline, condition) in commands {
-            let should_run = match condition {
+        for entry in commands {
+            let should_run = match entry.connector {
                 None | Some(ListOperator::Sequence) => true,
                 Some(ListOperator::And) => self.last_status == 0,
                 Some(ListOperator::Or) => self.last_status != 0,
             };
-            if should_run && !self.execute_pipeline(&pipeline, stdout, stderr) {
+            if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
         }
