@@ -909,7 +909,8 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
         if brace_depth == 0 && subshell_depth == 0
             && (token.is_unquoted_literal(";;") || token.is_unquoted_literal(";")
                 || token.is_unquoted_literal("&&")
-                || token.is_unquoted_literal("||"))
+                || token.is_unquoted_literal("||")
+                || token.is_unquoted_literal("&"))
         {
             return index;
         }
@@ -936,6 +937,7 @@ fn pipeline_segment_end_after_compound(
         if tokens[index].is_unquoted_literal(";")
             || tokens[index].is_unquoted_literal("&&")
             || tokens[index].is_unquoted_literal("||")
+            || tokens[index].is_unquoted_literal("&")
         {
             return Ok(index);
         }
