@@ -1293,6 +1293,41 @@ fn open_output(path: &str, append: bool) -> io::Result<File> {
 }
 
 /// Expand the currently supported simple environment-variable references.
+fn matching_brace_end(chars: &[char], opening: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut index = opening + 1;
+    let mut quote = None;
+    let mut escaped = false;
+    while index < chars.len() {
+        let character = chars[index];
+        if escaped { escaped = false; index += 1; continue; }
+        if quote == Some('"') && character == '\\' { escaped = true; index += 1; continue; }
+        if let Some(active) = quote { if character == active { quote = None; } index += 1; continue; }
+        match character {
+            '\'' | '"' => quote = Some(character),
+            value if value as u32 == 36 && chars.get(index + 1) == Some(&'{') => { depth += 1; index += 1; }
+            '}' => { depth -= 1; if depth == 0 { return Some(index); } }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+fn matching_arithmetic_end(chars: &[char], opening: usize) -> Option<usize> {
+    let mut depth = 2usize;
+    let mut index = opening + 3;
+    while index < chars.len() {
+        match chars[index] {
+            '(' => depth += 1,
+            ')' => { depth -= 1; if depth == 0 { return Some(index); } }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
 fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut result = String::new();
@@ -1302,6 +1337,18 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             result.push(chars[index]);
             index += 1;
             continue;
+        }
+        if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
+            if let Some(end) = matching_arithmetic_end(&chars, index) {
+                let expression: String = chars[index + 3..end - 1].iter().collect();
+                if let Some(value) = evaluate_arithmetic(&expression, environment) {
+                    result.push_str(&value.to_string());
+                } else {
+                    result.push('0');
+                }
+                index = end + 1;
+                continue;
+            }
         }
         if chars.get(index + 1) == Some(&'?') {
             result.push_str(&last_status.to_string());
@@ -1325,8 +1372,7 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             continue;
         }
         if chars.get(index + 1) == Some(&'{') {
-            if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
-                let end = index + 2 + relative_end;
+            if let Some(end) = matching_brace_end(&chars, index + 1) {
                 let expression: String = chars[index + 2..end].iter().collect();
                 if let Some(expanded) = expand_braced_parameter(&expression, environment, last_status) {
                     result.push_str(&expanded);
@@ -1341,6 +1387,11 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             continue;
         }
         let start = index + 1;
+        if chars.get(start) == Some(&'0') {
+            result.push_str(environment.get("0").map(String::as_str).unwrap_or("mysh"));
+            index = start + 1;
+            continue;
+        }
         if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             index = start + 1;
             while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { index += 1; }
@@ -1390,6 +1441,11 @@ fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, Stri
         }
     }
 
+    if let Some(name) = expression.strip_prefix('#') {
+        if valid_parameter_reference(name) && name != "#" {
+            return Some(parameter_value(name, environment, last_status).chars().count().to_string());
+        }
+    }
     if valid_parameter_reference(expression) {
         return Some(parameter_value(expression, environment, last_status));
     }
@@ -1398,13 +1454,13 @@ fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, Stri
 
 fn valid_parameter_reference(name: &str) -> bool {
     name == "?" || name == "#" || name == "@" || name == "*"
-        || (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
+        || (!name.is_empty() && name.chars().all(|character| character.is_ascii_digit()))
         || valid_parameter_name(name)
 }
 
 fn parameter_is_set(name: &str, environment: &BTreeMap<String, String>) -> bool {
     match name {
-        "?" | "#" | "@" | "*" => true,
+        "?" | "#" | "@" | "*" | "0" => true,
         _ => environment.contains_key(name),
     }
 }
@@ -1414,6 +1470,10 @@ fn parameter_value(name: &str, environment: &BTreeMap<String, String>, last_stat
         "?" => last_status.to_string(),
         "#" => environment.get("#").cloned().unwrap_or_else(|| "0".to_owned()),
         "@" | "*" => positional_parameters(environment).join(&ifs_join_separator(environment)),
+        "0" => environment.get("0").cloned().unwrap_or_else(|| "mysh".to_owned()),
+        _ if name.chars().all(|character| character.is_ascii_digit()) => {
+            environment.get(&name.parse::<usize>().unwrap_or(usize::MAX).to_string()).cloned().unwrap_or_default()
+        }
         _ => environment.get(name).cloned().unwrap_or_default(),
     }
 }
