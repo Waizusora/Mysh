@@ -2508,7 +2508,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let command = "SET=kept; echo \${SET:-$(mysh_command_that_must_not_run)} \${MISSING:-$(printf nested)} \${OUTER:-\${INNER:-$(printf deep)}}";
+        let command = r"SET=kept; echo ${SET:-$(mysh_command_that_must_not_run)} ${MISSING:-$(printf nested)} ${OUTER:-${INNER:-$(printf deep)}}";
         assert!(shell.execute_line(command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "kept nested deep\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
