@@ -749,3 +749,42 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod compound_boundary_tests {
+    use super::compound_command_end;
+    use crate::lexer;
+
+    #[test]
+    fn compound_boundary_matches_nested_if_and_loop_pairs() {
+        let cases = [
+            ("if true; then if false; then echo no; fi; echo yes; fi; echo after", "fi", 0),
+            ("while true; do until false; do echo nested; done; done; echo after", "done", 0),
+        ];
+        for (input, closing, _) in cases {
+            let tokens = lexer::lex(input).unwrap();
+            let end = compound_command_end(&tokens, 0).unwrap();
+            assert!(tokens[end - 1].is_unquoted_literal(closing));
+            assert!(end < tokens.len());
+            assert_eq!(tokens[end].as_str(), "echo");
+        }
+    }
+
+    #[test]
+    fn compound_boundary_rejects_missing_closers_and_non_compounds() {
+        for input in ["if true; then echo yes", "while true; do echo yes", "echo ordinary"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(compound_command_end(&tokens, 0).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn compound_boundary_can_start_after_a_command_separator() {
+        let tokens = lexer::lex("echo before; if true; then echo inside; fi; echo after").unwrap();
+        let start = tokens.iter().position(|word| word.is_unquoted_literal("if")).unwrap();
+        let end = compound_command_end(&tokens, start).unwrap();
+        assert!(tokens[end - 1].is_unquoted_literal("fi"));
+        assert!(tokens[end].is_unquoted_literal(";"));
+    }
+}
