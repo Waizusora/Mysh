@@ -72,7 +72,7 @@ Exit criteria:
 
 ## Phase 4 — POSIX execution semantics
 
-**Status: Partial; current pipelines and redirections are limited.**
+**Status: Partial; buffered pipelines now accept brace-group and subshell stages, but compound-stage input delivery and concurrent pipe execution remain incomplete. Redirection semantics are also limited.**
 
 Scope:
 - Implement concurrent pipelines with operating-system pipes rather than sequential buffering.
