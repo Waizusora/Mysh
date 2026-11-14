@@ -788,6 +788,7 @@ pub fn classify_input(input: &str) -> InputState {
 
     let mut stack = Vec::new();
     let mut subshell_depth = 0usize;
+    let mut brace_depth = 0usize;
     for index in 0..tokens.len() {
         if tokens[index].is_unquoted_literal("(") {
             subshell_depth += 1;
@@ -796,6 +797,13 @@ pub fn classify_input(input: &str) -> InputState {
                 return InputState::Invalid;
             }
             subshell_depth -= 1;
+        } else if tokens[index].is_unquoted_literal("{") {
+            brace_depth += 1;
+        } else if tokens[index].is_unquoted_literal("}") {
+            if brace_depth == 0 {
+                return InputState::Invalid;
+            }
+            brace_depth -= 1;
         }
         if is_reserved_word(&tokens, index, "if") {
             stack.push(CompoundPhase::IfAwaitThen);
@@ -853,7 +861,7 @@ pub fn classify_input(input: &str) -> InputState {
         }
     }
 
-    if !stack.is_empty() || subshell_depth > 0 {
+    if !stack.is_empty() || subshell_depth > 0 || brace_depth > 0 {
         InputState::Incomplete
     } else {
         InputState::Complete
@@ -957,6 +965,17 @@ mod tests {
     #[test]
     fn unterminated_quotes_are_incomplete_input() {
         assert_eq!(classify_input("echo 'unfinished"), InputState::Incomplete);
+    }
+
+    #[test]
+    fn brace_groups_are_classified_incrementally() {
+        assert_eq!(classify_input("{ echo open;"), InputState::Incomplete);
+        assert_eq!(classify_input("{ { echo nested; }"), InputState::Incomplete);
+        assert_eq!(classify_input("{ echo complete; }"), InputState::Complete);
+        assert_eq!(classify_input("{ { echo nested; }; }"), InputState::Complete);
+        assert_eq!(classify_input("}"), InputState::Invalid);
+        assert_eq!(classify_input("{ echo open; }}"), InputState::Invalid);
+        assert_eq!(classify_input("echo '{' '}'"), InputState::Complete);
     }
 
     #[test]
