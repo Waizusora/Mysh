@@ -121,11 +121,14 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 
 /// Recognize a compound command only at the beginning of a pipeline stage.
 fn is_compound_command_start(tokens: &[Word], index: usize) -> bool {
-    let command_index = if tokens.get(index).is_some_and(|word| word.is_unquoted_literal("!")) {
-        index + 1
-    } else {
-        index
-    };
+    let leading_negation = tokens.get(index).is_some_and(|word| word.is_unquoted_literal("!"))
+        && (index == 0
+            || tokens.get(index - 1).is_some_and(|word| {
+                word.is_unquoted_literal(";")
+                    || word.is_unquoted_literal("&&")
+                    || word.is_unquoted_literal("||")
+            }));
+    let command_index = if leading_negation { index + 1 } else { index };
     tokens.get(command_index).is_some_and(|word| word.is_unquoted_literal("("))
         || is_reserved_word(tokens, command_index, "{")
         || ["if", "case", "for", "while", "until"]
@@ -1279,6 +1282,12 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
         || previous.is_unquoted_literal("!")
+            && (index == 1
+                || tokens.get(index - 2).is_some_and(|word| {
+                    word.is_unquoted_literal(";")
+                        || word.is_unquoted_literal("&&")
+                        || word.is_unquoted_literal("||")
+                }))
         || previous.is_unquoted_literal(")")
         || previous.is_unquoted_literal("fi") && is_reserved_word(tokens, index - 1, "fi")
         || previous.is_unquoted_literal("done") && is_reserved_word(tokens, index - 1, "done")
@@ -1635,7 +1644,7 @@ mod tests {
 
     #[test]
     fn keyword_arguments_do_not_create_following_command_positions() {
-        for input in ["echo if if", "echo then if", "echo else if", "echo do if"] {
+        for input in ["echo if if", "echo then if", "echo else if", "echo do if", "echo ! if"] {
             let tokens = lexer::lex(input).unwrap();
             assert!(!is_reserved_word(&tokens, 2, "if"), "{input}");
         }
