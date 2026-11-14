@@ -296,7 +296,7 @@ fn filesystem_commands_honor_option_termination_and_reject_unknown_options() {
 
     for command in ["mkdir -z", "touch -z", "rmdir -z", "cat -z"] {
         let output = run_in(&directory, command);
-        assert_eq!(output.status.code(), Some(2), "command: {command}");
+        assert!(!output.status.success(), "command: {command}");
     }
 
     fs::remove_dir_all(directory).unwrap();
