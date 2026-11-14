@@ -29,6 +29,9 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || tokens[index - 1].is_unquoted_literal("&&")
         || tokens[index - 1].is_unquoted_literal("||")
         || tokens[index - 1].is_unquoted_literal("|")
+        || tokens[index - 1].is_unquoted_literal("then")
+        || tokens[index - 1].is_unquoted_literal("else")
+        || tokens[index - 1].is_unquoted_literal("do")
 }
 
 /// Classify buffered input without treating every lexer error as continuation.
@@ -100,6 +103,8 @@ mod tests {
         let tokens = lexer::lex("echo if; if true; then echo fi; fi").unwrap();
         assert!(!is_reserved_word(&tokens, 1, "if"));
         assert!(is_reserved_word(&tokens, 3, "if"));
+        let after_else = lexer::lex("else if true; then echo ok; fi").unwrap();
+        assert!(is_reserved_word(&after_else, 1, "if"));
         assert!(!is_reserved_word(&tokens, 8, "fi"));
         assert!(is_reserved_word(&tokens, 10, "fi"));
     }
