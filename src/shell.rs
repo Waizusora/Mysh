@@ -1448,6 +1448,23 @@ mod tests {
     }
 
     #[test]
+    fn assignment_parameter_expansion_persists_unset_and_null_values() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("echo ${MYSH_ASSIGN_UNSET:=created}", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_ASSIGN_UNSET").map(String::as_str), Some("created"));
+
+        assert!(shell.execute_line("MYSH_ASSIGN_EMPTY=; echo ${MYSH_ASSIGN_EMPTY:=replaced}", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_ASSIGN_EMPTY").map(String::as_str), Some("replaced"));
+
+        assert!(shell.execute_line("MYSH_ASSIGN_SET=existing; echo ${MYSH_ASSIGN_SET:=ignored}", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_ASSIGN_SET").map(String::as_str), Some("existing"));
+        assert!(errors.is_empty(), "unexpected shell errors: {}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn parameter_expansion_supports_default_and_alternate_operators() {
         let environment = BTreeMap::from([
             ("SET".to_owned(), "value".to_owned()),
