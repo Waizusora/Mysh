@@ -380,6 +380,22 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn compound_command_is_retained_on_the_right_side_of_a_pipeline() {
+        let tokens = lexer::lex("echo pipeline | if true; then cat; fi").unwrap();
+        let parsed = split_command_list(tokens).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].pipeline.stages.len(), 2);
+        assert!(matches!(
+            &parsed[0].pipeline.stages[0],
+            super::PipelineStage::Simple(_)
+        ));
+        assert!(matches!(
+            &parsed[0].pipeline.stages[1],
+            super::PipelineStage::Compound(super::CompoundCommand::If(_))
+        ));
+    }
+
+    #[test]
     fn case_pattern_alternation_and_keyword_subjects_stay_inside_the_case_stage() {
         let tokens = lexer::lex("case in in one|two) : ;; esac | cat").unwrap();
         let parsed = split_pipeline(tokens).unwrap();
