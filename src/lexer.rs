@@ -123,6 +123,23 @@ fn consume_dollar_parenthesis<I: Iterator<Item = char>>(
     Err(LexError("unterminated command or arithmetic substitution"))
 }
 
+/// Consume a legacy backquoted command substitution without splitting its body.
+fn consume_backquote_substitution<I: Iterator<Item = char>>(
+    characters: &mut std::iter::Peekable<I>,
+    word: &mut Word,
+    quoted: bool,
+) -> Result<(), LexError> {
+    word.push(char::from(96), true, quoted);
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        word.push(character, true, quoted);
+        if escaped { escaped = false; continue; }
+        if character == '\\' { escaped = true; continue; }
+        if character as u32 == 96 { return Ok(()); }
+    }
+    Err(LexError("unterminated backquoted command substitution"))
+}
+
 /// Split a command line into words while retaining quote and escape metadata.
 ///
 /// This is a lexical foundation, not a complete POSIX shell parser. Operator
@@ -145,6 +162,7 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
             }
             Some('"') => match character {
                 '"' => quote = None,
+                value if value as u32 == 96 => consume_backquote_substitution(&mut characters, &mut word, true)?,
                 value if value as u32 == 36 && characters.peek() == Some(&'(') => {
                     consume_dollar_parenthesis(&mut characters, &mut word, true)?;
                 }
@@ -163,6 +181,10 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                 '\'' | '"' => {
                     quote = Some(character);
                     word.mark_quoted();
+                    started = true;
+                }
+                value if value as u32 == 96 => {
+                    consume_backquote_substitution(&mut characters, &mut word, false)?;
                     started = true;
                 }
                 value if value as u32 == 36 && characters.peek() == Some(&'(') => {
@@ -295,6 +317,13 @@ mod tests {
         assert!(lex("echo unfinished\\").is_err());
     }
 
+    #[test]
+    fn backquoted_command_substitution_remains_a_single_word() {
+        let words = lex("echo `printf 'two words'` \"`echo quoted`\"").unwrap();
+        assert_eq!(words.len(), 3);
+        assert_eq!(words[1].literal_value(), "`printf 'two words'`");
+        assert!(words[2].is_quoted());
+    }
     #[test]
     fn command_and_arithmetic_substitutions_remain_single_words() {
         let words = lex("echo $(printf 'two words') $((1 + (2 * 3))) \"$(echo nested)\"").unwrap();
