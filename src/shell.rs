@@ -147,7 +147,7 @@ impl Shell {
         let values: Vec<String> = if statement.words.is_empty() {
             positional_parameters(&self.variables)
         } else {
-            statement.words.iter().map(|word| expand_word(word, &self.variables, self.last_status)).collect()
+            statement.words.iter().flat_map(|word| expand_word_fields(word, &self.variables, self.last_status)).collect()
         };
         self.loop_depth += 1;
         let mut keep_running = true;
@@ -950,6 +950,2523 @@ fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status:
         }
     }
     expanded
+}
+
+/// Expand a word into its argument fields, preserving the boundaries produced
+/// by a quoted positional-parameter expansion.
+fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
+    let mut fields = vec![String::new()];
+    let mut expanded_at = false;
+    for part in word.parts() {
+        if part.expandable && part.quoted {
+            let characters: Vec<char> = part.text.chars().collect();
+            let mut index = 0;
+            let mut literal_start = 0;
+            while index < characters.len() {
+                let marker_len = if characters.get(index..index + 2) == Some(&['
+
+fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
+    let mut command = Vec::new();
+    let mut redirects = Redirections::default();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        let operator = ["<", ">", ">>", "2>"]
+            .into_iter()
+            .find(|operator| token.is_unquoted_literal(operator));
+        if let Some(operator) = operator {
+            let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+            let target = expand_word(target, environment, last_status);
+            match operator {
+                "<" => redirects.input = Some(target),
+                ">" => { redirects.output = Some(target); redirects.append = false; }
+                ">>" => { redirects.output = Some(target); redirects.append = true; }
+                "2>" => redirects.error = Some(target),
+                _ => unreachable!(),
+            }
+            index += 2;
+        } else {
+            command.extend(expand_word_fields(token, environment, last_status));
+            index += 1;
+        }
+    }
+    Ok((command, redirects))
+}
+
+fn open_output(path: &str, append: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true);
+    if append { options.append(true); } else { options.truncate(true); }
+    options.open(path)
+}
+
+/// Expand the currently supported simple environment-variable references.
+fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut result = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '$' {
+            result.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'?') {
+            result.push_str(&last_status.to_string());
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'#') {
+            result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1).is_some_and(|character| matches!(character, '@' | '*')) {
+            let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+            let joined = positional_parameters(environment).join(&separator.to_string());
+            result.push_str(&joined);
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
+            let name = chars[index + 1].to_string();
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'{') {
+            if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
+                let end = index + 2 + relative_end;
+                let name: String = chars[index + 2..end].iter().collect();
+                if name == "?" {
+                    result.push_str(&last_status.to_string());
+                } else if name == "#" {
+                    result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+                } else if name == "@" || name == "*" {
+                    let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+                    result.push_str(&positional_parameters(environment).join(&separator.to_string()));
+                } else if (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
+                    || valid_parameter_name(&name)
+                {
+                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+                } else {
+                    result.extend(chars[index..=end].iter());
+                }
+                index = end + 1;
+                continue;
+            }
+            result.push_str("${");
+            index += 2;
+            continue;
+        }
+
+        let start = index + 1;
+        if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
+            index = start + 1;
+            while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
+                index += 1;
+            }
+            let name: String = chars[start..index].iter().collect();
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+        } else {
+            result.push('$');
+            index += 1;
+        }
+    }
+    result
+}
+
+fn valid_parameter_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+/// Convert a child-process status into the conventional shell exit-code range.
+fn external_status_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() { return code; }
+    #[cfg(unix)] { use std::os::unix::process::ExitStatusExt; status.signal().map_or(128, |signal| 128 + signal) }
+    #[cfg(not(unix))] { 128 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, Shell};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn brace_groups_execute_in_the_current_shell_environment() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_BRACE_VALUE=before; { export MYSH_BRACE_VALUE=after; }; echo $MYSH_BRACE_VALUE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+
+    #[test]
+    fn subshell_isolates_variables_directory_and_exit() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let original_directory = std::env::current_dir().unwrap();
+        assert!(shell.execute_line("export MYSH_SUBSHELL_VALUE=parent; ( export MYSH_SUBSHELL_VALUE=child; cd /; exit 7 ); echo $MYSH_SUBSHELL_VALUE:$?", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "parent:7\n");
+        assert_eq!(std::env::current_dir().unwrap(), original_directory);
+        assert_eq!(shell.last_status(), 0);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn executes_external_echo_utility() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(shell.execute_line("echo hello", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty()); assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn reports_lexer_errors_without_exiting() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(shell.execute_line("echo 'unfinished", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn exit_returns_the_requested_status() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
+    }
+
+    #[test]
+    fn variable_expansion_supports_braced_and_unbraced_names() {
+        let environment = BTreeMap::from([(String::from("MYSH_TEST_VALUE"), String::from("expanded"))]);
+        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}", &environment, 0), "expanded/expanded");
+        assert_eq!(expand_variables("status=$? braced=${?}", &environment, 37), "status=37 braced=37");
+    }
+
+    #[test]
+    fn last_exit_status_parameter_expands_in_command_arguments() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("mysh_command_that_does_not_exist_9f31", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 127);
+        assert!(shell.execute_line("echo status=$? braced=${?}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "status=127 braced=127\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+    }
+
+    #[test]
+    fn variable_expansion_respects_single_quotes_and_escapes() {
+        let mut shell = Shell::new();
+        shell.variables.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
+        assert!(errors.is_empty());
+        
+    }
+
+    #[test]
+    fn prefix_bin_is_added_before_existing_path() {
+        let root = std::env::temp_dir().join(format!("mysh-prefix-test-{}", std::process::id()));
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let mut variables = BTreeMap::from([
+            ("MYSH_PREFIX".to_owned(), root.to_string_lossy().into_owned()),
+            ("PATH".to_owned(), "/system/bin".to_owned()),
+        ]);
+        let mut exported = BTreeSet::from(["MYSH_PREFIX".to_owned(), "PATH".to_owned()]);
+        configure_prefix_path(&mut variables, &mut exported);
+        let paths: Vec<_> = std::env::split_paths(variables.get("PATH").unwrap()).collect();
+        assert_eq!(paths.first(), Some(&bin));
+        assert_eq!(paths.get(1), Some(&std::path::PathBuf::from("/system/bin")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn assignment_only_creates_unexported_shell_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_LOCAL_TEST='local value'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_LOCAL_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "local value\n");
+        assert!(!shell.exported.contains("MYSH_LOCAL_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_prefix_assignment_is_temporary() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_TEMP_TEST=value echo temporary", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_TEMP_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "temporary\n\n");
+        assert!(!shell.variables.contains_key("MYSH_TEMP_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn assignments_before_special_builtins_persist() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_SPECIAL_ASSIGN_TEST=persist export", &mut output, &mut errors));
+        assert!(shell.variables.get("MYSH_SPECIAL_ASSIGN_TEST").is_some_and(|value| value == "persist"));
+        assert!(shell.exported.contains("MYSH_SPECIAL_ASSIGN_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn export_updates_shell_expansion_and_unset_removes_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_EXPORT_TEST='hello world'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello world\n");
+        assert!(shell.execute_line("unset MYSH_EXPORT_TEST", &mut Vec::new(), &mut errors));
+        let mut after_unset = Vec::new();
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut after_unset, &mut errors));
+        assert_eq!(String::from_utf8(after_unset).unwrap(), "\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn quoted_pipe_is_a_word_not_a_pipeline_operator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo '|' ", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "|\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn quoted_redirection_operator_is_an_argument() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), ">\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_list_runs_semicolon_separated_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo first; echo second;", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn conditional_command_lists_short_circuit_and_chain_left_to_right() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "mysh_missing_conditional_test && echo skipped || echo fallback",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn command_list_rejects_missing_conditional_operands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo missing &&", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+
+    #[test]
+    fn case_selects_first_matching_pattern_arm() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "selected\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn case_supports_shell_wildcard_and_bracket_patterns() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case item42 in item*) echo wildcard ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(shell.execute_line(
+            "case b in [a-z]) echo range ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\nrange\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_supports_nested_compound_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case item42 in item*) if true; then echo nested; fi ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_without_a_matching_arm_returns_success_without_running_a_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_definition_registers_and_invokes_a_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "greet() { echo hello; }; greet",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_invocation_exposes_and_restores_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "show() { echo $1 $2 $#; }; show alpha beta; echo $1 $#",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha beta 2\n 0\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn shift_updates_positional_parameters_and_count() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $1:$2:$#; shift; echo $1:$2:$#; }; show alpha beta gamma", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha:beta:3\nbeta:gamma:2\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn shift_inside_nested_function_restores_outer_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("inner() { shift; echo $1:$#; }; outer() { inner x y; echo $1:$2:$#; }; outer a b c", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "y:1\na:b:3\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn positional_star_and_at_expand_using_ifs_separator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $*; echo $@; }; show one two three", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one two three\none two three\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn for_without_word_list_iterates_over_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("iterate() { for item; do echo $item; done; }; iterate first second third", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\nthird\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn nested_function_calls_restore_the_callers_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "inner() { echo $1; }; outer() { inner innerarg; echo $1; }; outer outerarg",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "innerarg\nouterarg\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_definition_persists_shell_variable_changes() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "set_value() { VALUE=updated; }; set_value; echo $VALUE",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "updated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn shell_functions_override_regular_builtins() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "pwd() { echo function; }; pwd",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "function\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn special_builtins_keep_precedence_over_shell_functions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "export() { echo shadowed; }; export MYSH_FUNCTION_TEST=active; echo $MYSH_FUNCTION_TEST",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "active\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_exits_a_function_with_the_requested_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { echo before; return 7; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\n7\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn return_without_an_operand_uses_the_current_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { false; return; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "1\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_propagates_out_of_nested_loop_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { while true; do return 9; done; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "9\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_stops_commands_evaluated_by_eval() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { eval 'return 6; echo unreachable'; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "6\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_propagates_from_if_conditions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { if return 8; then echo unreachable; fi; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "8\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_is_rejected_outside_a_function() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("return 3", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(String::from_utf8(errors).unwrap().contains("not in a function"));
+    }
+
+    #[test]
+    fn if_then_executes_the_success_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; then echo success; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nsuccess\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_else_executes_the_failure_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_if_test; then echo wrong; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_elif_selects_the_first_successful_condition() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_first; then echo first; elif echo second; then echo selected; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "second\nselected\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_supports_a_nested_if_as_a_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_outer; then echo wrong; else if echo inner; then echo nested; fi; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inner\nnested\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_branch_supports_commands_before_and_after_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if mysh_missing_outer_mixed; then echo wrong; else echo before; if echo inner; then echo nested; fi; echo after; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninner\nnested\nafter\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_branch_honors_conditional_command_lists_around_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo condition; then mysh_missing_inner && echo skipped; if echo nested; then echo selected; fi; echo final; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nnested\nselected\nfinal\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn multiline_if_is_buffered_until_its_closing_fi() {
+        let input = "if echo condition; then\necho before\nif echo nested; then\necho selected\nfi\necho after\nfi\n";
+        let mut reader = std::io::Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut shell = Shell::new();
+        assert_eq!(shell.run(&mut reader, &mut output, false).unwrap(), 0);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "condition\nbefore\nnested\nselected\nafter\n",
+        );
+    }
+
+    #[test]
+    fn continuation_detection_tracks_compound_if_depth() {
+        assert!(requires_more_input("if echo condition; then\necho body\n"));
+        assert!(requires_more_input("if echo outer; then\nif echo inner; then\necho body\nfi\n"));
+        assert!(!requires_more_input("if echo condition; then\necho body\nfi\n"));
+        assert!(!requires_more_input("echo ordinary command\n"));
+    }
+
+    #[test]
+    fn keyword_looking_arguments_do_not_change_if_structure() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo if; then echo fi; echo then; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if\nfi\nthen\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn quoted_and_escaped_keyword_looking_arguments_remain_words() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            r#"if echo 'if' \fi; then echo "fi"; fi"#,
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if fi\nfi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn unmatched_closing_reserved_words_are_syntax_errors() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("fi", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn if_rejects_missing_then_or_fi() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; echo body", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn pipeline_parser_rejects_empty_stages() {
+    }
+
+    #[test]
+    fn pipeline_prefix_assignments_are_temporary_to_the_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_PIPE_ASSIGN_TEST=value echo pipeline | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_ASSIGN_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_ASSIGN_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn pipeline_builtin_variable_changes_do_not_leak_to_parent() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_PIPE_EXPORT_TEST=value | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_EXPORT_TEST"));
+        assert!(!shell.exported.contains("MYSH_PIPE_EXPORT_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn brace_group_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ echo one; echo two; } | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn subshell_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("( echo hello ) | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn compound_group_can_run_after_a_simple_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo before | { echo after; }", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_compound_stage_does_not_leak_shell_state() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ export MYSH_PIPE_GROUP=value; echo inside; } | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo $MYSH_PIPE_GROUP", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inside\n\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_GROUP"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn pipeline_passes_external_cat_stdin() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo pipeline | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_operator_does_not_require_surrounding_whitespace() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo compact|cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "compact\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn output_redirection_does_not_require_surrounding_whitespace() {
+        let path = std::env::temp_dir().join(format!("mysh-redirection-{}", std::process::id()));
+        let path_text = path.to_string_lossy();
+        let command = format!("echo redirected>{path_text}");
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\n");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pipeline_passes_input_through_external_utility_stages() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo multi | cat | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "multi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_signal_termination_to_conventional_shell_status() {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(external_status_code(std::process::ExitStatus::from_raw(9)), 137);
+    }
+
+
+
+    #[test]
+    fn for_loop_expands_explicit_word_list_and_retains_final_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; done; echo final-$item", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\nfinal-beta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn for_loop_supports_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; break; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do continue; echo skipped; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+    }
+
+    #[test]
+    fn nested_for_supports_multilevel_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x y; do echo $outer-$inner; break 2; done; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "a-x\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x; do echo $outer; continue 2; done; echo skipped; done", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "a\nb\n");
+    }
+
+    #[test]
+    fn for_and_while_loops_execute_when_mixed_and_nested() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "for item in alpha beta; do while false; do echo skipped; done; echo $item; done",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let marker = std::env::temp_dir().join(format!("mysh-mixed-loop-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!(
+            "while test ! -e '{}'; do for item in one two; do echo $item; done; touch '{}'; done",
+            marker.display(),
+            marker.display(),
+        );
+        let mut output = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn for_without_explicit_word_list_runs_zero_times_without_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item; do echo unexpected; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+    }
+
+    #[test]
+    fn break_exits_the_current_loop_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-break-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; echo before; break; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn continue_starts_the_next_iteration_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-continue-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; continue; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+
+    #[test]
+    fn continue_two_resumes_the_outer_loop_iteration() {
+        let outer = std::env::temp_dir().join(format!("mysh-continue-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-continue-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do while test ! -e '{}'; do touch '{}'; continue 2; echo skipped-inner; done; touch '{}'; echo skipped-outer; done; echo after", outer.display(), inner.display(), inner.display(), outer.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "skipped-outer\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
+    }
+
+    #[test]
+    fn break_two_exits_two_nested_loops() {
+        let outer = std::env::temp_dir().join(format!("mysh-break-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-break-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; while test ! -e '{}'; do touch '{}'; break 2; echo skipped-inner; done; echo skipped-outer; done; echo after", outer.display(), outer.display(), inner.display(), inner.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
+    }
+
+    #[test]
+    fn loop_control_rejects_use_outside_loops_and_excessive_levels() {
+        let mut shell = Shell::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("break", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(shell.execute_line("continue 0", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        let marker = std::env::temp_dir().join(format!("mysh-break-depth-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!("while test ! -e '{}'; do break 2; touch '{}'; done; true", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 0);
+        let _ = std::fs::remove_file(marker);
+        let text = String::from_utf8(errors).unwrap();
+        assert!(text.contains("not in a loop"));
+        assert!(text.contains("positive integer"));
+        assert!(text.contains("level exceeds active loop depth"));
+    }
+
+    #[test]
+    fn while_loop_repeats_until_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-while-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn until_loop_repeats_while_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-until-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "until test -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn nested_until_loop_executes_inside_while_body() {
+        let marker = std::env::temp_dir().join(format!("mysh-nested-loop-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do until test -e '{}'; do touch '{}'; echo nested; done; done",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn false_while_and_true_until_skip_their_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("while false; do echo wrong; done", &mut output, &mut errors));
+        assert!(shell.execute_line("until true; do echo wrong; done", &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn loop_compound_can_be_sequenced_with_commands_and_nested_if() {
+        let marker = std::env::temp_dir().join(format!("mysh-loop-if-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "echo before; while test ! -e '{}'; do if test ! -e '{}'; then touch '{}'; echo inside; fi; done; echo after",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninside\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn only_posix_shell_builtins_are_dispatched_in_process() {
+        use super::is_shell_builtin;
+
+        for name in [":", ".", "cd", "pwd", "export", "unset", "true", "false", "eval", "exit", "break", "continue"] {
+            assert!(is_shell_builtin(name), "{name}");
+        }
+        for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
+            assert!(!is_shell_builtin(name), "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_utility_is_dispatched_through_uutils_multicall_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!("mysh-coreutils-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let multicall = directory.join("coreutils");
+        std::fs::write(&multicall, "#!/bin/sh\nprintf 'uutils:%s\n' \"$@\"\n").unwrap();
+        std::fs::set_permissions(&multicall, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let standalone = directory.join("cat");
+        std::fs::write(&standalone, "#!/bin/sh\nprintf 'standalone\n'\n").unwrap();
+        std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("cat alpha beta", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "uutils:cat\nuutils:alpha\nuutils:beta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn eval_reparses_commands_in_the_current_shell_environment() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("eval 'MYSH_EVAL_VALUE=active; export MYSH_EVAL_VALUE; echo $MYSH_EVAL_VALUE'", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_EVAL_VALUE").map(String::as_str), Some("active"));
+        assert!(shell.exported.contains("MYSH_EVAL_VALUE"));
+        assert_eq!(String::from_utf8(output).unwrap(), "active\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+
+    #[test]
+    fn dot_sources_a_readable_file_into_the_current_shell() {
+        let directory = std::env::temp_dir().join(format!("mysh-dot-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("environment.sh");
+        std::fs::write(&script, "MYSH_DOT_VALUE=loaded\nexport MYSH_DOT_VALUE\n").unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(". environment.sh", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_DOT_VALUE").map(String::as_str), Some("loaded"));
+        assert!(shell.exported.contains("MYSH_DOT_VALUE"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+}
+, '@'][..]) {
+                    2
+                } else if characters.get(index..index + 4) == Some(&['
+
+fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
+    let mut command = Vec::new();
+    let mut redirects = Redirections::default();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        let operator = ["<", ">", ">>", "2>"]
+            .into_iter()
+            .find(|operator| token.is_unquoted_literal(operator));
+        if let Some(operator) = operator {
+            let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+            let target = expand_word(target, environment, last_status);
+            match operator {
+                "<" => redirects.input = Some(target),
+                ">" => { redirects.output = Some(target); redirects.append = false; }
+                ">>" => { redirects.output = Some(target); redirects.append = true; }
+                "2>" => redirects.error = Some(target),
+                _ => unreachable!(),
+            }
+            index += 2;
+        } else {
+            command.push(expand_word(token, environment, last_status));
+            index += 1;
+        }
+    }
+    Ok((command, redirects))
+}
+
+fn open_output(path: &str, append: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true);
+    if append { options.append(true); } else { options.truncate(true); }
+    options.open(path)
+}
+
+/// Expand the currently supported simple environment-variable references.
+fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut result = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '$' {
+            result.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'?') {
+            result.push_str(&last_status.to_string());
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'#') {
+            result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1).is_some_and(|character| matches!(character, '@' | '*')) {
+            let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+            let joined = positional_parameters(environment).join(&separator.to_string());
+            result.push_str(&joined);
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
+            let name = chars[index + 1].to_string();
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+            index += 2;
+            continue;
+        }
+
+        if chars.get(index + 1) == Some(&'{') {
+            if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
+                let end = index + 2 + relative_end;
+                let name: String = chars[index + 2..end].iter().collect();
+                if name == "?" {
+                    result.push_str(&last_status.to_string());
+                } else if name == "#" {
+                    result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
+                } else if name == "@" || name == "*" {
+                    let separator = environment.get("IFS").and_then(|value| value.chars().next()).unwrap_or(' ');
+                    result.push_str(&positional_parameters(environment).join(&separator.to_string()));
+                } else if (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
+                    || valid_parameter_name(&name)
+                {
+                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+                } else {
+                    result.extend(chars[index..=end].iter());
+                }
+                index = end + 1;
+                continue;
+            }
+            result.push_str("${");
+            index += 2;
+            continue;
+        }
+
+        let start = index + 1;
+        if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
+            index = start + 1;
+            while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
+                index += 1;
+            }
+            let name: String = chars[start..index].iter().collect();
+            result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+        } else {
+            result.push('$');
+            index += 1;
+        }
+    }
+    result
+}
+
+fn valid_parameter_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+/// Convert a child-process status into the conventional shell exit-code range.
+fn external_status_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() { return code; }
+    #[cfg(unix)] { use std::os::unix::process::ExitStatusExt; status.signal().map_or(128, |signal| 128 + signal) }
+    #[cfg(not(unix))] { 128 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, Shell};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn brace_groups_execute_in_the_current_shell_environment() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_BRACE_VALUE=before; { export MYSH_BRACE_VALUE=after; }; echo $MYSH_BRACE_VALUE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+
+    #[test]
+    fn subshell_isolates_variables_directory_and_exit() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let original_directory = std::env::current_dir().unwrap();
+        assert!(shell.execute_line("export MYSH_SUBSHELL_VALUE=parent; ( export MYSH_SUBSHELL_VALUE=child; cd /; exit 7 ); echo $MYSH_SUBSHELL_VALUE:$?", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "parent:7\n");
+        assert_eq!(std::env::current_dir().unwrap(), original_directory);
+        assert_eq!(shell.last_status(), 0);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn executes_external_echo_utility() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(shell.execute_line("echo hello", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty()); assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn reports_lexer_errors_without_exiting() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(shell.execute_line("echo 'unfinished", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn exit_returns_the_requested_status() {
+        let mut shell = Shell::new(); let mut output = Vec::new(); let mut errors = Vec::new();
+        assert!(!shell.execute_line("exit 23", &mut output, &mut errors)); assert_eq!(shell.last_status(), 23);
+    }
+
+    #[test]
+    fn variable_expansion_supports_braced_and_unbraced_names() {
+        let environment = BTreeMap::from([(String::from("MYSH_TEST_VALUE"), String::from("expanded"))]);
+        assert_eq!(expand_variables("$MYSH_TEST_VALUE/${MYSH_TEST_VALUE}", &environment, 0), "expanded/expanded");
+        assert_eq!(expand_variables("status=$? braced=${?}", &environment, 37), "status=37 braced=37");
+    }
+
+    #[test]
+    fn last_exit_status_parameter_expands_in_command_arguments() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("mysh_command_that_does_not_exist_9f31", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 127);
+        assert!(shell.execute_line("echo status=$? braced=${?}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "status=127 braced=127\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+    }
+
+    #[test]
+    fn variable_expansion_respects_single_quotes_and_escapes() {
+        let mut shell = Shell::new();
+        shell.variables.insert("MYSH_QUOTING_TEST".to_owned(), "expanded".to_owned());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo '$MYSH_QUOTING_TEST' "$MYSH_QUOTING_TEST" \$MYSH_QUOTING_TEST"#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "$MYSH_QUOTING_TEST expanded $MYSH_QUOTING_TEST\n");
+        assert!(errors.is_empty());
+        
+    }
+
+    #[test]
+    fn prefix_bin_is_added_before_existing_path() {
+        let root = std::env::temp_dir().join(format!("mysh-prefix-test-{}", std::process::id()));
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let mut variables = BTreeMap::from([
+            ("MYSH_PREFIX".to_owned(), root.to_string_lossy().into_owned()),
+            ("PATH".to_owned(), "/system/bin".to_owned()),
+        ]);
+        let mut exported = BTreeSet::from(["MYSH_PREFIX".to_owned(), "PATH".to_owned()]);
+        configure_prefix_path(&mut variables, &mut exported);
+        let paths: Vec<_> = std::env::split_paths(variables.get("PATH").unwrap()).collect();
+        assert_eq!(paths.first(), Some(&bin));
+        assert_eq!(paths.get(1), Some(&std::path::PathBuf::from("/system/bin")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn assignment_only_creates_unexported_shell_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_LOCAL_TEST='local value'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_LOCAL_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "local value\n");
+        assert!(!shell.exported.contains("MYSH_LOCAL_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_prefix_assignment_is_temporary() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_TEMP_TEST=value echo temporary", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_TEMP_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "temporary\n\n");
+        assert!(!shell.variables.contains_key("MYSH_TEMP_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn assignments_before_special_builtins_persist() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_SPECIAL_ASSIGN_TEST=persist export", &mut output, &mut errors));
+        assert!(shell.variables.get("MYSH_SPECIAL_ASSIGN_TEST").is_some_and(|value| value == "persist"));
+        assert!(shell.exported.contains("MYSH_SPECIAL_ASSIGN_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn export_updates_shell_expansion_and_unset_removes_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_EXPORT_TEST='hello world'", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello world\n");
+        assert!(shell.execute_line("unset MYSH_EXPORT_TEST", &mut Vec::new(), &mut errors));
+        let mut after_unset = Vec::new();
+        assert!(shell.execute_line("echo \"$MYSH_EXPORT_TEST\"", &mut after_unset, &mut errors));
+        assert_eq!(String::from_utf8(after_unset).unwrap(), "\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn quoted_pipe_is_a_word_not_a_pipeline_operator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo '|' ", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "|\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn quoted_redirection_operator_is_an_argument() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r#"echo ">" "#, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), ">\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn command_list_runs_semicolon_separated_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo first; echo second;", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\n");
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn conditional_command_lists_short_circuit_and_chain_left_to_right() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "mysh_missing_conditional_test && echo skipped || echo fallback",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn command_list_rejects_missing_conditional_operands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo missing &&", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+
+    #[test]
+    fn case_selects_first_matching_pattern_arm() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "selected\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn case_supports_shell_wildcard_and_bracket_patterns() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case item42 in item*) echo wildcard ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(shell.execute_line(
+            "case b in [a-z]) echo range ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\nrange\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_supports_nested_compound_commands() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case item42 in item*) if true; then echo nested; fi ;; *) echo fallback ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_without_a_matching_arm_returns_success_without_running_a_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "case apple in orange) echo wrong ;; esac",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_definition_registers_and_invokes_a_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "greet() { echo hello; }; greet",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_invocation_exposes_and_restores_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "show() { echo $1 $2 $#; }; show alpha beta; echo $1 $#",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha beta 2\n 0\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn shift_updates_positional_parameters_and_count() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $1:$2:$#; shift; echo $1:$2:$#; }; show alpha beta gamma", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha:beta:3\nbeta:gamma:2\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn shift_inside_nested_function_restores_outer_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("inner() { shift; echo $1:$#; }; outer() { inner x y; echo $1:$2:$#; }; outer a b c", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "y:1\na:b:3\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn positional_star_and_at_expand_using_ifs_separator() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("show() { echo $*; echo $@; }; show one two three", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one two three\none two three\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn for_without_word_list_iterates_over_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("iterate() { for item; do echo $item; done; }; iterate first second third", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\nthird\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn nested_function_calls_restore_the_callers_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "inner() { echo $1; }; outer() { inner innerarg; echo $1; }; outer outerarg",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "innerarg\nouterarg\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn function_definition_persists_shell_variable_changes() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "set_value() { VALUE=updated; }; set_value; echo $VALUE",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "updated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn shell_functions_override_regular_builtins() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "pwd() { echo function; }; pwd",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "function\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn special_builtins_keep_precedence_over_shell_functions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "export() { echo shadowed; }; export MYSH_FUNCTION_TEST=active; echo $MYSH_FUNCTION_TEST",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "active\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_exits_a_function_with_the_requested_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { echo before; return 7; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\n7\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn return_without_an_operand_uses_the_current_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { false; return; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "1\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_propagates_out_of_nested_loop_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { while true; do return 9; done; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "9\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_stops_commands_evaluated_by_eval() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { eval 'return 6; echo unreachable'; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "6\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_propagates_from_if_conditions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { if return 8; then echo unreachable; fi; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "8\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_is_rejected_outside_a_function() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("return 3", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(String::from_utf8(errors).unwrap().contains("not in a function"));
+    }
+
+    #[test]
+    fn if_then_executes_the_success_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; then echo success; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nsuccess\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_else_executes_the_failure_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_if_test; then echo wrong; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "fallback\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_elif_selects_the_first_successful_condition() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_first; then echo first; elif echo second; then echo selected; else echo fallback; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "second\nselected\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_supports_a_nested_if_as_a_branch() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if mysh_missing_outer; then echo wrong; else if echo inner; then echo nested; fi; fi", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inner\nnested\n");
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_branch_supports_commands_before_and_after_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if mysh_missing_outer_mixed; then echo wrong; else echo before; if echo inner; then echo nested; fi; echo after; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninner\nnested\nafter\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn if_branch_honors_conditional_command_lists_around_nested_if() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo condition; then mysh_missing_inner && echo skipped; if echo nested; then echo selected; fi; echo final; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nnested\nselected\nfinal\n");
+        assert!(String::from_utf8(errors).unwrap().contains("command not found"));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn multiline_if_is_buffered_until_its_closing_fi() {
+        let input = "if echo condition; then\necho before\nif echo nested; then\necho selected\nfi\necho after\nfi\n";
+        let mut reader = std::io::Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut shell = Shell::new();
+        assert_eq!(shell.run(&mut reader, &mut output, false).unwrap(), 0);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "condition\nbefore\nnested\nselected\nafter\n",
+        );
+    }
+
+    #[test]
+    fn continuation_detection_tracks_compound_if_depth() {
+        assert!(requires_more_input("if echo condition; then\necho body\n"));
+        assert!(requires_more_input("if echo outer; then\nif echo inner; then\necho body\nfi\n"));
+        assert!(!requires_more_input("if echo condition; then\necho body\nfi\n"));
+        assert!(!requires_more_input("echo ordinary command\n"));
+    }
+
+    #[test]
+    fn keyword_looking_arguments_do_not_change_if_structure() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if echo if; then echo fi; echo then; fi",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if\nfi\nthen\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn quoted_and_escaped_keyword_looking_arguments_remain_words() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            r#"if echo 'if' \fi; then echo "fi"; fi"#,
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "if fi\nfi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn unmatched_closing_reserved_words_are_syntax_errors() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("fi", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn if_rejects_missing_then_or_fi() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("if echo condition; echo body", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn pipeline_parser_rejects_empty_stages() {
+    }
+
+    #[test]
+    fn pipeline_prefix_assignments_are_temporary_to_the_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_PIPE_ASSIGN_TEST=value echo pipeline | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_ASSIGN_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_ASSIGN_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn pipeline_builtin_variable_changes_do_not_leak_to_parent() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("export MYSH_PIPE_EXPORT_TEST=value | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo \"$MYSH_PIPE_EXPORT_TEST\"", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_EXPORT_TEST"));
+        assert!(!shell.exported.contains("MYSH_PIPE_EXPORT_TEST"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn brace_group_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ echo one; echo two; } | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn subshell_can_run_as_a_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("( echo hello ) | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "hello\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn compound_group_can_run_after_a_simple_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo before | { echo after; }", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_compound_stage_does_not_leak_shell_state() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("{ export MYSH_PIPE_GROUP=value; echo inside; } | cat", &mut output, &mut errors));
+        assert!(shell.execute_line("echo $MYSH_PIPE_GROUP", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "inside\n\n");
+        assert!(!shell.variables.contains_key("MYSH_PIPE_GROUP"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn pipeline_passes_external_cat_stdin() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo pipeline | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_operator_does_not_require_surrounding_whitespace() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo compact|cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "compact\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn output_redirection_does_not_require_surrounding_whitespace() {
+        let path = std::env::temp_dir().join(format!("mysh-redirection-{}", std::process::id()));
+        let path_text = path.to_string_lossy();
+        let command = format!("echo redirected>{path_text}");
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\n");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pipeline_passes_input_through_external_utility_stages() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo multi | cat | cat", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "multi\n");
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_signal_termination_to_conventional_shell_status() {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(external_status_code(std::process::ExitStatus::from_raw(9)), 137);
+    }
+
+
+
+    #[test]
+    fn for_loop_expands_explicit_word_list_and_retains_final_variable() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; done; echo final-$item", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\nfinal-beta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn for_loop_supports_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do echo $item; break; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item in alpha beta; do continue; echo skipped; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+    }
+
+    #[test]
+    fn nested_for_supports_multilevel_break_and_continue() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x y; do echo $outer-$inner; break 2; done; echo skipped; done; echo after", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "a-x\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for outer in a b; do for inner in x; do echo $outer; continue 2; done; echo skipped; done", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "a\nb\n");
+    }
+
+    #[test]
+    fn for_and_while_loops_execute_when_mixed_and_nested() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "for item in alpha beta; do while false; do echo skipped; done; echo $item; done",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let marker = std::env::temp_dir().join(format!("mysh-mixed-loop-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!(
+            "while test ! -e '{}'; do for item in one two; do echo $item; done; touch '{}'; done",
+            marker.display(),
+            marker.display(),
+        );
+        let mut output = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn for_without_explicit_word_list_runs_zero_times_without_positional_parameters() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        assert!(shell.execute_line("for item; do echo unexpected; done; echo after", &mut output, &mut Vec::new()));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+    }
+
+    #[test]
+    fn break_exits_the_current_loop_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-break-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; echo before; break; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn continue_starts_the_next_iteration_and_skips_remaining_body_commands() {
+        let marker = std::env::temp_dir().join(format!("mysh-continue-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; continue; echo skipped; done; echo after", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+
+    #[test]
+    fn continue_two_resumes_the_outer_loop_iteration() {
+        let outer = std::env::temp_dir().join(format!("mysh-continue-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-continue-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do while test ! -e '{}'; do touch '{}'; continue 2; echo skipped-inner; done; touch '{}'; echo skipped-outer; done; echo after", outer.display(), inner.display(), inner.display(), outer.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "skipped-outer\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
+    }
+
+    #[test]
+    fn break_two_exits_two_nested_loops() {
+        let outer = std::env::temp_dir().join(format!("mysh-break-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-break-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do touch '{}'; while test ! -e '{}'; do touch '{}'; break 2; echo skipped-inner; done; echo skipped-outer; done; echo after", outer.display(), outer.display(), inner.display(), inner.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
+    }
+
+    #[test]
+    fn loop_control_rejects_use_outside_loops_and_excessive_levels() {
+        let mut shell = Shell::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("break", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(shell.execute_line("continue 0", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        let marker = std::env::temp_dir().join(format!("mysh-break-depth-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!("while test ! -e '{}'; do break 2; touch '{}'; done; true", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 0);
+        let _ = std::fs::remove_file(marker);
+        let text = String::from_utf8(errors).unwrap();
+        assert!(text.contains("not in a loop"));
+        assert!(text.contains("positive integer"));
+        assert!(text.contains("level exceeds active loop depth"));
+    }
+
+    #[test]
+    fn while_loop_repeats_until_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-while-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn until_loop_repeats_while_its_condition_fails() {
+        let marker = std::env::temp_dir().join(format!("mysh-until-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "until test -e '{}'; do touch '{}'; echo iterated; done",
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "iterated\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn nested_until_loop_executes_inside_while_body() {
+        let marker = std::env::temp_dir().join(format!("mysh-nested-loop-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "while test ! -e '{}'; do until test -e '{}'; do touch '{}'; echo nested; done; done",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn false_while_and_true_until_skip_their_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("while false; do echo wrong; done", &mut output, &mut errors));
+        assert!(shell.execute_line("until true; do echo wrong; done", &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn loop_compound_can_be_sequenced_with_commands_and_nested_if() {
+        let marker = std::env::temp_dir().join(format!("mysh-loop-if-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "echo before; while test ! -e '{}'; do if test ! -e '{}'; then touch '{}'; echo inside; fi; done; echo after",
+            marker.display(),
+            marker.display(),
+            marker.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninside\nafter\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert!(marker.exists());
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
+    fn only_posix_shell_builtins_are_dispatched_in_process() {
+        use super::is_shell_builtin;
+
+        for name in [":", ".", "cd", "pwd", "export", "unset", "true", "false", "eval", "exit", "break", "continue"] {
+            assert!(is_shell_builtin(name), "{name}");
+        }
+        for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
+            assert!(!is_shell_builtin(name), "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_utility_is_dispatched_through_uutils_multicall_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!("mysh-coreutils-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let multicall = directory.join("coreutils");
+        std::fs::write(&multicall, "#!/bin/sh\nprintf 'uutils:%s\n' \"$@\"\n").unwrap();
+        std::fs::set_permissions(&multicall, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let standalone = directory.join("cat");
+        std::fs::write(&standalone, "#!/bin/sh\nprintf 'standalone\n'\n").unwrap();
+        std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("cat alpha beta", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "uutils:cat\nuutils:alpha\nuutils:beta\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn eval_reparses_commands_in_the_current_shell_environment() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("eval 'MYSH_EVAL_VALUE=active; export MYSH_EVAL_VALUE; echo $MYSH_EVAL_VALUE'", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_EVAL_VALUE").map(String::as_str), Some("active"));
+        assert!(shell.exported.contains("MYSH_EVAL_VALUE"));
+        assert_eq!(String::from_utf8(output).unwrap(), "active\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+
+    #[test]
+    fn dot_sources_a_readable_file_into_the_current_shell() {
+        let directory = std::env::temp_dir().join(format!("mysh-dot-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("environment.sh");
+        std::fs::write(&script, "MYSH_DOT_VALUE=loaded\nexport MYSH_DOT_VALUE\n").unwrap();
+
+        let mut shell = Shell::new();
+        shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
+        shell.exported.insert("PATH".to_owned());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(". environment.sh", &mut output, &mut errors));
+        assert_eq!(shell.variables.get("MYSH_DOT_VALUE").map(String::as_str), Some("loaded"));
+        assert!(shell.exported.contains("MYSH_DOT_VALUE"));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+}
+, '{', '@', '}'][..]) {
+                    4
+                } else {
+                    0
+                };
+                if marker_len == 0 {
+                    index += 1;
+                    continue;
+                }
+                if literal_start < index {
+                    let literal: String = characters[literal_start..index].iter().collect();
+                    fields.last_mut().expect("an expansion field exists")
+                        .push_str(&expand_variables(&literal, environment, last_status));
+                }
+                let parameters = positional_parameters(environment);
+                expanded_at = true;
+                if let Some(first) = parameters.first() {
+                    fields.last_mut().expect("an expansion field exists").push_str(first);
+                    fields.extend(parameters.into_iter().skip(1));
+                }
+                index += marker_len;
+                literal_start = index;
+            }
+            if literal_start < characters.len() {
+                let literal: String = characters[literal_start..].iter().collect();
+                fields.last_mut().expect("an expansion field exists")
+                    .push_str(&expand_variables(&literal, environment, last_status));
+            }
+        } else {
+            let value = if part.expandable {
+                expand_variables(&part.text, environment, last_status)
+            } else {
+                part.text.clone()
+            };
+            fields.last_mut().expect("an expansion field exists").push_str(&value);
+        }
+    }
+    if expanded_at && positional_count(environment) == 0
+        && word.parts().len() == 1
+        && word.parts()[0].quoted
+        && matches!(word.parts()[0].text.as_str(), "$@" | "${@}")
+    {
+        return Vec::new();
+    }
+    if word.parts().is_empty() && word.is_quoted() {
+        return vec![String::new()];
+    }
+    fields
 }
 
 fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
