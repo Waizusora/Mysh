@@ -45,7 +45,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | `main.rs` | Process entry point and command-line options |
 | `lib.rs` | Public library module declarations |
 | `lexer.rs` | Shell-word tokenization and quote/escape metadata |
-| `parser.rs` | Incremental input classification, reserved-word recognition, command-list, pipeline, `if`, and loop AST construction |
+| `parser.rs` | Incremental input classification, reserved-word recognition, command-list, pipeline, `if` and loop AST construction, and nested compound-boundary matching |
 | `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 | `command.rs` | Explicit external-command resolution and `PATH` search |
@@ -77,7 +77,7 @@ The current implementation includes sequential, buffered pipelines and basic `<`
 
 ## Compound-command limitations
 
-Compound-command support is currently limited to `if`/`elif`/`else`, `while`, and `until`. Loop conditions are simple command lists; loop bodies support nested loops and `if` statements. `break` and `continue` are not implemented. The outer `if`/`elif`/`else` structure is parsed into a typed `IfStatement`, and the outer `while`/`until` structure into a typed `LoopStatement`. Their branch and loop bodies remain token sequences; nested compound commands are parsed when the executor reaches them. General compound-command composition is not yet represented by one unified recursive AST. This is an incremental AST boundary, not a complete POSIX compound-command parser.
+Compound-command support is currently limited to `if`/`elif`/`else`, `while`, and `until`. Loop conditions are simple command lists; loop bodies support nested loops and `if` statements. `break` and `continue` are not implemented. The outer `if`/`elif`/`else` structure is parsed into a typed `IfStatement`, and the outer `while`/`until` structure into a typed `LoopStatement`. Their branch and loop bodies remain token sequences; nested compound commands are parsed when the executor reaches them. General compound-command composition is not yet represented by one unified recursive AST. Nested `if`/`fi` and loop `do`/`done` boundary matching is centralized in the parser rather than duplicated in the executor. This is an incremental AST boundary, not a complete POSIX compound-command parser.
 
 ## Process and Filesystem Model
 
