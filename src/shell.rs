@@ -30,6 +30,20 @@ impl Shell {
 
     /// Execute one command line. Returns false when an exit command is accepted.
     pub fn execute_line(&mut self, line: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        match crate::parser::classify_input(line) {
+            crate::parser::InputState::Complete => {}
+            crate::parser::InputState::Incomplete => {
+                let _ = writeln!(stderr, "mysh: syntax error: incomplete compound command or quoted input");
+                self.last_status = 2;
+                return true;
+            }
+            crate::parser::InputState::Invalid => {
+                let _ = writeln!(stderr, "mysh: syntax error: invalid reserved-word sequence");
+                self.last_status = 2;
+                return true;
+            }
+        }
+
         let tokens = match lexer::lex(line) {
             Ok(tokens) => tokens,
             Err(error) => {
@@ -1040,6 +1054,16 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "if fi\nfi\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn unmatched_closing_reserved_words_are_syntax_errors() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("fi", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
     }
 
     #[test]
