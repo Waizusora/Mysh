@@ -73,5 +73,6 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 - Extended `if` compound-command handling with ordered `elif` conditions and optional `else` branches.
 - Extended compound-branch execution to support nested `if` statements alongside sequential commands and `&&` / `||` command lists.
-- Added regression coverage for commands before and after nested `if` statements and conditional execution within compound branches.
-- Multiline compound commands and the complete POSIX compound-command grammar remain unsupported.
+- Added multiline input buffering for `if` compound commands, including nested blocks and an interactive continuation prompt.
+- Added regression coverage for multiline `if` execution, continuation-depth detection, and mixed commands around nested blocks.
+- Other POSIX compound commands and the complete POSIX compound-command grammar remain unsupported.
