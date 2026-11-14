@@ -1814,7 +1814,7 @@ impl<'a> ArithmeticParser<'a> {
     fn operator(&mut self) -> Option<(&'static str, u8)> {
         self.whitespace();
         for (operator, precedence) in [
-            ("||", 1), ("&&", 2), ("|", 3), ("^", 4), ("&", 5),
+            (",", 0), ("||", 1), ("&&", 2), ("|", 3), ("^", 4), ("&", 5),
             ("==", 6), ("!=", 6), ("<<", 8), (">>", 8),
             ("<=", 7), (">=", 7), ("<", 7), (">", 7),
             ("+", 9), ("-", 9), ("*", 10), ("/", 10), ("%", 10),
@@ -1831,6 +1831,7 @@ impl<'a> ArithmeticParser<'a> {
             self.index += operator.chars().count();
             let right = self.expression(precedence + 1)?;
             left = match operator {
+                "," => right,
                 "||" => if left != 0 || right != 0 { 1 } else { 0 }, "&&" => if left != 0 && right != 0 { 1 } else { 0 },
                 "|" => left | right, "^" => left ^ right, "&" => left & right,
                 "==" => if left == right { 1 } else { 0 }, "!=" => if left != right { 1 } else { 0 },
@@ -1858,7 +1859,7 @@ impl<'a> ArithmeticParser<'a> {
         self.whitespace();
         if self.chars.get(self.index) == Some(&'(') {
             self.index += 1;
-            let value = self.expression(1)?;
+            let value = self.expression(0)?;
             self.whitespace();
             if self.chars.get(self.index) != Some(&')') { return None; }
             self.index += 1;
@@ -1965,7 +1966,7 @@ fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>)
         return environment.get(&name).and_then(|value| parse_arithmetic_integer(value));
     }
     let mut parser = ArithmeticParser::new(expression, environment);
-    let value = parser.expression(1)?;
+    let value = parser.expression(0)?;
     parser.whitespace();
     (parser.index == parser.chars.len()).then_some(value)
 }
@@ -2126,6 +2127,8 @@ mod tests {
         assert_eq!(expand_variables("$((VALUE * OTHER + 1))", &environment, 0), "22");
         assert_eq!(expand_variables("$((8 / 2 + 5 % 3))", &environment, 0), "6");
         assert_eq!(expand_variables("$((1 < 2 && 4 != 5))", &environment, 0), "1");
+        assert_eq!(expand_variables("$((1, 2 + 3))", &environment, 0), "5");
+        assert_eq!(expand_variables("$((1, (2, 3)))", &environment, 0), "3");
     }
     #[test]
     fn pathname_patterns_support_posix_ascii_character_classes() {
