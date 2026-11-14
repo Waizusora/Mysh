@@ -82,7 +82,7 @@ impl Shell {
 
         let mut depth = 0usize;
         let mut matching_fi = None;
-        for (index, token) in tokens.iter().enumerate().skip(1) {
+        for (index, _token) in tokens.iter().enumerate().skip(1) {
             if is_reserved_word(tokens, index, "if") {
                 depth += 1;
             } else if is_reserved_word(tokens, index, "fi") {
@@ -111,7 +111,6 @@ impl Shell {
         depth = 0;
         let mut has_else = false;
         while index < fi_index {
-            let token = &tokens[index];
             if is_reserved_word(tokens, index, "if") {
                 depth += 1;
             } else if is_reserved_word(tokens, index, "fi") {
@@ -209,7 +208,7 @@ impl Shell {
             let end = if branch[index].is_unquoted_literal("if") {
                 let mut depth = 0usize;
                 let mut matching_fi = None;
-                for (offset, token) in branch.iter().enumerate().skip(index + 1) {
+                for (offset, _token) in branch.iter().enumerate().skip(index + 1) {
                     if is_reserved_word(branch, offset, "if") {
                         depth += 1;
                     } else if is_reserved_word(branch, offset, "fi") {
