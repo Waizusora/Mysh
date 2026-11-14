@@ -71,6 +71,11 @@ impl Word {
         &self.parts
     }
 
+    /// Construct a word after an expansion phase has replaced selected fragments.
+    pub fn from_parts(parts: Vec<WordPart>, quoted: bool) -> Self {
+        Self { parts, quoted }
+    }
+
     /// Return the quote-removed literal value without performing expansion.
     pub fn literal_value(&self) -> String {
         self.parts.iter().map(|part| part.text.as_str()).collect()
