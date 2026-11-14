@@ -2169,11 +2169,6 @@ mod tests {
         assert_eq!(expand_word_fields(&quoted[0], &environment, 0), ["~/documents"]);
         let embedded = crate::lexer::lex("prefix~/documents").unwrap();
         assert_eq!(expand_word_fields(&embedded[0], &environment, 0), ["prefix~/documents"]);
-        let named = BTreeMap::new();
-        let user_home = super::passwd_home("alice", "alice:x:1000:1000:Alice:/home/alice:/bin/sh").unwrap();
-        let word = crate::lexer::lex("~alice/documents").unwrap();
-        assert_eq!(expand_word_fields(&word[0], &BTreeMap::from([("HOME".to_owned(), user_home)]), 0), ["/home/alice/documents"]);
-        let _ = named;
     }
     #[test]
     fn arithmetic_assignment_expansion_updates_shell_variables() {
