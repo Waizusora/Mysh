@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum BuiltinOutcome {
     Continue(i32),
     Exit(i32),
+    Break(usize),
+    ContinueLoop(usize),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -39,6 +41,8 @@ pub fn run(
         "history" => history_cmd(history, out),
         "help" => help(out),
         "exit" => exit_cmd(args, err),
+        "break" => loop_control_cmd("break", args, err),
+        "continue" => loop_control_cmd("continue", args, err),
         _ => return None,
     };
     Some(result)
@@ -592,13 +596,27 @@ fn history_cmd(history: &[String], out: &mut dyn Write) -> BuiltinOutcome {
     ok()
 }
 fn help(out: &mut dyn Write) -> BuiltinOutcome {
-    let text = "Mysh built-in commands:\ncd [directory]       Change the current directory\npwd                  Print the current directory\nls [-a] [path ...]   List directory entries\nmkdir [-p] path ...  Create directories\nrmdir path ...       Remove empty directories\ntouch file ...       Create files if absent\ncp [-r] src ... dest Copy files or directory trees\nmv src ... dest      Rename or move paths\nrm [-rf] [-d] path   Remove files or directories\ncat [file ...]       Write file contents to standard output\necho [-n] [text ...] Write text to standard output\nclear                Clear the terminal display\nhistory              Show this session's command history\nexport [name[=value] ...] Export environment variables\nunset name ...      Remove environment variables\nhelp                 Show this help text\nexit [status]        Exit Mysh\n\nExternal executables are resolved through PATH.\n";
+    let text = "Mysh built-in commands:\ncd [directory]       Change the current directory\npwd                  Print the current directory\nls [-a] [path ...]   List directory entries\nmkdir [-p] path ...  Create directories\nrmdir path ...       Remove empty directories\ntouch file ...       Create files if absent\ncp [-r] src ... dest Copy files or directory trees\nmv src ... dest      Rename or move paths\nrm [-rf] [-d] path   Remove files or directories\ncat [file ...]       Write file contents to standard output\necho [-n] [text ...] Write text to standard output\nclear                Clear the terminal display\nhistory              Show this session's command history\nexport [name[=value] ...] Export environment variables\nunset name ...      Remove environment variables\nhelp                 Show this help text\nbreak [n]            Exit from the enclosing loop(s)\ncontinue [n]         Resume the next loop iteration\nexit [status]        Exit Mysh\n\nExternal executables are resolved through PATH.\n";
     if out.write_all(text.as_bytes()).is_err() {
         BuiltinOutcome::Continue(1)
     } else {
         ok()
     }
 }
+fn loop_control_cmd(name: &str, args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
+    if args.len() > 1 {
+        return usage(&format!("{name}: expected at most one positive loop level"), err);
+    }
+    let level = match args.first() {
+        None => 1,
+        Some(value) => match value.parse::<usize>() {
+            Ok(level) if level > 0 => level,
+            _ => return usage(&format!("{name}: level must be a positive integer"), err),
+        },
+    };
+    if name == "break" { BuiltinOutcome::Break(level) } else { BuiltinOutcome::ContinueLoop(level) }
+}
+
 fn exit_cmd(args: &[String], err: &mut dyn Write) -> BuiltinOutcome {
     if args.len() > 1 {
         return usage("exit: expected at most one status", err);
