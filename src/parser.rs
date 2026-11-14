@@ -109,6 +109,14 @@ fn is_unsupported_operator(token: &Word) -> bool {
 pub fn is_function_definition_start(tokens: &[Word], index: usize) -> bool {
     let Some(name) = tokens.get(index) else { return false; };
     let value = name.literal_value();
+    if [
+        "if", "then", "else", "elif", "fi", "case", "esac", "for", "while",
+        "until", "do", "done", "in",
+    ]
+    .contains(&value.as_str())
+    {
+        return false;
+    }
     let mut characters = value.chars();
     if !characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
         || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
