@@ -42,7 +42,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
         } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 { return Err("unmatched closing brace"); }
             brace_depth -= 1;
-        } else if token.is_unquoted_literal("(") {
+        } else if token.is_unquoted_literal("(") && !opens_case_pattern {
             subshell_depth += 1;
         } else if token.is_unquoted_literal(")") {
             if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
@@ -137,6 +137,10 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut case_pattern = Vec::<bool>::new();
 
     for (index, token) in tokens.iter().enumerate() {
+        let opens_case_pattern =
+            token.is_unquoted_literal("(") && case_pattern.last() == Some(&true);
+        let closes_case_pattern =
+            token.is_unquoted_literal(")") && case_pattern.last() == Some(&true);
         if is_reserved_word(&tokens, index, "esac") {
             case_depth = case_depth.saturating_sub(1);
             case_pattern.pop();
@@ -170,7 +174,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         if token.is_unquoted_literal("|")
             && brace_depth == 0
             && subshell_depth == 0
-            && case_pattern.last() != Some(&true)
+            && case_depth == 0
         {
             if raw_stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
             raw_stages.push(Vec::new());
