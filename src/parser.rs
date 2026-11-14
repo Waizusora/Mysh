@@ -698,8 +698,7 @@ pub fn parse_case_statement(tokens: &[Word]) -> Result<CaseStatement, &'static s
 fn command_segment_end(tokens: &[Word], start: usize) -> usize {
     let mut brace_depth = 0usize;
     let mut subshell_depth = 0usize;
-    for index in start..tokens.len() {
-        let token = &tokens[index];
+    for (index, token) in tokens.iter().enumerate().skip(start) {
         if brace_depth == 0 && subshell_depth == 0
             && (token.is_unquoted_literal(";;") || token.is_unquoted_literal(";")
                 || token.is_unquoted_literal("&&")
