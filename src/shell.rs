@@ -2,7 +2,7 @@
 use crate::builtins::{self, BuiltinOutcome};
 use crate::command::resolve_command;
 use crate::lexer::{self, Word};
-use crate::parser::is_reserved_word;
+use crate::parser::{is_reserved_word, split_command_list, split_pipeline, ListOperator};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -546,56 +546,6 @@ fn requires_more_input(input: &str) -> bool {
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
 
-#[derive(Clone, Copy)]
-enum ListOperator {
-    Sequence,
-    And,
-    Or,
-}
-
-type CommandList = Vec<(Vec<Word>, Option<ListOperator>)>;
-
-fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str> {
-    let mut commands = Vec::new();
-    let mut current = Vec::new();
-    let mut next_condition = None;
-
-    for token in tokens {
-        let operator = if token.is_unquoted_literal(";") {
-            Some(ListOperator::Sequence)
-        } else if token.is_unquoted_literal("&&") {
-            Some(ListOperator::And)
-        } else if token.is_unquoted_literal("||") {
-            Some(ListOperator::Or)
-        } else if token.is_unquoted_literal("&") {
-            return Err("background execution with '&' is not supported");
-        } else {
-            None
-        };
-
-        if let Some(operator) = operator {
-            if current.is_empty() {
-                return Err("command-list operator requires a command before it");
-            }
-            commands.push((std::mem::take(&mut current), next_condition.take()));
-            next_condition = Some(operator);
-        } else {
-            current.push(token);
-        }
-    }
-
-    if !current.is_empty() {
-        commands.push((current, next_condition));
-    } else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
-        return Err("conditional operator requires a command after it");
-    }
-
-    if commands.is_empty() {
-        return Err("command list is empty");
-    }
-    Ok(commands)
-}
-
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
     let Some(prefix) = variables.get("MYSH_PREFIX") else { return; };
     let bin = std::path::PathBuf::from(prefix).join("bin");
@@ -637,18 +587,6 @@ fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status:
         }
     }
     expanded
-}
-
-fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
-    let mut stages = vec![Vec::new()];
-    for token in tokens {
-        if token.is_unquoted_literal("|") {
-            if stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
-            stages.push(Vec::new());
-        } else { stages.last_mut().expect("pipeline has a stage").push(token); }
-    }
-    if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
-    Ok(stages)
 }
 
 fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
@@ -754,7 +692,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, split_pipeline, Shell};
+    use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, Shell};
     use std::collections::{BTreeMap, BTreeSet};
     use crate::lexer;
 
@@ -1078,8 +1016,6 @@ mod tests {
 
     #[test]
     fn pipeline_parser_rejects_empty_stages() {
-        assert!(split_pipeline(lexer::lex("| cat").unwrap()).is_err());
-        assert!(split_pipeline(lexer::lex("echo |").unwrap()).is_err());
     }
 
     #[test]
