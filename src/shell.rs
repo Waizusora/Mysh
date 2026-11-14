@@ -1094,9 +1094,7 @@ fn split_expansion_fields(fields: Vec<Vec<(char, bool)>>, keep: Vec<bool>, envir
                     index += 1;
                     while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
                 }
-                if nonwhite_delimiter {
-                    result.push(std::mem::take(&mut current));
-                } else if !current.is_empty() || preserve_current {
+                if nonwhite_delimiter || !current.is_empty() || preserve_current {
                     result.push(std::mem::take(&mut current));
                 }
                 preserve_current = false;
