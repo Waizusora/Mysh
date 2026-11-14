@@ -2436,6 +2436,9 @@ mod tests {
         environment.insert("VALUE".to_owned(), "left : right".to_owned());
         assert_eq!(expand("$VALUE", &environment), ["left", "right"]);
 
+        environment.insert("VALUE".to_owned(), " :first".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["", "first"]);
+
         environment.insert("IFS".to_owned(), String::new());
         environment.insert("VALUE".to_owned(), " one two ".to_owned());
         assert_eq!(expand("$VALUE", &environment), [" one two "]);
