@@ -7,6 +7,7 @@ This document describes the current implementation and distinguishes shell built
 | Command | Syntax | Current behavior |
 | --- | --- | --- |
 | \`:\` | \`:\` | No-op special built-in; returns status 0. |
+| \`.\` | \`. file\` | Reads and executes a readable shell file in the current shell environment; sourced-file positional arguments are not implemented yet. |
 | \`cd\` | \`cd [directory]\` or \`cd -\` | Changes the current directory. With no operand, uses \`HOME\`; \`-\` changes to \`OLDPWD\` and prints the new directory. |
 | \`export\` | \`export [name[=value] ...]\` or \`export -p\` | Marks variables for export and optionally assigns values. With no operands or \`-p\`, lists exported variables. |
 | \`unset\` | \`unset name ...\` | Removes shell variables and their export attributes. |
