@@ -940,7 +940,7 @@ mod tests {
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "before\\ninner\\nnested\\nafter\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "before\ninner\nnested\nafter\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
     }
@@ -955,7 +955,7 @@ mod tests {
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "condition\\nnested\\nselected\\nfinal\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "condition\nnested\nselected\nfinal\n");
         assert!(String::from_utf8(errors).unwrap().contains("command not found"));
         assert_eq!(shell.last_status(), 0);
     }
