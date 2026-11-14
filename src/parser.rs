@@ -6,10 +6,23 @@ use crate::lexer::{self, Word};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListOperator { Sequence, And, Or }
 
-/// A command list split into pipelines and their preceding control operators.
-pub type CommandList = Vec<(Vec<Word>, Option<ListOperator>)>;
+/// A pipeline is an ordered sequence of command stages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pipeline {
+    pub stages: Vec<Vec<Word>>,
+}
 
-/// Split tokens into a command list without performing expansion or execution.
+/// One pipeline and the operator that controls whether it follows the previous entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandListEntry {
+    pub pipeline: Pipeline,
+    pub connector: Option<ListOperator>,
+}
+
+/// A parsed shell command list.
+pub type CommandList = Vec<CommandListEntry>;
+
+/// Split tokens into a command list and parse each pipeline structurally.
 pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str> {
     let mut commands = Vec::new();
     let mut current = Vec::new();
@@ -22,12 +35,19 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
         else { None };
         if let Some(operator) = operator {
             if current.is_empty() { return Err("command-list operator requires a command before it"); }
-            commands.push((std::mem::take(&mut current), next_condition.take()));
+            commands.push(CommandListEntry {
+                pipeline: split_pipeline(std::mem::take(&mut current))?,
+                connector: next_condition.take(),
+            });
             next_condition = Some(operator);
         } else { current.push(token); }
     }
-    if !current.is_empty() { commands.push((current, next_condition)); }
-    else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
+    if !current.is_empty() {
+        commands.push(CommandListEntry {
+            pipeline: split_pipeline(current)?,
+            connector: next_condition,
+        });
+    } else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
         return Err("conditional operator requires a command after it");
     }
     if commands.is_empty() { return Err("command list is empty"); }
@@ -35,7 +55,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 }
 
 /// Split one pipeline into its ordered stages.
-pub fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str> {
+pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut stages = vec![Vec::new()];
     for token in tokens {
         if token.is_unquoted_literal("|") {
@@ -44,7 +64,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Vec<Vec<Word>>, &'static str>
         } else { stages.last_mut().expect("pipeline has a stage").push(token); }
     }
     if stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
-    Ok(stages)
+    Ok(Pipeline { stages })
 }
 
 #[cfg(test)]
@@ -55,10 +75,10 @@ mod command_structure_tests {
     fn command_lists_preserve_sequence_and_short_circuit_operators() {
         let parsed = split_command_list(lexer::lex("echo one; echo two && echo three || echo four").unwrap()).unwrap();
         assert_eq!(parsed.len(), 4);
-        assert_eq!(parsed[0].1, None);
-        assert_eq!(parsed[1].1, Some(ListOperator::Sequence));
-        assert_eq!(parsed[2].1, Some(ListOperator::And));
-        assert_eq!(parsed[3].1, Some(ListOperator::Or));
+        assert_eq!(parsed[0].connector, None);
+        assert_eq!(parsed[1].connector, Some(ListOperator::Sequence));
+        assert_eq!(parsed[2].connector, Some(ListOperator::And));
+        assert_eq!(parsed[3].connector, Some(ListOperator::Or));
     }
     #[test]
     fn command_lists_reject_missing_operands_and_background_execution() {
@@ -69,10 +89,10 @@ mod command_structure_tests {
     #[test]
     fn pipeline_split_preserves_stage_order() {
         let stages = split_pipeline(lexer::lex("echo one | cat | wc").unwrap()).unwrap();
-        assert_eq!(stages.len(), 3);
-        assert_eq!(stages[0].len(), 2);
-        assert_eq!(stages[1].len(), 1);
-        assert_eq!(stages[2].len(), 1);
+        assert_eq!(stages.stages.len(), 3);
+        assert_eq!(stages.stages[0].len(), 2);
+        assert_eq!(stages.stages[1].len(), 1);
+        assert_eq!(stages.stages[2].len(), 1);
     }
     #[test]
     fn pipeline_split_rejects_empty_stages() {
@@ -83,8 +103,8 @@ mod command_structure_tests {
     #[test]
     fn quoted_pipe_remains_a_word() {
         let stages = split_pipeline(lexer::lex("echo '|'").unwrap()).unwrap();
-        assert_eq!(stages.len(), 1);
-        assert_eq!(stages[0].len(), 2);
+        assert_eq!(stages.stages.len(), 1);
+        assert_eq!(stages.stages[0].len(), 2);
     }
 }
 
