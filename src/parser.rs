@@ -916,7 +916,7 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
 
     if is_reserved_word(tokens, start, "{") {
         let mut depth = 1usize;
-        for (index, token) in tokens.iter().enumerate().skip(start + 1) {
+        for (index, _) in tokens.iter().enumerate().skip(start + 1) {
             if is_reserved_word(tokens, index, "{") {
                 depth += 1;
             } else if is_reserved_word(tokens, index, "}") {
