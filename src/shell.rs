@@ -1592,9 +1592,25 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             index += 2;
             continue;
         }
-        if chars.get(index + 1).is_some_and(|character| matches!(character as u32, 64 | 42 | 36 | 33 | 45)) {
-            index += 2;
-            continue;
+        if let Some(special) = chars.get(index + 1).copied() {
+            match special as u32 {
+                64 | 42 => {
+                    result.push_str(&positional_parameters(environment).join(&ifs_join_separator(environment)));
+                    index += 2;
+                    continue;
+                }
+                36 => {
+                    result.push_str(&std::process::id().to_string());
+                    index += 2;
+                    continue;
+                }
+                33 | 45 => {
+                    result.push_str(environment.get(&special.to_string()).map(String::as_str).unwrap_or(""));
+                    index += 2;
+                    continue;
+                }
+                _ => {}
+            }
         }
         if chars.get(index + 1) == Some(&'0') {
             result.push_str(environment.get("0").map(String::as_str).unwrap_or("mysh"));
