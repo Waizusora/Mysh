@@ -1091,7 +1091,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         assert!(shell.execute_line("for item; do echo unexpected; done; echo after", &mut output, &mut Vec::new()));
-        assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
     }
 
     #[test]
