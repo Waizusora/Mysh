@@ -622,7 +622,7 @@ fn command_segment_end(tokens: &[Word], start: usize) -> usize {
 /// Parse a command list into recursive simple/if/loop nodes.
 pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
     if tokens.iter().any(|token| {
-        is_unsupported_operator(token) || token.is_unquoted_literal("&") || token.is_unquoted_literal(";;")
+        is_unsupported_operator(token) || token.is_unquoted_literal("&")
     }) {
         return Err("recognized shell operator is not implemented yet");
     }
@@ -631,6 +631,9 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
     let mut connector = None;
 
     while index < tokens.len() {
+        if tokens[index].is_unquoted_literal(";;") {
+            return Err("case terminator is only valid inside a case command");
+        }
         if tokens[index].is_unquoted_literal(";") {
             connector = Some(ListOperator::Sequence);
             index += 1;
