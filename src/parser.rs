@@ -180,62 +180,40 @@ pub fn is_function_definition_start(tokens: &[Word], index: usize) -> bool {
 /// Split one pipeline into its ordered stages.
 pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
     let mut raw_stages: Vec<Vec<Word>> = vec![Vec::new()];
-    let mut brace_depth = 0usize;
-    let mut subshell_depth = 0usize;
-    let mut case_depth = 0usize;
-    let mut case_pattern = Vec::<bool>::new();
+    let mut index = 0usize;
 
-    for (index, token) in tokens.iter().enumerate() {
-        let opens_case_pattern =
-            token.is_unquoted_literal("(") && case_pattern.last() == Some(&true);
-        let closes_case_pattern =
-            token.is_unquoted_literal(")") && case_pattern.last() == Some(&true);
-        if is_reserved_word(&tokens, index, "esac") {
-            case_depth = case_depth.saturating_sub(1);
-            case_pattern.pop();
-        } else if case_pattern.last() == Some(&true) && token.is_unquoted_literal(")") {
-            if let Some(active) = case_pattern.last_mut() { *active = false; }
-        } else if is_reserved_word(&tokens, index, "case") {
-            case_depth += 1;
-            case_pattern.push(false);
-        } else if (token.is_unquoted_literal("in")
-            && index >= 2
-            && tokens[index - 2].is_unquoted_literal("case")
-            && case_pattern.last() == Some(&false))
-            || (token.is_unquoted_literal(";;") && case_depth > 0)
-        {
-            if let Some(active) = case_pattern.last_mut() { *active = true; }
+    while index < tokens.len() {
+        if raw_stages.last().is_some_and(Vec::is_empty) {
+            if is_reserved_word(&tokens, index, "}") {
+                return Err("unmatched closing brace");
+            }
+            if is_compound_command_start(&tokens, index) {
+                let end = compound_command_end(&tokens, index)?;
+                raw_stages.last_mut().expect("pipeline has a stage")
+                    .extend_from_slice(&tokens[index..end]);
+                index = end;
+                continue;
+            }
         }
-        if is_unsupported_operator(token)
-            || (token.is_unquoted_literal(";;") && case_depth == 0)
-        {
+
+        let token = &tokens[index];
+        if is_unsupported_operator(token) || token.is_unquoted_literal(";;") {
             return Err("recognized shell operator is not implemented yet");
         }
-        if is_reserved_word(&tokens, index, "{") {
-            brace_depth += 1;
-        } else if is_reserved_word(&tokens, index, "}") {
-            if brace_depth == 0 { return Err("unmatched closing brace"); }
-            brace_depth -= 1;
-        } else if token.is_unquoted_literal("(") && !opens_case_pattern {
-            subshell_depth += 1;
-        } else if token.is_unquoted_literal(")") && !closes_case_pattern {
-            if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
-            subshell_depth -= 1;
-        }
-
-        if token.is_unquoted_literal("|")
-            && brace_depth == 0
-            && subshell_depth == 0
-            && case_depth == 0
-        {
-            if raw_stages.last().is_some_and(Vec::is_empty) { return Err("empty pipeline stage"); }
+        if token.is_unquoted_literal("|") {
+            if raw_stages.last().is_some_and(Vec::is_empty) {
+                return Err("empty pipeline stage");
+            }
             raw_stages.push(Vec::new());
+        } else if token.is_unquoted_literal("(") || token.is_unquoted_literal(")") {
+            return Err("parentheses must form a complete subshell command");
         } else {
             raw_stages.last_mut().expect("pipeline has a stage").push(token.clone());
         }
+        index += 1;
     }
 
-    if brace_depth != 0 || subshell_depth != 0 { return Err("compound command in pipeline is not closed"); }
+
     if raw_stages.last().is_some_and(Vec::is_empty) { return Err("pipeline cannot end with |"); }
 
     let mut stages = Vec::with_capacity(raw_stages.len());
