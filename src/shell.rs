@@ -2425,11 +2425,23 @@ mod tests {
     }
     #[test]
     fn pathname_patterns_use_locale_character_classes_and_collation_order() {
+        assert!(shell_pattern_matches("[[:alnum:]]", "A"));
         assert!(shell_pattern_matches("[[:alpha:]]", "A"));
+        assert!(shell_pattern_matches("[[:blank:]]", "\\t"));
+        assert!(shell_pattern_matches("[[:cntrl:]]", "\\u{7f}"));
         assert!(shell_pattern_matches("[[:digit:]]", "7"));
+        assert!(shell_pattern_matches("[[:graph:]]", "A"));
+        assert!(shell_pattern_matches("[[:lower:]]", "a"));
+        assert!(shell_pattern_matches("[[:print:]]", " "));
+        assert!(shell_pattern_matches("[[:punct:]]", "!"));
         assert!(shell_pattern_matches("[[:space:]]", " "));
+        assert!(shell_pattern_matches("[[:upper:]]", "Z"));
+        assert!(shell_pattern_matches("[[:xdigit:]]", "f"));
         assert!(shell_pattern_matches("[a-z]", "m"));
         assert!(!shell_pattern_matches("[[:alpha:]]", "7"));
+        if super::locale_class_matches("alpha", 'é') {
+            assert!(shell_pattern_matches("[[:alpha:]]", "é"));
+        }
     }
 
     #[test]
