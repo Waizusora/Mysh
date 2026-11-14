@@ -1087,6 +1087,33 @@ mod tests {
     }
 
     #[test]
+    fn for_and_while_loops_execute_when_mixed_and_nested() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "for item in alpha beta; do while false; do echo skipped; done; echo $item; done",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nbeta\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        let marker = std::env::temp_dir().join(format!("mysh-mixed-loop-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!(
+            "while test ! -e '{}'; do for item in one two; do echo $item; done; touch '{}'; done",
+            marker.display(),
+            marker.display(),
+        );
+        let mut output = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "one\\ntwo\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[test]
     fn for_without_explicit_word_list_runs_zero_times_without_positional_parameters() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
