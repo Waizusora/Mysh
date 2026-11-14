@@ -131,6 +131,7 @@ impl Shell {
             if !self.execute_compound_list(&clause.condition, stdout, stderr) {
                 return false;
             }
+            if self.loop_control.is_some() { return true; }
             if self.last_status == 0 {
                 return self.execute_compound_list(&clause.body, stdout, stderr);
             }
@@ -1046,6 +1047,24 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "after\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         let _ = std::fs::remove_file(marker);
+    }
+
+
+    #[test]
+    fn continue_two_resumes_the_outer_loop_iteration() {
+        let outer = std::env::temp_dir().join(format!("mysh-continue-outer-{}", std::process::id()));
+        let inner = std::env::temp_dir().join(format!("mysh-continue-inner-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outer);
+        let _ = std::fs::remove_file(&inner);
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("while test ! -e '{}'; do if test -e '{}'; then touch '{}'; else touch '{}'; continue 2; fi; echo skipped; done; echo after", outer.display(), inner.display(), outer.display(), inner.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let _ = std::fs::remove_file(outer);
+        let _ = std::fs::remove_file(inner);
     }
 
     #[test]
