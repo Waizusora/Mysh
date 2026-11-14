@@ -238,6 +238,15 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn case_keyword_can_be_used_as_subject_and_pattern_text() {
+        let tokens = lexer::lex("case case in case) echo matched ;; esac").unwrap();
+        let parsed = super::parse_compound_list(&tokens).unwrap();
+        let super::CompoundCommand::Case(statement) = &parsed[0].command else { panic!("expected case node"); };
+        assert_eq!(statement.word.literal_value(), "case");
+        assert_eq!(statement.arms[0].patterns[0].literal_value(), "case");
+    }
+
+    #[test]
     fn case_parser_accepts_optional_parentheses_before_patterns() {
         let tokens = lexer::lex("case value in (value) echo matched ;; esac").unwrap();
         let parsed = super::parse_compound_list(&tokens).unwrap();
@@ -894,7 +903,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 
     // Compound-list introducers establish a command position only when the
     // introducer itself was recognized as a reserved word in its own context.
-    ["if", "then", "elif", "else", "do", "while", "until", "for", "case"]
+    ["if", "then", "elif", "else", "do", "while", "until", "for"]
         .iter()
         .any(|introducer| {
             previous.is_unquoted_literal(introducer)
