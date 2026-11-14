@@ -29,7 +29,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
 2. The shell reads one command line.
 3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input.
-4. The parser identifies unquoted pipeline, redirection, and command-list operators. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. The initial `if` compound-command evaluator supports `if`, `then`, repeated `elif` clauses, optional `else`, and `fi` on one input line. A nested `if` is supported when it is the sole command in a selected branch.
+4. The parser identifies unquoted pipeline, redirection, and command-list operators. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. The initial `if` compound-command evaluator supports `if`, `then`, repeated `elif` clauses, optional `else`, and `fi` on one input line. A nested `if` is supported when it is the sole command in a selected branch; an optional terminating semicolon before the enclosing `fi` is accepted.
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
 7. Built-ins execute in the current process. This is required for stateful operations such as `cd`, `export`, and `unset`.
