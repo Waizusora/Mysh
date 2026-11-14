@@ -1073,8 +1073,12 @@ mod tests {
         assert_eq!(shell.last_status(), 1);
         assert!(shell.execute_line("continue 0", &mut Vec::new(), &mut errors));
         assert_eq!(shell.last_status(), 2);
-        assert!(shell.execute_line("while true; do break 2; done", &mut Vec::new(), &mut errors));
+        let marker = std::env::temp_dir().join(format!("mysh-break-depth-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!("while test ! -e '{}'; do break 2; touch '{}'; done; true", marker.display(), marker.display());
+        assert!(shell.execute_line(&command, &mut Vec::new(), &mut errors));
         assert_eq!(shell.last_status(), 0);
+        let _ = std::fs::remove_file(marker);
         let text = String::from_utf8(errors).unwrap();
         assert!(text.contains("not in a loop"));
         assert!(text.contains("positive integer"));
