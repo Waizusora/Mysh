@@ -159,7 +159,7 @@ pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static s
     let mut do_index = None;
     let mut done_index = None;
     for index in 1..tokens.len() {
-        if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+        if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") || is_reserved_word(tokens, index, "for") {
             depth += 1;
         } else if is_reserved_word(tokens, index, "do") && depth == 1 && do_index.is_none() {
             do_index = Some(index);
@@ -488,7 +488,7 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
     {
         let mut depth = 1usize;
         for index in start + 1..tokens.len() {
-            if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+            if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") || is_reserved_word(tokens, index, "for") {
                 depth += 1;
             } else if is_reserved_word(tokens, index, "done") {
                 depth -= 1;
