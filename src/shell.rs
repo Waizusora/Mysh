@@ -473,7 +473,9 @@ impl Shell {
                         next_id += 1;
                         environment.insert(name.clone(), value);
                         rewritten.push(char::from(36));
+                        rewritten.push('{');
                         rewritten.push_str(&name);
+                        rewritten.push('}');
                         index = end + 1;
                         continue;
                     }
@@ -1540,6 +1542,11 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             index += 2;
             continue;
         }
+        if chars.get(index + 1) == Some(&'0') {
+            result.push_str(environment.get("0").map(String::as_str).unwrap_or("mysh"));
+            index += 2;
+            continue;
+        }
         if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
             let name = chars[index + 1].to_string();
             result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
@@ -1562,11 +1569,6 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             continue;
         }
         let start = index + 1;
-        if chars.get(start) == Some(&'0') {
-            result.push_str(environment.get("0").map(String::as_str).unwrap_or("mysh"));
-            index = start + 1;
-            continue;
-        }
         if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             index = start + 1;
             while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { index += 1; }
