@@ -2647,9 +2647,9 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let command = r#"echo ${MYSH_OUTER_SPACED:-left ${MYSH_INNER_SPACED:-middle value} right} ${MYSH_COMMAND_SPACED:-left $(printf 'middle value') right}"#;
+        let command = r#"echo ${MYSH_OUTER_SPACED:-left ${MYSH_INNER_SPACED:-middle value} right} ${MYSH_COMMAND_SPACED:-left $(printf 'middle value') right} ${MYSH_BRACE_SPACED:-$(printf 'a } b')}"#;
         assert!(shell.execute_line(command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "left middle value right left middle value right\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "left middle value right left middle value right a } b\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
