@@ -990,6 +990,7 @@ pub fn classify_input(input: &str) -> InputState {
     let mut brace_depth = 0usize;
     let mut case_pattern = Vec::<bool>::new();
     for index in 0..tokens.len() {
+        let closes_case_pattern = tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true);
         if is_reserved_word(&tokens, index, "case") {
             case_pattern.push(false);
         } else if tokens[index].is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
@@ -1003,7 +1004,7 @@ pub fn classify_input(input: &str) -> InputState {
         }
         if tokens[index].is_unquoted_literal("(") {
             subshell_depth += 1;
-        } else if tokens[index].is_unquoted_literal(")") {
+        } else if tokens[index].is_unquoted_literal(")") && !closes_case_pattern {
             if subshell_depth == 0 {
                 return InputState::Invalid;
             }
@@ -1072,7 +1073,7 @@ pub fn classify_input(input: &str) -> InputState {
         }
     }
 
-    if !stack.is_empty() || subshell_depth > 0 || brace_depth > 0 {
+    if !stack.is_empty() || !case_pattern.is_empty() || subshell_depth > 0 || brace_depth > 0 {
         InputState::Incomplete
     } else {
         InputState::Complete
