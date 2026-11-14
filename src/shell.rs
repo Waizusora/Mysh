@@ -513,7 +513,7 @@ impl Shell {
                     StageOutcome::Continue(1)
                 } else if level > self.loop_depth {
                     let _ = writeln!(err, "mysh: continue: level exceeds active loop depth");
-                    StageOutcome::Continue(0)
+                    StageOutcome::Continue(1)
                 } else {
                     self.loop_control = Some(LoopControl::Continue(level));
                     StageOutcome::Continue(0)
