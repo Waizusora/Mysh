@@ -1842,6 +1842,15 @@ impl<'a> ArithmeticParser<'a> {
                 "/" => left.checked_div(right)?, "%" => left.checked_rem(right)?, _ => return None,
             };
         }
+        if minimum <= 1 && self.chars.get(self.index) == Some(&'?') {
+            self.index += 1;
+            let when_true = self.expression(0)?;
+            self.whitespace();
+            if self.chars.get(self.index) != Some(&':') { return None; }
+            self.index += 1;
+            let when_false = self.expression(1)?;
+            return Some(if left != 0 { when_true } else { when_false });
+        }
         Some(left)
     }
     fn unary(&mut self) -> Option<i64> {
@@ -2129,6 +2138,9 @@ mod tests {
         assert_eq!(expand_variables("$((1 < 2 && 4 != 5))", &environment, 0), "1");
         assert_eq!(expand_variables("$((1, 2 + 3))", &environment, 0), "5");
         assert_eq!(expand_variables("$((1, (2, 3)))", &environment, 0), "3");
+        assert_eq!(expand_variables("$((1 ? 7 : 9))", &environment, 0), "7");
+        assert_eq!(expand_variables("$((0 ? 7 : 2 + 3))", &environment, 0), "5");
+        assert_eq!(expand_variables("$((1 ? 0 ? 4 : 6 : 9))", &environment, 0), "6");
     }
     #[test]
     fn pathname_patterns_support_posix_ascii_character_classes() {
