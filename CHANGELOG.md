@@ -89,6 +89,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added regression coverage for case-pattern alternation and compound commands on either side of a pipeline.
 - Preserved POSIX asynchronous-list (`&`) markers in command-list ASTs while explicitly deferring background execution to job-control work.
 - Added leading pipeline negation (`!`) to the pipeline AST and status handling.
+- Completed the Phase 2 command-list, pipeline, compound-command, reserved-word, and incremental-input parser milestone; background execution and unsupported redirection execution remain deferred to their later phases.
 - Added initial single-level, single-line `if` / `then` / optional `else` / `fi` compound command execution, selected using the condition's exit status.
 - Added regression tests for successful and failing conditions and malformed compound-command syntax.
 - Documented current limitations: nested `if` statements and multiline compound commands are not supported.
