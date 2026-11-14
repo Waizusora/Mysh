@@ -1977,6 +1977,7 @@ fn expand_variables_mut(value: &str, environment: &mut BTreeMap<String, String>,
 
 /// Expand the operand of a braced parameter operator, applying shell quote removal.
 /// Expand a braced parameter operator operand with quote removal.
+#[cfg(test)]
 fn expand_parameter_word(word: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut environment = environment.clone();
     expand_parameter_word_mut(word, &mut environment, last_status)
@@ -2382,7 +2383,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_parameter_word, expand_variables, expand_word_fields, external_status_code, required_parameter_expansion_error, requires_more_input, shell_pattern_matches, Shell};
+    use super::{configure_prefix_path, expand_parameter_word, expand_variables, expand_word_fields, external_status_code, requires_more_input, shell_pattern_matches, Shell};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
@@ -2730,24 +2731,24 @@ mod tests {
 
     #[test]
     fn required_parameter_expansion_reports_unset_and_null_values() {
-        let environment = BTreeMap::from([
-            ("SET".to_owned(), "value".to_owned()),
-            ("EMPTY".to_owned(), String::new()),
-        ]);
+        let mut shell = Shell::new();
+        shell.variables.insert("SET".to_owned(), "value".to_owned());
+        shell.variables.insert("EMPTY".to_owned(), String::new());
+        let mut errors = Vec::new();
         let tokens = crate::lexer::lex("echo ${MISSING:?custom_failure}").unwrap();
         assert_eq!(
-            required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
+            shell.required_parameter_expansion_error(&tokens, &mut errors).as_deref(),
             Some("MISSING: custom_failure")
         );
         let tokens = crate::lexer::lex("echo ${EMPTY:?}").unwrap();
         assert_eq!(
-            required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
+            shell.required_parameter_expansion_error(&tokens, &mut errors).as_deref(),
             Some("EMPTY: parameter null or not set")
         );
         let tokens = crate::lexer::lex("echo ${EMPTY?unset only}").unwrap();
-        assert_eq!(required_parameter_expansion_error(&tokens, &environment, 0), None);
+        assert_eq!(shell.required_parameter_expansion_error(&tokens, &mut errors), None);
         let tokens = crate::lexer::lex("echo ${SET:?failure}").unwrap();
-        assert_eq!(required_parameter_expansion_error(&tokens, &environment, 0), None);
+        assert_eq!(shell.required_parameter_expansion_error(&tokens, &mut errors), None);
     }
 
     #[test]
