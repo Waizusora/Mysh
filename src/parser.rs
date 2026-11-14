@@ -318,6 +318,50 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
     Ok(IfStatement { clauses, else_body })
 }
 
+
+/// Return the exclusive end of a compound command beginning at `start`.
+/// This centralizes nested if/fi and while-or-until/done boundary matching
+/// in the parser so execution code does not scan reserved words itself.
+pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'static str> {
+    let Some(first) = tokens.get(start) else {
+        return Err("expected compound command");
+    };
+
+    if first.is_unquoted_literal("if") && is_reserved_word(tokens, start, "if") {
+        let mut depth = 0usize;
+        for index in start + 1..tokens.len() {
+            if is_reserved_word(tokens, index, "if") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "fi") {
+                if depth == 0 {
+                    return Ok(index + 1);
+                }
+                depth -= 1;
+            }
+        }
+        return Err("if requires a closing fi");
+    }
+
+    if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
+        || (first.is_unquoted_literal("until") && is_reserved_word(tokens, start, "until"))
+    {
+        let mut depth = 1usize;
+        for index in start + 1..tokens.len() {
+            if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "done") {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(index + 1);
+                }
+            }
+        }
+        return Err("loop requires a closing done");
+    }
+
+    Err("expected if, while, or until compound command")
+}
+
 /// State of a physical input buffer before command execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputState {
