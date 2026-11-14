@@ -43,10 +43,10 @@ jobs:
             rust_target: aarch64-linux-android
             linker_env: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
             linker: aarch64-linux-android21-clang
-          - abi: armeabi-v7a
-            rust_target: armv7-linux-androideabi
-            linker_env: CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER
-            linker: armv7a-linux-androideabi21-clang
+          - abi: x86_64
+            rust_target: x86_64-linux-android
+            linker_env: CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
+            linker: x86_64-linux-android21-clang
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -72,30 +72,20 @@ jobs:
           repository: uutils/coreutils
           ref: dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69
           path: .build/uutils-coreutils
-      - name: Patch uutils Android stat mode width
+      - name: Patch uutils Android uptime type
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          patches = [
-              (
-                  Path(".build/uutils-coreutils/src/uu/tail/src/args.rs"),
-                  "stat.st_mode & libc::S_IFMT == libc::S_IFREG",
-                  "(stat.st_mode as libc::mode_t) & libc::S_IFMT == libc::S_IFREG",
-              ),
-              (
-                  Path(".build/uutils-coreutils/src/uu/uptime/src/platform/unix.rs"),
-                  "print_uptime(Some(upsecs))?;",
-                  "print_uptime(Some(upsecs as uucore::libc::time_t))?;",
-              ),
-          ]
-          for path, old, new in patches:
-              source = path.read_text()
-              if source.count(old) != 1:
-                  raise SystemExit(f"unexpected uutils source in {path}; refusing compatibility patch")
-              path.write_text(source.replace(old, new))
+          path = Path(".build/uutils-coreutils/src/uu/uptime/src/platform/unix.rs")
+          old = "print_uptime(Some(upsecs))?;"
+          new = "print_uptime(Some(upsecs as uucore::libc::time_t))?;"
+          source = path.read_text()
+          if source.count(old) != 1:
+              raise SystemExit(f"unexpected uutils source in {path}; refusing compatibility patch")
+          path.write_text(source.replace(old, new))
           PY
       - name: Build uutils Coreutils
-        run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_Tier1,feat_require_unix_core
+        run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Build MYPK executable
