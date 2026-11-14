@@ -77,6 +77,47 @@ impl Word {
     }
 }
 
+/// Consume a balanced command or arithmetic substitution as one word fragment.
+fn consume_dollar_parenthesis<I: Iterator<Item = char>>(
+    characters: &mut std::iter::Peekable<I>,
+    word: &mut Word,
+    quoted: bool,
+) -> Result<(), LexError> {
+    word.push(char::from(36), true, quoted);
+    if characters.next() != Some('(') { return Err(LexError("invalid substitution opener")); }
+    word.push('(', true, quoted);
+    let mut depth = 1usize;
+    if characters.peek() == Some(&'(') {
+        word.push('(', true, quoted);
+        characters.next();
+        depth += 1;
+    }
+    let mut inner_quote = None;
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        word.push(character, true, quoted);
+        if escaped { escaped = false; continue; }
+        if inner_quote == Some('"') && character == '\\' { escaped = true; continue; }
+        if let Some(active) = inner_quote {
+            if character == active { inner_quote = None; }
+            else if active == '"' && character as u32 == 36 && characters.peek() == Some(&'(') {
+                word.push('(', true, quoted);
+                characters.next();
+                depth += 1;
+            }
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '\'' | '"' => inner_quote = Some(character),
+            '(' => depth += 1,
+            ')' => { depth -= 1; if depth == 0 { return Ok(()); } }
+            _ => {}
+        }
+    }
+    Err(LexError("unterminated command or arithmetic substitution"))
+}
+
 /// Split a command line into words while retaining quote and escape metadata.
 ///
 /// This is a lexical foundation, not a complete POSIX shell parser. Operator
@@ -99,6 +140,9 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
             }
             Some('"') => match character {
                 '"' => quote = None,
+                value if value as u32 == 36 && characters.peek() == Some(&'(') => {
+                    consume_dollar_parenthesis(&mut characters, &mut word, true)?;
+                }
                 '\\' => match characters.peek().copied() {
                     Some('$' | '`' | '"' | '\\') => {
                         word.push(characters.next().expect("peeked character"), false, true);
@@ -114,6 +158,10 @@ pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
                 '\'' | '"' => {
                     quote = Some(character);
                     word.mark_quoted();
+                    started = true;
+                }
+                value if value as u32 == 36 && characters.peek() == Some(&'(') => {
+                    consume_dollar_parenthesis(&mut characters, &mut word, false)?;
                     started = true;
                 }
                 '\\' => match characters.next() {
@@ -240,6 +288,15 @@ mod tests {
     fn rejects_unterminated_quotes_and_escapes() {
         assert!(lex("echo 'unfinished").is_err());
         assert!(lex("echo unfinished\\").is_err());
+    }
+
+    #[test]
+    fn command_and_arithmetic_substitutions_remain_single_words() {
+        let words = lex("echo $(printf 'two words') $((1 + (2 * 3))) \"$(echo nested)\"").unwrap();
+        assert_eq!(words.len(), 4);
+        assert_eq!(words[1].literal_value(), "$(printf 'two words')");
+        assert_eq!(words[2].literal_value(), "$((1 + (2 * 3)))");
+        assert!(words[3].is_quoted());
     }
 
     #[test]
