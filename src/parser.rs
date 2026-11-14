@@ -57,9 +57,27 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 /// Return true for POSIX operators that the lexer recognizes but the
 /// current execution engine does not implement yet.
 fn is_unsupported_operator(token: &Word) -> bool {
-    ["(", ")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|", "2>>", "2>&"]
+    if ["(", ")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
         .iter()
         .any(|operator| token.is_unquoted_literal(operator))
+    {
+        return true;
+    }
+
+    let value = token.literal_value();
+    let Some(redirection_start) = value.find(|character: char| character == '<' || character == '>') else {
+        return false;
+    };
+    if !value[..redirection_start].chars().all(|character| character.is_ascii_digit()) {
+        return false;
+    }
+
+    // The current executor only implements the default input/output
+    // descriptors and the explicit stderr form "2>". Reject every other
+    // descriptor/operator combination instead of passing it as argv data.
+    let operator = &value[redirection_start..];
+    !(value == "<" || value == ">" || value == ">>" || value == "2>")
+        || !matches!(operator, "<" | ">" | ">>" | ">")
 }
 
 /// Split one pipeline into its ordered stages.
@@ -124,8 +142,13 @@ mod command_structure_tests {
             "( echo grouped )",
             "case value in value) echo matched ;; esac",
             "cat <<EOF",
+            "cat <<-EOF",
             "cmd 3>&1",
+            "cmd 4<&0",
+            "cmd 10>>errors",
+            "cmd 1>output",
             "cmd 2>>errors",
+            "cmd 2>&1",
         ] {
             let tokens = lexer::lex(input).unwrap();
             assert!(split_pipeline(tokens).is_err(), "{input}");
