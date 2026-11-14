@@ -55,13 +55,13 @@ impl Shell {
         if tokens.is_empty() { return true; }
         self.history.push(line.to_owned());
 
-        if tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
-            return self.execute_if_statement(&tokens, stdout, stderr);
-        }
-        if tokens.first().is_some_and(|word| {
-            word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
-        }) {
-            return self.execute_loop_statement(&tokens, stdout, stderr);
+        let has_compound_command = tokens.iter().enumerate().any(|(index, _)| {
+            is_reserved_word(&tokens, index, "if")
+                || is_reserved_word(&tokens, index, "while")
+                || is_reserved_word(&tokens, index, "until")
+        });
+        if has_compound_command {
+            return self.execute_compound_branch(&tokens, stdout, stderr);
         }
 
         let commands = match split_command_list(tokens) {
