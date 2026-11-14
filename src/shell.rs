@@ -2297,6 +2297,20 @@ mod tests {
     }
 
     #[test]
+    fn nested_compound_pipeline_executes_inside_an_if_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(
+            "if true; then if true; then echo nested; fi | cat; fi",
+            &mut output,
+            &mut errors
+        ));
+        assert_eq!(String::from_utf8_lossy(&output), "nested\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn case_compound_command_can_run_as_a_pipeline_stage() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
