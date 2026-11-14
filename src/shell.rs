@@ -1052,7 +1052,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("for item in alpha beta; do echo $item; done; echo final-$item", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nbeta\\nfinal-beta\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\nfinal-beta\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
@@ -1062,13 +1062,13 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("for item in alpha beta; do echo $item; break; echo skipped; done; echo after", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nafter\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nafter\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
 
         let mut shell = Shell::new();
         let mut output = Vec::new();
         assert!(shell.execute_line("for item in alpha beta; do continue; echo skipped; done; echo after", &mut output, &mut Vec::new()));
-        assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
     }
 
     #[test]
@@ -1077,13 +1077,13 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("for outer in a b; do for inner in x y; do echo $outer-$inner; break 2; done; echo skipped; done; echo after", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "a-x\\nafter\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "a-x\nafter\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
 
         let mut shell = Shell::new();
         let mut output = Vec::new();
         assert!(shell.execute_line("for outer in a b; do for inner in x; do echo $outer; continue 2; done; echo skipped; done", &mut output, &mut Vec::new()));
-        assert_eq!(String::from_utf8(output).unwrap(), "a\\nb\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "a\nb\n");
     }
 
     #[test]
