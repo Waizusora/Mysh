@@ -285,4 +285,39 @@ mod tests {
         assert_eq!(words[1].literal_value(), "pre$NAMEpost");
         assert_eq!(words[1].parts().len(), 2);
     }
+
+    #[test]
+    fn recognizes_posix_compound_and_case_operators() {
+        let words = lex("( echo one ) ; case x in x) : ;; esac").unwrap();
+        let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
+        assert_eq!(
+            actual,
+            ["(", "echo", "one", ")", ";", "case", "x", "in", "x)", ":", ";;", "esac"]
+        );
+        assert!(words[0].is_unquoted_literal("("));
+        assert!(words[3].is_unquoted_literal(")"));
+        assert!(words[10].is_unquoted_literal(";;"));
+    }
+
+    #[test]
+    fn recognizes_posix_redirection_operator_tokens() {
+        let words = lex("cmd 10>>log 3<&0 4>&1 <<-EOF <>file >|out").unwrap();
+        let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
+        assert_eq!(actual, ["cmd", "10>>", "log", "3<&", "0", "4>&", "1", "<<-", "EOF", "<>", "file", ">|", "out"]);
+    }
+
+    #[test]
+    fn redirection_digits_are_only_io_numbers_when_adjacent() {
+        let words = lex("echo 2 >out echo2>other").unwrap();
+        let actual: Vec<String> = words.iter().map(|word| word.literal_value()).collect();
+        assert_eq!(actual, ["echo", "2", ">", "out", "echo2", ">", "other"]);
+    }
+
+    #[test]
+    fn quoted_parentheses_and_case_terminators_remain_words() {
+        let words = lex("echo '(' ';;'").unwrap();
+        assert!(!words[1].is_unquoted_literal("("));
+        assert!(!words[2].is_unquoted_literal(";;"));
+    }
+
 }
