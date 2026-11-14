@@ -180,6 +180,14 @@ mod command_structure_tests {
         assert_eq!(parsed[3].connector, Some(ListOperator::Or));
     }
     #[test]
+    fn command_list_split_keeps_separators_inside_nested_groups() {
+        let parsed = split_command_list(lexer::lex("{ echo one; echo two; } | cat; echo after").unwrap()).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].pipeline.stages.len(), 2);
+        assert_eq!(parsed[1].connector, Some(ListOperator::Sequence));
+    }
+
+    #[test]
     fn command_lists_reject_missing_operands_and_background_execution() {
         for input in ["; echo one", "echo one &&", "echo one ||", "echo one;;echo two", "echo one & echo two"] {
             assert!(split_command_list(lexer::lex(input).unwrap()).is_err(), "{input}");
@@ -220,15 +228,12 @@ mod command_structure_tests {
     #[test]
     fn compound_group_stages_are_preserved_in_pipeline_ast() {
         use super::{CompoundCommand, PipelineStage};
-        for input in [
-            "{ echo one; echo two; } | wc -l",
-            "( echo hello ) | cat",
-            "echo before | { cat; }",
-        ] {
-            let parsed = split_pipeline(lexer::lex(input).unwrap()).unwrap();
-            assert_eq!(parsed.stages.len(), 2, "{input}");
-            assert!(matches!(&parsed.stages[0], PipelineStage::Compound(CompoundCommand::BraceGroup(_) | CompoundCommand::Subshell(_)) | PipelineStage::Simple(_)), "{input}");
-        }
+        let left_group = split_pipeline(lexer::lex("{ echo one; echo two; } | wc -l").unwrap()).unwrap();
+        assert!(matches!(&left_group.stages[0], PipelineStage::Compound(CompoundCommand::BraceGroup(_))));
+        let left_subshell = split_pipeline(lexer::lex("( echo hello ) | cat").unwrap()).unwrap();
+        assert!(matches!(&left_subshell.stages[0], PipelineStage::Compound(CompoundCommand::Subshell(_))));
+        let right_group = split_pipeline(lexer::lex("echo before | { cat; }").unwrap()).unwrap();
+        assert!(matches!(&right_group.stages[1], PipelineStage::Compound(CompoundCommand::BraceGroup(_))));
     }
 
     #[test]
