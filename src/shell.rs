@@ -62,6 +62,7 @@ impl Shell {
                 || is_reserved_word(&tokens, index, "while")
                 || is_reserved_word(&tokens, index, "until")
                 || is_reserved_word(&tokens, index, "for")
+                || tokens[index].is_unquoted_literal("{")
         });
         if has_compound_command {
             return self.execute_compound_branch(&tokens, stdout, stderr);
@@ -199,6 +200,9 @@ impl Shell {
                 }
                 crate::parser::CompoundCommand::For(statement) => {
                     self.execute_for_statement(statement, stdout, stderr)
+                }
+                crate::parser::CompoundCommand::BraceGroup(body) => {
+                    self.execute_compound_list(body, stdout, stderr)
                 }
             };
             if !keep_running {
