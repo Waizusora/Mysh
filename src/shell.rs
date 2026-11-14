@@ -150,46 +150,18 @@ impl Shell {
             }
 
             let start = index;
-            let end = if branch[index].is_unquoted_literal("if") {
-                let mut depth = 0usize;
-                let mut matching_fi = None;
-                for (offset, _token) in branch.iter().enumerate().skip(index + 1) {
-                    if is_reserved_word(branch, offset, "if") {
-                        depth += 1;
-                    } else if is_reserved_word(branch, offset, "fi") {
-                        if depth == 0 {
-                            matching_fi = Some(offset);
-                            break;
-                        }
-                        depth -= 1;
+            let end = if branch[index].is_unquoted_literal("if")
+                || branch[index].is_unquoted_literal("while")
+                || branch[index].is_unquoted_literal("until")
+            {
+                match crate::parser::compound_command_end(branch, index) {
+                    Ok(end) => end,
+                    Err(message) => {
+                        let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                        self.last_status = 2;
+                        return true;
                     }
                 }
-                let Some(fi_index) = matching_fi else {
-                    let _ = writeln!(stderr, "mysh: syntax error: if requires a closing fi");
-                    self.last_status = 2;
-                    return true;
-                };
-                fi_index + 1
-            } else if branch[index].is_unquoted_literal("while") || branch[index].is_unquoted_literal("until") {
-                let mut depth = 1usize;
-                let mut matching_done = None;
-                for (offset, _token) in branch.iter().enumerate().skip(index + 1) {
-                    if is_reserved_word(branch, offset, "while") || is_reserved_word(branch, offset, "until") {
-                        depth += 1;
-                    } else if is_reserved_word(branch, offset, "done") {
-                        depth -= 1;
-                        if depth == 0 {
-                            matching_done = Some(offset);
-                            break;
-                        }
-                    }
-                }
-                let Some(done_index) = matching_done else {
-                    let _ = writeln!(stderr, "mysh: syntax error: loop requires a closing done");
-                    self.last_status = 2;
-                    return true;
-                };
-                done_index + 1
             } else {
                 let mut cursor = index;
                 while cursor < branch.len()
