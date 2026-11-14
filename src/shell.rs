@@ -933,7 +933,7 @@ enum LoopControl { Break(usize), Continue(usize) }
 fn initialize_shell_locale() {
     use std::sync::Once;
     static INITIALIZE: Once = Once::new();
-    unsafe extern "C" {
+    extern "C" {
         fn setlocale(category: i32, locale: *const std::ffi::c_char) -> *mut std::ffi::c_char;
     }
     INITIALIZE.call_once(|| unsafe {
@@ -947,7 +947,7 @@ fn initialize_shell_locale() {
 #[cfg(unix)]
 fn locale_class_matches(name: &str, candidate: char) -> bool {
     use std::ffi::c_int;
-    unsafe extern "C" {
+    extern "C" {
         fn iswalnum(value: u32) -> c_int;
         fn iswalpha(value: u32) -> c_int;
         fn iswblank(value: u32) -> c_int;
@@ -1004,7 +1004,7 @@ fn locale_class_matches(name: &str, candidate: char) -> bool {
 #[cfg(unix)]
 fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
     use std::ffi::c_int;
-    unsafe extern "C" {
+    extern "C" {
         fn wcscoll(left: *const i32, right: *const i32) -> c_int;
     }
     initialize_shell_locale();
@@ -1020,6 +1020,25 @@ fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
 #[cfg(not(unix))]
 fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
     left.cmp(&right)
+}
+
+#[cfg(unix)]
+fn locale_compare_strings(left: &str, right: &str) -> std::cmp::Ordering {
+    use std::ffi::c_int;
+    extern "C" {
+        fn wcscoll(left: *const i32, right: *const i32) -> c_int;
+    }
+    initialize_shell_locale();
+    let mut left: Vec<i32> = left.chars().map(|character| character as i32).collect();
+    let mut right: Vec<i32> = right.chars().map(|character| character as i32).collect();
+    left.push(0);
+    right.push(0);
+    unsafe { wcscoll(left.as_ptr(), right.as_ptr()) }.cmp(&0)
+}
+
+#[cfg(not(unix))]
+fn locale_compare_strings(left: &str, right: &str) -> std::cmp::Ordering {
+    left.cmp(right)
 }
 
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
@@ -1470,7 +1489,7 @@ fn expand_path_pattern(pattern: &str) -> Vec<String> {
         if paths.is_empty() { return Vec::new(); }
     }
     let mut result: Vec<String> = paths.into_iter().map(|path| path.to_string_lossy().into_owned()).collect();
-    result.sort();
+    result.sort_by(|left, right| locale_compare_strings(left, right));
     result
 }
 
