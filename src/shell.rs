@@ -1460,7 +1460,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, requires_more_input, shell_pattern_matches, Shell};
+    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, required_parameter_expansion_error, requires_more_input, shell_pattern_matches, Shell};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
