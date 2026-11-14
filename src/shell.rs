@@ -58,6 +58,11 @@ impl Shell {
         if tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
             return self.execute_if_statement(&tokens, stdout, stderr);
         }
+        if tokens.first().is_some_and(|word| {
+            word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
+        }) {
+            return self.execute_loop_statement(&tokens, stdout, stderr);
+        }
 
         let commands = match split_command_list(tokens) {
             Ok(commands) => commands,
@@ -75,6 +80,65 @@ impl Shell {
                 Some(ListOperator::Or) => self.last_status != 0,
             };
             if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn execute_loop_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+            &tokens[..tokens.len() - 1]
+        } else {
+            tokens
+        };
+        let is_until = tokens.first().is_some_and(|word| word.is_unquoted_literal("until"));
+        if !tokens.first().is_some_and(|word| {
+            word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
+        }) {
+            let _ = writeln!(stderr, "mysh: syntax error: expected while or until");
+            self.last_status = 2;
+            return true;
+        }
+
+        let mut depth = 1usize;
+        let mut do_index = None;
+        let mut done_index = None;
+        for index in 1..tokens.len() {
+            if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "do") && depth == 1 && do_index.is_none() {
+                do_index = Some(index);
+            } else if is_reserved_word(tokens, index, "done") {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    done_index = Some(index);
+                    break;
+                }
+            }
+        }
+
+        let (Some(body_start), Some(body_end)) = (do_index, done_index) else {
+            let _ = writeln!(stderr, "mysh: syntax error: while or until requires do and done");
+            self.last_status = 2;
+            return true;
+        };
+        if body_end + 1 != tokens.len() || body_start <= 1 {
+            let _ = writeln!(stderr, "mysh: syntax error: malformed while or until compound command");
+            self.last_status = 2;
+            return true;
+        }
+        let condition = &tokens[1..body_start];
+        let body = &tokens[body_start + 1..body_end];
+        loop {
+            if !self.execute_word_list(condition, stdout, stderr) {
+                return false;
+            }
+            let should_enter = if is_until { self.last_status != 0 } else { self.last_status == 0 };
+            if !should_enter {
+                break;
+            }
+            if !self.execute_compound_branch(body, stdout, stderr) {
                 return false;
             }
         }
@@ -239,6 +303,26 @@ impl Shell {
                     return true;
                 };
                 fi_index + 1
+            } else if branch[index].is_unquoted_literal("while") || branch[index].is_unquoted_literal("until") {
+                let mut depth = 1usize;
+                let mut matching_done = None;
+                for (offset, _token) in branch.iter().enumerate().skip(index + 1) {
+                    if is_reserved_word(branch, offset, "while") || is_reserved_word(branch, offset, "until") {
+                        depth += 1;
+                    } else if is_reserved_word(branch, offset, "done") {
+                        depth -= 1;
+                        if depth == 0 {
+                            matching_done = Some(offset);
+                            break;
+                        }
+                    }
+                }
+                let Some(done_index) = matching_done else {
+                    let _ = writeln!(stderr, "mysh: syntax error: loop requires a closing done");
+                    self.last_status = 2;
+                    return true;
+                };
+                done_index + 1
             } else {
                 let mut cursor = index;
                 while cursor < branch.len()
@@ -260,6 +344,10 @@ impl Shell {
                 let command = &branch[start..end];
                 let keep_running = if command.first().is_some_and(|word| word.is_unquoted_literal("if")) {
                     self.execute_if_statement(command, stdout, stderr)
+                } else if command.first().is_some_and(|word| {
+                    word.is_unquoted_literal("while") || word.is_unquoted_literal("until")
+                }) {
+                    self.execute_loop_statement(command, stdout, stderr)
                 } else {
                     self.execute_word_list(command, stdout, stderr)
                 };
