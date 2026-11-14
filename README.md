@@ -62,7 +62,7 @@ The Android NDK is required to produce Android executables. Host builds are supp
 - Context-sensitive recognition of implemented `if` compound reserved words and incremental input classification.
 - Unit and integration tests.
 
-The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Variable expansion currently supports only basic environment-variable names; full POSIX parameter expansion and later expansion phases are not implemented. Concurrent pipeline execution, field splitting, pathname expansion, command substitution, `while` / `until` loops and the remaining POSIX control-flow grammar, job control, and persistent history are not implemented.
+The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Basic IFS field splitting is now applied to unquoted parameter-expansion results while preserving literal and quoted text, with default, empty, whitespace, and non-whitespace IFS handling covered by focused regression tests. Unquoted positional-parameter expansion, pathname expansion, parameter operators, command substitution, and arithmetic expansion remain incomplete. Concurrent pipeline execution, the remaining POSIX control-flow grammar, job control, and persistent history are also not implemented.
 
 ## Build on a host
 
