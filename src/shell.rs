@@ -1232,47 +1232,33 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             index += 1;
             continue;
         }
-
         if chars.get(index + 1) == Some(&'?') {
             result.push_str(&last_status.to_string());
             index += 2;
             continue;
         }
-
         if chars.get(index + 1) == Some(&'#') {
             result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
             index += 2;
             continue;
         }
-
         if chars.get(index + 1).is_some_and(|character| matches!(character, '@' | '*')) {
-            let joined = positional_parameters(environment).join(&ifs_join_separator(environment));
-            result.push_str(&joined);
+            result.push_str(&positional_parameters(environment).join(&ifs_join_separator(environment)));
             index += 2;
             continue;
         }
-
         if chars.get(index + 1).is_some_and(|character| character.is_ascii_digit()) {
             let name = chars[index + 1].to_string();
             result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
             index += 2;
             continue;
         }
-
         if chars.get(index + 1) == Some(&'{') {
             if let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') {
                 let end = index + 2 + relative_end;
-                let name: String = chars[index + 2..end].iter().collect();
-                if name == "?" {
-                    result.push_str(&last_status.to_string());
-                } else if name == "#" {
-                    result.push_str(environment.get("#").map(String::as_str).unwrap_or("0"));
-                } else if name == "@" || name == "*" {
-                    result.push_str(&positional_parameters(environment).join(&ifs_join_separator(environment)));
-                } else if (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
-                    || valid_parameter_name(&name)
-                {
-                    result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
+                let expression: String = chars[index + 2..end].iter().collect();
+                if let Some(expanded) = expand_braced_parameter(&expression, environment, last_status) {
+                    result.push_str(&expanded);
                 } else {
                     result.extend(chars[index..=end].iter());
                 }
@@ -1283,13 +1269,10 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
             index += 2;
             continue;
         }
-
         let start = index + 1;
         if chars.get(start).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             index = start + 1;
-            while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
-                index += 1;
-            }
+            while chars.get(index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { index += 1; }
             let name: String = chars[start..index].iter().collect();
             result.push_str(environment.get(&name).map(String::as_str).unwrap_or(""));
         } else {
@@ -1298,6 +1281,89 @@ fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_st
         }
     }
     result
+}
+
+/// Expand the non-assigning POSIX parameter operators supported by the current phase.
+fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
+    for (operator, colon, mode) in [
+        (":-", true, "default"), ("-", false, "default"),
+        (":+", true, "alternate"), ("+", false, "alternate"),
+    ] {
+        if let Some(index) = expression.find(operator) {
+            let name = &expression[..index];
+            if !valid_parameter_reference(name) { continue; }
+            let word = &expression[index + operator.len()..];
+            let value = parameter_value(name, environment, last_status);
+            let is_set = parameter_is_set(name, environment);
+            let use_word = match mode {
+                "default" => !is_set || (colon && value.is_empty()),
+                _ => is_set && (!colon || !value.is_empty()),
+            };
+            return Some(if use_word {
+                expand_variables(word, environment, last_status)
+            } else if mode == "default" { value } else { String::new() });
+        }
+    }
+
+    for (operator, longest, prefix) in [("##", true, true), ("#", false, true), ("%%", true, false), ("%", false, false)] {
+        if let Some(index) = expression.find(operator) {
+            let name = &expression[..index];
+            if !valid_parameter_reference(name) { continue; }
+            let pattern = &expression[index + operator.len()..];
+            let value = parameter_value(name, environment, last_status);
+            let pattern = expand_variables(pattern, environment, last_status);
+            return Some(remove_parameter_pattern(&value, &pattern, longest, prefix));
+        }
+    }
+
+    if valid_parameter_reference(expression) {
+        return Some(parameter_value(expression, environment, last_status));
+    }
+    None
+}
+
+fn valid_parameter_reference(name: &str) -> bool {
+    name == "?" || name == "#" || name == "@" || name == "*"
+        || (name.len() == 1 && name.as_bytes()[0].is_ascii_digit())
+        || valid_parameter_name(name)
+}
+
+fn parameter_is_set(name: &str, environment: &BTreeMap<String, String>) -> bool {
+    match name {
+        "?" | "#" | "@" | "*" => true,
+        _ => environment.contains_key(name),
+    }
+}
+
+fn parameter_value(name: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
+    match name {
+        "?" => last_status.to_string(),
+        "#" => environment.get("#").cloned().unwrap_or_else(|| "0".to_owned()),
+        "@" | "*" => positional_parameters(environment).join(&ifs_join_separator(environment)),
+        _ => environment.get(name).cloned().unwrap_or_default(),
+    }
+}
+
+fn remove_parameter_pattern(value: &str, pattern: &str, longest: bool, prefix: bool) -> String {
+    let boundaries: Vec<usize> = if prefix {
+        value.char_indices().map(|(index, _)| index).chain(std::iter::once(value.len())).collect()
+    } else {
+        value.char_indices().map(|(index, _)| index).chain(std::iter::once(value.len())).collect()
+    };
+    let mut matches: Vec<usize> = boundaries.into_iter().filter(|boundary| {
+        let candidate = if prefix { &value[..*boundary] } else { &value[*boundary..] };
+        shell_pattern_matches(pattern, candidate)
+    }).collect();
+    if matches.is_empty() { return value.to_owned(); }
+    matches.sort_unstable();
+    let boundary = if prefix {
+        if longest { *matches.last().unwrap() } else { matches[0] }
+    } else if longest {
+        matches[0]
+    } else {
+        *matches.last().unwrap()
+    };
+    if prefix { value[boundary..].to_owned() } else { value[..boundary].to_owned() }
 }
 
 fn valid_parameter_name(name: &str) -> bool {
