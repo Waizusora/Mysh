@@ -114,13 +114,30 @@ mod command_structure_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopKind { While, Until }
 
-/// Parsed loop structure. The executor receives explicit condition and body
-/// token sequences instead of rediscovering the outer do/done boundaries.
+/// A recursively parsed command in a compound command list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompoundCommand {
+    Simple(Vec<Word>),
+    If(IfStatement),
+    Loop(LoopStatement),
+}
+
+/// One command and its connector to the preceding command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompoundListEntry {
+    pub command: CompoundCommand,
+    pub connector: Option<ListOperator>,
+}
+
+/// A command list that can contain nested compound commands.
+pub type CompoundList = Vec<CompoundListEntry>;
+
+/// Parsed loop structure with recursively parsed condition and body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopStatement {
     pub kind: LoopKind,
-    pub condition: Vec<Word>,
-    pub body: Vec<Word>,
+    pub condition: CompoundList,
+    pub body: CompoundList,
 }
 
 /// Parse one complete while or until compound command.
@@ -171,23 +188,23 @@ pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static s
     }
     Ok(LoopStatement {
         kind,
-        condition: tokens[1..condition_end].to_vec(),
-        body: tokens[body_start + 1..body_end].to_vec(),
+        condition: parse_compound_list(&tokens[1..condition_end])?,
+        body: parse_compound_list(&tokens[body_start + 1..body_end])?,
     })
 }
 
 /// One condition/body pair in an if compound command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfClause {
-    pub condition: Vec<Word>,
-    pub body: Vec<Word>,
+    pub condition: CompoundList,
+    pub body: CompoundList,
 }
 
 /// Parsed if/elif/else compound command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfStatement {
     pub clauses: Vec<IfClause>,
-    pub else_body: Option<Vec<Word>>,
+    pub else_body: Option<CompoundList>,
 }
 
 /// Parse a complete if compound command while respecting nested if/fi pairs.
@@ -271,8 +288,8 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
             return Err("if branch cannot be empty");
         }
         clauses.push(IfClause {
-            condition: tokens[cursor..condition_end].to_vec(),
-            body,
+            condition: parse_compound_list(&tokens[cursor..condition_end])?,
+            body: parse_compound_list(&body)?,
         });
 
         if delimiter == fi_index {
@@ -307,7 +324,7 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
             if body.is_empty() {
                 return Err("else branch cannot be empty");
             }
-            else_body = Some(body);
+            else_body = Some(parse_compound_list(&body)?);
             break;
         }
     }
@@ -318,6 +335,77 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
     Ok(IfStatement { clauses, else_body })
 }
 
+
+
+/// Parse a command list into recursive simple/if/loop nodes.
+pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str> {
+    let mut entries = Vec::new();
+    let mut index = 0usize;
+    let mut connector = None;
+
+    while index < tokens.len() {
+        if tokens[index].is_unquoted_literal(";") {
+            connector = Some(ListOperator::Sequence);
+            index += 1;
+            continue;
+        }
+        if tokens[index].is_unquoted_literal("&&") || tokens[index].is_unquoted_literal("||") {
+            return Err("conditional operator requires a command before it");
+        }
+
+        let start = index;
+        let command = if is_reserved_word(tokens, index, "if")
+            || is_reserved_word(tokens, index, "while")
+            || is_reserved_word(tokens, index, "until")
+        {
+            index = compound_command_end(tokens, index)?;
+            let segment = &tokens[start..index];
+            if is_reserved_word(tokens, start, "if") {
+                CompoundCommand::If(parse_if_statement(segment)?)
+            } else {
+                CompoundCommand::Loop(parse_loop_statement(segment)?)
+            }
+        } else {
+            while index < tokens.len()
+                && !tokens[index].is_unquoted_literal(";")
+                && !tokens[index].is_unquoted_literal("&&")
+                && !tokens[index].is_unquoted_literal("||")
+            {
+                index += 1;
+            }
+            if index == start {
+                return Err("expected command");
+            }
+            CompoundCommand::Simple(tokens[start..index].to_vec())
+        };
+
+        entries.push(CompoundListEntry {
+            command,
+            connector: connector.take(),
+        });
+
+        if index < tokens.len() {
+            if tokens[index].is_unquoted_literal(";") {
+                connector = Some(ListOperator::Sequence);
+            } else if tokens[index].is_unquoted_literal("&&") {
+                connector = Some(ListOperator::And);
+            } else if tokens[index].is_unquoted_literal("||") {
+                connector = Some(ListOperator::Or);
+            } else {
+                return Err("unexpected token in compound command list");
+            }
+            index += 1;
+            if index == tokens.len() && matches!(connector, Some(ListOperator::And | ListOperator::Or)) {
+                return Err("conditional operator requires a command after it");
+            }
+        }
+    }
+
+    if entries.is_empty() {
+        return Err("compound command list is empty");
+    }
+    Ok(entries)
+}
 
 /// Return the exclusive end of a compound command beginning at `start`.
 /// This centralizes nested if/fi and while-or-until/done boundary matching
