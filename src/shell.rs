@@ -1111,6 +1111,21 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
             index += 1;
         }
         let mut close = None;
+        if matches!(expression.get(index), Some('.') | Some('=')) {
+            let marker = expression[index];
+            let tail = index + 1;
+            if let Some(offset) = expression[tail..].windows(2)
+                .position(|pair| pair == [marker, ']'])
+            {
+                let name: String = expression[tail..tail + offset].iter().collect();
+                if marker == '.' {
+                    members.push(Member::Collating(name));
+                } else {
+                    members.push(Member::Equivalence(name));
+                }
+                close = Some(tail + offset + 1);
+            }
+        }
         while index < expression.len() {
             if expression[index] == ']' { close = Some(index); break; }
             if expression[index] == '[' {
