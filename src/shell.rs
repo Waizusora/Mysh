@@ -1500,6 +1500,102 @@ fn remove_parameter_pattern(value: &str, pattern: &str, longest: bool, prefix: b
     if prefix { value[boundary..].to_owned() } else { value[..boundary].to_owned() }
 }
 
+struct ArithmeticParser<'a> {
+    chars: Vec<char>,
+    index: usize,
+    environment: &'a BTreeMap<String, String>,
+}
+
+impl<'a> ArithmeticParser<'a> {
+    fn new(input: &str, environment: &'a BTreeMap<String, String>) -> Self {
+        Self { chars: input.chars().collect(), index: 0, environment }
+    }
+    fn whitespace(&mut self) {
+        while self.chars.get(self.index).is_some_and(|character| character.is_whitespace()) { self.index += 1; }
+    }
+    fn operator(&mut self) -> Option<(&'static str, u8)> {
+        self.whitespace();
+        for (operator, precedence) in [
+            ("||", 1), ("&&", 2), ("|", 3), ("^", 4), ("&", 5),
+            ("==", 6), ("!=", 6), ("<<", 8), (">>", 8),
+            ("<=", 7), (">=", 7), ("<", 7), (">", 7),
+            ("+", 9), ("-", 9), ("*", 10), ("/", 10), ("%", 10),
+        ] {
+            let candidate: Vec<char> = operator.chars().collect();
+            if self.chars[self.index..].starts_with(&candidate) { return Some((operator, precedence)); }
+        }
+        None
+    }
+    fn expression(&mut self, minimum: u8) -> Option<i64> {
+        let mut left = self.unary()?;
+        loop {
+            let Some((operator, precedence)) = self.operator() else { break; };
+            if precedence < minimum { break; }
+            self.index += operator.chars().count();
+            let right = self.expression(precedence + 1)?;
+            left = match operator {
+                "||" => i64::from(left != 0 || right != 0), "&&" => i64::from(left != 0 && right != 0),
+                "|" => left | right, "^" => left ^ right, "&" => left & right,
+                "==" => i64::from(left == right), "!=" => i64::from(left != right),
+                "<" => i64::from(left < right), "<=" => i64::from(left <= right),
+                ">" => i64::from(left > right), ">=" => i64::from(left >= right),
+                "<<" => left.checked_shl(right as u32)?, ">>" => left.checked_shr(right as u32)?,
+                "+" => left.checked_add(right)?, "-" => left.checked_sub(right)?, "*" => left.checked_mul(right)?,
+                "/" => left.checked_div(right)?, "%" => left.checked_rem(right)?, _ => return None,
+            };
+        }
+        Some(left)
+    }
+    fn unary(&mut self) -> Option<i64> {
+        self.whitespace();
+        for operator in ["+", "-", "!", "~"] {
+            if self.chars.get(self.index).copied() == operator.chars().next() {
+                self.index += 1;
+                let value = self.unary()?;
+                return match operator { "+" => Some(value), "-" => value.checked_neg(), "!" => Some(i64::from(value == 0)), "~" => Some(!value), _ => None };
+            }
+        }
+        self.primary()
+    }
+    fn primary(&mut self) -> Option<i64> {
+        self.whitespace();
+        if self.chars.get(self.index) == Some(&'(') {
+            self.index += 1;
+            let value = self.expression(1)?;
+            self.whitespace();
+            if self.chars.get(self.index) != Some(&')') { return None; }
+            self.index += 1;
+            return Some(value);
+        }
+        let start = self.index;
+        if self.chars.get(self.index).is_some_and(|character| character.is_ascii_digit()) {
+            while self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '#') { self.index += 1; }
+            return parse_arithmetic_integer(&self.chars[start..self.index].iter().collect::<String>());
+        }
+        if self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
+            self.index += 1;
+            while self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { self.index += 1; }
+            let name: String = self.chars[start..self.index].iter().collect();
+            return parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0")).or(Some(0));
+        }
+        None
+    }
+}
+
+fn parse_arithmetic_integer(value: &str) -> Option<i64> {
+    if let Some((base, digits)) = value.split_once('#') { return i64::from_str_radix(digits, base.parse::<u32>().ok()?).ok(); }
+    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) { return i64::from_str_radix(hex, 16).ok(); }
+    if value.len() > 1 && value.starts_with('0') { return i64::from_str_radix(&value[1..], 8).ok(); }
+    value.parse().ok()
+}
+
+fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>) -> Option<i64> {
+    let mut parser = ArithmeticParser::new(expression, environment);
+    let value = parser.expression(1)?;
+    parser.whitespace();
+    (parser.index == parser.chars.len()).then_some(value)
+}
+
 fn valid_parameter_name(name: &str) -> bool {
     let mut characters = name.chars();
     characters.next().is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
