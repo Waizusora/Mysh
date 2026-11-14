@@ -550,7 +550,7 @@ fn is_uutils_utility(name: &str) -> bool {
             | "sleep" | "sort" | "split" | "stat" | "stdbuf" | "stty" | "sum"
             | "sync" | "tac" | "tail" | "tee" | "test" | "timeout" | "touch"
             | "tr" | "truncate" | "tsort" | "tty" | "uname" | "unexpand" | "uniq"
-            | "unlink" | "uptime" | "users" | "vdir" | "wc" | "who" | "whoami"
+            | "unlink" | "uptime" | "vdir" | "wc" | "whoami"
             | "yes"
     )
 }
