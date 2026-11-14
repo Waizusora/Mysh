@@ -1486,7 +1486,7 @@ fn append_unquoted_expansion_mut(
         if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
             if let Some(end) = matching_arithmetic_end(&chars, index) {
                 let expression: String = chars[index + 3..end - 1].iter().collect();
-                let value = evaluate_arithmetic_mut(&expression, environment).unwrap_or(0).to_string();
+                let value = evaluate_arithmetic_mut(&expand_variables_mut(&expression, environment, last_status), environment).unwrap_or(0).to_string();
                 fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true, true)));
                 index = end + 1;
                 continue;
@@ -1862,7 +1862,7 @@ fn expand_variables_mut(value: &str, environment: &mut BTreeMap<String, String>,
         if chars.get(index + 1) == Some(&'(') && chars.get(index + 2) == Some(&'(') {
             if let Some(end) = matching_arithmetic_end(&chars, index) {
                 let expression: String = chars[index + 3..end - 1].iter().collect();
-                if let Some(value) = evaluate_arithmetic_mut(&expression, environment) {
+                if let Some(value) = evaluate_arithmetic_mut(&expand_variables_mut(&expression, environment, last_status), environment) {
                     result.push_str(&value.to_string());
                 } else {
                     result.push('0');
