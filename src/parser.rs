@@ -24,14 +24,27 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
     if !token.is_unquoted_literal(keyword) {
         return false;
     }
-    index == 0
-        || tokens[index - 1].is_unquoted_literal(";")
-        || tokens[index - 1].is_unquoted_literal("&&")
-        || tokens[index - 1].is_unquoted_literal("||")
-        || tokens[index - 1].is_unquoted_literal("|")
-        || tokens[index - 1].is_unquoted_literal("then")
-        || tokens[index - 1].is_unquoted_literal("else")
-        || tokens[index - 1].is_unquoted_literal("do")
+    if index == 0 {
+        return true;
+    }
+
+    let previous = &tokens[index - 1];
+    if previous.is_unquoted_literal(";")
+        || previous.is_unquoted_literal("&&")
+        || previous.is_unquoted_literal("||")
+        || previous.is_unquoted_literal("|")
+    {
+        return true;
+    }
+
+    // Compound-list introducers establish a command position only when the
+    // introducer itself was recognized as a reserved word in its own context.
+    ["if", "then", "elif", "else", "do"]
+        .iter()
+        .any(|introducer| {
+            previous.is_unquoted_literal(introducer)
+                && is_reserved_word(tokens, index - 1, introducer)
+        })
 }
 
 /// Classify buffered input without treating every lexer error as continuation.
@@ -230,6 +243,16 @@ mod tests {
         assert!(is_reserved_word(&after_else, 1, "if"));
         assert!(!is_reserved_word(&tokens, 8, "fi"));
         assert!(is_reserved_word(&tokens, 10, "fi"));
+    }
+
+    #[test]
+    fn keyword_arguments_do_not_create_following_command_positions() {
+        for input in ["echo if if", "echo then if", "echo else if", "echo do if"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(!is_reserved_word(&tokens, 2, "if"), "{input}");
+        }
+        let nested = lexer::lex("if if true; then echo ok; fi; then echo done; fi").unwrap();
+        assert!(is_reserved_word(&nested, 1, "if"));
     }
 
     #[test]
