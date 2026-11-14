@@ -291,6 +291,20 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn asynchronous_markers_are_retained_inside_compound_bodies() {
+        let tokens = lexer::lex("if true; then echo background & echo foreground; fi").unwrap();
+        let parsed = super::parse_compound_list(&tokens).unwrap();
+        let super::CompoundCommand::If(statement) = &parsed[0].command else {
+            panic!("expected if compound command");
+        };
+        assert!(statement.clauses[0].body[0].asynchronous);
+        assert_eq!(
+            statement.clauses[0].body[1].connector,
+            Some(ListOperator::Sequence)
+        );
+    }
+
+    #[test]
     fn pipeline_split_preserves_stage_order() {
         let stages = split_pipeline(lexer::lex("echo one | cat | wc").unwrap()).unwrap();
         assert_eq!(stages.stages.len(), 3);
