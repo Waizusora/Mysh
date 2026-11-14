@@ -1126,7 +1126,7 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                 close = Some(tail + offset + 1);
             }
         }
-        while index < expression.len() {
+        while close.is_none() && index < expression.len() {
             if expression[index] == ']' { close = Some(index); break; }
             if expression[index] == '[' {
                 let marker = expression.get(index + 1).copied();
