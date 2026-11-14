@@ -57,7 +57,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 /// Return true for POSIX operators that the lexer recognizes but the
 /// current execution engine does not implement yet.
 fn is_unsupported_operator(token: &Word) -> bool {
-    if ["(", ")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
+    if [")", ";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
         .iter()
         .any(|operator| token.is_unquoted_literal(operator))
     {
@@ -98,6 +98,7 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         word.is_unquoted_literal("!")
             || word.is_unquoted_literal("{")
             || word.is_unquoted_literal("}")
+            || word.is_unquoted_literal("(")
     }) {
         return Err("recognized compound-command syntax is not implemented yet");
     }
@@ -188,6 +189,7 @@ pub enum CompoundCommand {
     Loop(LoopStatement),
     For(ForStatement),
     BraceGroup(CompoundList),
+    Subshell(CompoundList),
 }
 
 /// One command and its connector to the preceding command.
@@ -459,10 +461,15 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
         }
 
         let start = index;
-        if tokens[index].is_unquoted_literal("{") || tokens[index].is_unquoted_literal("}") {
-            return Err("brace groups are not implemented yet");
-        }
-        let command = if tokens[index].is_unquoted_literal("{") {
+        let command = if tokens[index].is_unquoted_literal("(") {
+            index = compound_command_end(tokens, index)?;
+            let closing = index - 1;
+            let body = &tokens[start + 1..closing];
+            if body.is_empty() {
+                return Err("subshell requires a non-empty compound list");
+            }
+            CompoundCommand::Subshell(parse_compound_list(body)?)
+        } else if tokens[index].is_unquoted_literal("{") {
             index = compound_command_end(tokens, index)?;
             let closing = index - 1;
             if closing <= start + 1 || !tokens[closing - 1].is_unquoted_literal(";") {
@@ -532,6 +539,21 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
     let Some(first) = tokens.get(start) else {
         return Err("expected compound command");
     };
+
+    if first.is_unquoted_literal("(") {
+        let mut depth = 1usize;
+        for index in start + 1..tokens.len() {
+            if tokens[index].is_unquoted_literal("(") {
+                depth += 1;
+            } else if tokens[index].is_unquoted_literal(")") {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(index + 1);
+                }
+            }
+        }
+        return Err("subshell requires a closing ')'");
+    }
 
     if first.is_unquoted_literal("{") {
         let mut depth = 1usize;
@@ -762,7 +784,16 @@ pub fn classify_input(input: &str) -> InputState {
     }
 
     let mut stack = Vec::new();
+    let mut subshell_depth = 0usize;
     for index in 0..tokens.len() {
+        if tokens[index].is_unquoted_literal("(") {
+            subshell_depth += 1;
+        } else if tokens[index].is_unquoted_literal(")") {
+            if subshell_depth == 0 {
+                return InputState::Invalid;
+            }
+            subshell_depth -= 1;
+        }
         if is_reserved_word(&tokens, index, "if") {
             stack.push(CompoundPhase::IfAwaitThen);
         } else if is_reserved_word(&tokens, index, "for") {
@@ -819,10 +850,10 @@ pub fn classify_input(input: &str) -> InputState {
         }
     }
 
-    if stack.is_empty() {
-        InputState::Complete
-    } else {
+    if !stack.is_empty() || subshell_depth > 0 {
         InputState::Incomplete
+    } else {
+        InputState::Complete
     }
 }
 
@@ -1126,5 +1157,43 @@ mod brace_group_tests {
         let end = super::compound_command_end(&tokens, 0).unwrap();
         assert!(tokens[end - 1].is_unquoted_literal("}"));
         assert!(tokens[end].is_unquoted_literal(";"));
+    }
+}
+
+#[cfg(test)]
+mod subshell_parser_tests {
+    use super::{classify_input, compound_command_end, parse_compound_list, CompoundCommand, InputState};
+    use crate::lexer;
+
+    #[test]
+    fn parses_nested_subshells_as_typed_compound_nodes() {
+        let tokens = lexer::lex("( echo outer; ( echo inner; ) )").unwrap();
+        let parsed = parse_compound_list(&tokens).unwrap();
+        let CompoundCommand::Subshell(outer) = &parsed[0].command else { panic!("expected subshell"); };
+        assert_eq!(outer.len(), 2);
+        assert!(matches!(&outer[1].command, CompoundCommand::Subshell(_)));
+    }
+
+    #[test]
+    fn subshell_boundary_stops_before_following_command() {
+        let tokens = lexer::lex("( echo inside; ); echo outside").unwrap();
+        let end = compound_command_end(&tokens, 0).unwrap();
+        assert!(tokens[end - 1].is_unquoted_literal(")"));
+        assert!(tokens[end].is_unquoted_literal(";"));
+    }
+
+    #[test]
+    fn rejects_empty_or_unclosed_subshells() {
+        for input in ["( )", "( echo missing"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(parse_compound_list(&tokens).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn classifies_open_and_unmatched_subshell_delimiters() {
+        assert_eq!(classify_input("( echo inside; )"), InputState::Complete);
+        assert_eq!(classify_input("( echo inside"), InputState::Incomplete);
+        assert_eq!(classify_input(")"), InputState::Invalid);
     }
 }
