@@ -95,3 +95,7 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added context-sensitive recognition of `if`, `then`, `elif`, `else`, and `fi` at command boundaries, preserving keyword-looking ordinary arguments and quoted or escaped words.
 - Added incremental input classification for complete, incomplete, and structurally invalid input, including recoverable unterminated quotes and unmatched closing `fi` detection.
 - Other POSIX compound commands and the complete POSIX compound-command grammar remain unsupported.
+
+- Added per-character field-splitting and pathname-pattern eligibility metadata to the expansion pipeline.
+- Preserved quoted and escaped wildcard characters as literals while allowing unquoted wildcard fragments and unquoted variable-expansion results to participate in pathname expansion.
+- Added regression tests for mixed quoted/unquoted pathname patterns and quoted versus unquoted variable-produced wildcard patterns.
