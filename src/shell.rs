@@ -62,6 +62,7 @@ impl Shell {
                 || is_reserved_word(&tokens, index, "while")
                 || is_reserved_word(&tokens, index, "until")
                 || is_reserved_word(&tokens, index, "for")
+                || is_reserved_word(&tokens, index, "case")
                 || tokens[index].is_unquoted_literal("{")
                 || tokens[index].is_unquoted_literal("(")
         });
@@ -166,6 +167,25 @@ impl Shell {
         true
     }
 
+    fn execute_case_statement(&mut self, statement: &crate::parser::CaseStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let value = expand_word(&statement.word, &self.variables, self.last_status);
+        for arm in &statement.arms {
+            let matched = arm.patterns.iter().any(|pattern| {
+                let pattern = expand_word(pattern, &self.variables, self.last_status);
+                shell_pattern_matches(&pattern, &value)
+            });
+            if matched {
+                if arm.body.is_empty() {
+                    self.last_status = 0;
+                    return true;
+                }
+                return self.execute_compound_list(&arm.body, stdout, stderr);
+            }
+        }
+        self.last_status = 0;
+        true
+    }
+
     fn execute_subshell(&mut self, body: &crate::parser::CompoundList, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let original_directory = match std::env::current_dir() {
             Ok(directory) => directory,
@@ -231,6 +251,9 @@ impl Shell {
                 }
                 crate::parser::CompoundCommand::For(statement) => {
                     self.execute_for_statement(statement, stdout, stderr)
+                }
+                crate::parser::CompoundCommand::Case(statement) => {
+                    self.execute_case_statement(statement, stdout, stderr)
                 }
                 crate::parser::CompoundCommand::BraceGroup(body) => {
                     self.execute_compound_list(body, stdout, stderr)
@@ -639,6 +662,39 @@ enum StageOutcome { Continue(i32), Exit(i32) }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopControl { Break(usize), Continue(usize) }
 
+fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
+    fn matches(pattern: &[char], value: &[char]) -> bool {
+        if pattern.is_empty() { return value.is_empty(); }
+        match pattern[0] {
+            '*' => (0..=value.len()).any(|offset| matches(&pattern[1..], &value[offset..])),
+            '?' => !value.is_empty() && matches(&pattern[1..], &value[1..]),
+            '[' => {
+                let Some(close) = pattern.iter().position(|character| *character == ']') else {
+                    return !value.is_empty() && value[0] == '[' && matches(&pattern[1..], &value[1..]);
+                };
+                if value.is_empty() { return false; }
+                let mut index = 1usize;
+                let negate = pattern.get(index).is_some_and(|character| *character == '!');
+                if negate { index += 1; }
+                let mut matched = false;
+                while index < close {
+                    if index + 2 < close && pattern[index + 1] == '-' {
+                        matched |= value[0] >= pattern[index] && value[0] <= pattern[index + 2];
+                        index += 3;
+                    } else {
+                        matched |= value[0] == pattern[index];
+                        index += 1;
+                    }
+                }
+                if matched == negate { return false; }
+                matches(&pattern[close + 1..], &value[1..])
+            }
+            literal => !value.is_empty() && literal == value[0] && matches(&pattern[1..], &value[1..]),
+        }
+    }
+    matches(&pattern.chars().collect::<Vec<_>>(), &value.chars().collect::<Vec<_>>())
+}
+
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
     let Some(prefix) = variables.get("MYSH_PREFIX") else { return; };
     let bin = std::path::PathBuf::from(prefix).join("bin");
@@ -1017,6 +1073,39 @@ mod tests {
         assert!(shell.execute_line("echo missing &&", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 2);
         assert!(String::from_utf8(errors).unwrap().contains("syntax error"));
+    }
+
+
+    #[test]
+    fn case_selects_first_matching_pattern_arm() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("case apple in orange) echo wrong ;; a|apple) echo selected ;; *) echo fallback ;; esac", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "selected\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn case_supports_shell_wildcard_patterns_and_nested_compounds() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("case item42 in item*) if true; then echo wildcard ;; fi ;; *) echo fallback ;; esac", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "wildcard\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn case_without_a_matching_arm_returns_success_without_running_a_body() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("case apple in orange) echo wrong ;; esac", &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty());
+        assert_eq!(shell.last_status(), 0);
     }
 
     #[test]
