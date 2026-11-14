@@ -63,6 +63,7 @@ impl Shell {
                 || is_reserved_word(&tokens, index, "until")
                 || is_reserved_word(&tokens, index, "for")
                 || tokens[index].is_unquoted_literal("{")
+                || tokens[index].is_unquoted_literal("(")
         });
         if has_compound_command {
             return self.execute_compound_branch(&tokens, stdout, stderr);
@@ -165,6 +166,36 @@ impl Shell {
         true
     }
 
+    fn execute_subshell(&mut self, body: &crate::parser::CompoundList, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let original_directory = match std::env::current_dir() {
+            Ok(directory) => directory,
+            Err(error) => {
+                let _ = writeln!(stderr, "mysh: subshell: cannot determine current directory: {error}");
+                self.last_status = 1;
+                return true;
+            }
+        };
+
+        let mut child = Shell {
+            history: self.history.clone(),
+            last_status: self.last_status,
+            variables: self.variables.clone(),
+            exported: self.exported.clone(),
+            loop_depth: 0,
+            loop_control: None,
+        };
+        let _ = child.execute_compound_list(body, stdout, stderr);
+        let child_status = child.last_status;
+        let restore_result = std::env::set_current_dir(&original_directory);
+        self.last_status = child_status;
+
+        if let Err(error) = restore_result {
+            let _ = writeln!(stderr, "mysh: subshell: cannot restore current directory: {error}");
+            self.last_status = 1;
+        }
+        true
+    }
+
     fn execute_compound_branch(&mut self, branch: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let commands = match crate::parser::parse_compound_list(branch) {
             Ok(commands) => commands,
@@ -203,6 +234,9 @@ impl Shell {
                 }
                 crate::parser::CompoundCommand::BraceGroup(body) => {
                     self.execute_compound_list(body, stdout, stderr)
+                }
+                crate::parser::CompoundCommand::Subshell(body) => {
+                    self.execute_subshell(body, stdout, stderr)
                 }
             };
             if !keep_running {
@@ -752,6 +786,20 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "after\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
+    }
+
+
+    #[test]
+    fn subshell_isolates_variables_directory_and_exit() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let original_directory = std::env::current_dir().unwrap();
+        assert!(shell.execute_line("export MYSH_SUBSHELL_VALUE=parent; ( export MYSH_SUBSHELL_VALUE=child; cd /; exit 7 ); echo $MYSH_SUBSHELL_VALUE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "parent\\n");
+        assert_eq!(std::env::current_dir().unwrap(), original_directory);
+        assert_eq!(shell.last_status(), 7);
+        assert!(errors.is_empty());
     }
 
     #[test]
