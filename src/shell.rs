@@ -1013,7 +1013,8 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
     if word.parts().is_empty() && word.is_quoted() {
         return vec![String::new()];
     }
-    split_expansion_fields(fields, keep_empty, environment)
+    let expanded = split_expansion_fields(fields, keep_empty, environment);
+    pathname_expand_fields(word, expanded, environment)
 }
 
 fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &mut Vec<bool>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
@@ -1064,6 +1065,62 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
         }
         index = end;
     }
+}
+
+/// Apply pathname expansion after field splitting. Unmatched patterns remain literal.
+fn pathname_expand_fields(word: &Word, fields: Vec<String>, environment: &BTreeMap<String, String>) -> Vec<String> {
+    let has_unquoted_pattern = word.parts().iter().any(|part| !part.quoted && part.expandable);
+    let quoted_pattern = word.parts().iter().any(|part| part.quoted && part.text.chars().any(|c| matches!(c, '*' | '?' | '[')));
+    if !has_unquoted_pattern || quoted_pattern {
+        return fields;
+    }
+    fields.into_iter().flat_map(|field| {
+        if !field.chars().any(|c| matches!(c, '*' | '?' | '[')) {
+            return vec![field];
+        }
+        let matches = expand_path_pattern(&field);
+        if matches.is_empty() { vec![field] } else { matches }
+    }).collect()
+}
+
+/// Expand wildcard components without invoking another shell or external utility.
+fn expand_path_pattern(pattern: &str) -> Vec<String> {
+    use std::path::{Component, Path, PathBuf};
+    let path = Path::new(pattern);
+    let absolute = path.is_absolute();
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::RootDir => {},
+            Component::CurDir => components.push(".".to_owned()),
+            Component::ParentDir => components.push("..".to_owned()),
+            Component::Normal(value) => components.push(value.to_string_lossy().into_owned()),
+            Component::Prefix(value) => components.push(value.as_os_str().to_string_lossy().into_owned()),
+        }
+    }
+    let mut paths = vec![if absolute { PathBuf::from("/") } else { PathBuf::from("") }];
+    for component in components {
+        let mut next = Vec::new();
+        let wildcard = component.chars().any(|c| matches!(c, '*' | '?' | '['));
+        for base in &paths {
+            if wildcard {
+                let Ok(entries) = std::fs::read_dir(if base.as_os_str().is_empty() { Path::new(".") } else { base.as_path() }) else { continue; };
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if name.starts_with('.') && !component.starts_with('.') { continue; }
+                    if shell_pattern_matches(&component, &name) { next.push(base.join(name)); }
+                }
+            } else {
+                let candidate = base.join(&component);
+                if candidate.exists() { next.push(candidate); }
+            }
+        }
+        paths = next;
+        if paths.is_empty() { return Vec::new(); }
+    }
+    let mut result: Vec<String> = paths.into_iter().map(|path| path.to_string_lossy().into_owned()).collect();
+    result.sort();
+    result
 }
 
 fn split_expansion_fields(fields: Vec<Vec<(char, bool)>>, keep: Vec<bool>, environment: &BTreeMap<String, String>) -> Vec<String> {
