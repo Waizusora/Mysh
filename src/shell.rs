@@ -929,6 +929,99 @@ enum StageOutcome { Continue(i32), Exit(i32) }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoopControl { Break(usize), Continue(usize) }
 
+#[cfg(unix)]
+fn initialize_shell_locale() {
+    use std::sync::Once;
+    static INITIALIZE: Once = Once::new();
+    unsafe extern "C" {
+        fn setlocale(category: i32, locale: *const std::ffi::c_char) -> *mut std::ffi::c_char;
+    }
+    INITIALIZE.call_once(|| unsafe {
+        // LC_CTYPE is zero on POSIX. An empty locale name selects the
+        // process environment (LC_ALL, LC_CTYPE, then LANG).
+        let empty = b"\\0";
+        let _ = setlocale(0, empty.as_ptr().cast());
+    });
+}
+
+#[cfg(unix)]
+fn locale_class_matches(name: &str, candidate: char) -> bool {
+    use std::ffi::c_int;
+    unsafe extern "C" {
+        fn iswalnum(value: u32) -> c_int;
+        fn iswalpha(value: u32) -> c_int;
+        fn iswblank(value: u32) -> c_int;
+        fn iswcntrl(value: u32) -> c_int;
+        fn iswdigit(value: u32) -> c_int;
+        fn iswgraph(value: u32) -> c_int;
+        fn iswlower(value: u32) -> c_int;
+        fn iswprint(value: u32) -> c_int;
+        fn iswpunct(value: u32) -> c_int;
+        fn iswspace(value: u32) -> c_int;
+        fn iswupper(value: u32) -> c_int;
+        fn iswxdigit(value: u32) -> c_int;
+    }
+    initialize_shell_locale();
+    let value = candidate as u32;
+    unsafe {
+        match name {
+            "alnum" => iswalnum(value) != 0,
+            "alpha" => iswalpha(value) != 0,
+            "blank" => iswblank(value) != 0,
+            "cntrl" => iswcntrl(value) != 0,
+            "digit" => iswdigit(value) != 0,
+            "graph" => iswgraph(value) != 0,
+            "lower" => iswlower(value) != 0,
+            "print" => iswprint(value) != 0,
+            "punct" => iswpunct(value) != 0,
+            "space" => iswspace(value) != 0,
+            "upper" => iswupper(value) != 0,
+            "xdigit" => iswxdigit(value) != 0,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn locale_class_matches(name: &str, candidate: char) -> bool {
+    match name {
+        "alnum" => candidate.is_alphanumeric(),
+        "alpha" => candidate.is_alphabetic(),
+        "blank" => candidate == ' ' || candidate == '\\t',
+        "cntrl" => candidate.is_control(),
+        "digit" => candidate.is_numeric(),
+        "graph" => !candidate.is_whitespace() && !candidate.is_control(),
+        "lower" => candidate.is_lowercase(),
+        "print" => !candidate.is_control(),
+        "punct" => candidate.is_ascii_punctuation(),
+        "space" => candidate.is_whitespace(),
+        "upper" => candidate.is_uppercase(),
+        "xdigit" => candidate.is_ascii_hexdigit(),
+        _ => false,
+    }
+}
+
+#[cfg(unix)]
+fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
+    use std::ffi::c_int;
+    unsafe extern "C" {
+        fn wcscoll(left: *const i32, right: *const i32) -> c_int;
+    }
+    initialize_shell_locale();
+    let left = [left as i32, 0];
+    let right = [right as i32, 0];
+    match unsafe { wcscoll(left.as_ptr(), right.as_ptr()) }.cmp(&0) {
+        std::cmp::Ordering::Less => std::cmp::Ordering::Less,
+        std::cmp::Ordering::Equal => std::cmp::Ordering::Equal,
+        std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
+    }
+}
+
+#[cfg(not(unix))]
+fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
+    left.cmp(&right)
+}
+
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
     fn bracket_matches(expression: &[char], candidate: char) -> Option<(bool, usize)> {
         #[derive(Clone)]
@@ -983,7 +1076,11 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                         && matches!(&members[member + 2], Member::Character(_)) =>
                 {
                     let Member::Character(last) = &members[member + 2] else { unreachable!() };
-                    if first <= last && (*first..=*last).contains(&candidate) { matched = true; }
+                    if locale_compare_chars(*first, candidate) != std::cmp::Ordering::Greater
+                        && locale_compare_chars(candidate, *last) != std::cmp::Ordering::Greater
+                    {
+                        matched = true;
+                    }
                     member += 3;
                 }
                 Member::Character(character) => { matched |= *character == candidate; member += 1; }
@@ -2312,6 +2409,15 @@ mod tests {
         assert_eq!(expand_variables("$((0 ? (1 / 0) : 9))", &environment, 0), "9");
         assert_eq!(expand_variables("$((1 && (0 || 4)))", &environment, 0), "1");
     }
+    #[test]
+    fn pathname_patterns_use_locale_character_classes_and_collation_order() {
+        assert!(shell_pattern_matches("[[:alpha:]]", "A"));
+        assert!(shell_pattern_matches("[[:digit:]]", "7"));
+        assert!(shell_pattern_matches("[[:space:]]", " "));
+        assert!(shell_pattern_matches("[a-z]", "m"));
+        assert!(!shell_pattern_matches("[[:alpha:]]", "7"));
+    }
+
     #[test]
     fn pathname_patterns_support_posix_ascii_character_classes() {
         assert!(shell_pattern_matches("[[:digit:]]", "7"));
