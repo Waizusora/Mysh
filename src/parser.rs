@@ -69,8 +69,6 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
             Some(ListOperator::And)
         } else if at_list_level && token.is_unquoted_literal("||") {
             Some(ListOperator::Or)
-        } else if at_list_level && token.is_unquoted_literal("&") {
-            return Err("background execution with '&' is not supported");
         } else {
             None
         };
@@ -291,10 +289,18 @@ mod command_structure_tests {
     }
 
     #[test]
-    fn command_lists_reject_missing_operands_and_background_execution() {
-        for input in ["; echo one", "echo one &&", "echo one ||", "echo one;;echo two", "echo one & echo two"] {
+    fn command_lists_reject_missing_operands_and_retain_background_markers() {
+        for input in ["; echo one", "echo one &&", "echo one ||", "echo one;;echo two", "& echo one"] {
             assert!(split_command_list(lexer::lex(input).unwrap()).is_err(), "{input}");
         }
+        let parsed = split_command_list(lexer::lex("echo background & echo foreground").unwrap()).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed[0].asynchronous);
+        assert!(!parsed[1].asynchronous);
+        assert_eq!(parsed[1].connector, Some(ListOperator::Sequence));
+        let trailing = split_command_list(lexer::lex("echo background &").unwrap()).unwrap();
+        assert_eq!(trailing.len(), 1);
+        assert!(trailing[0].asynchronous);
     }
     #[test]
     fn pipeline_split_preserves_stage_order() {
