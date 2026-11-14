@@ -303,6 +303,16 @@ mod command_structure_tests {
         assert!(trailing[0].asynchronous);
     }
     #[test]
+    fn compound_lists_retain_asynchronous_terminators() {
+        let tokens = lexer::lex("echo background & echo foreground").unwrap();
+        let parsed = super::parse_compound_list(&tokens).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed[0].asynchronous);
+        assert!(!parsed[1].asynchronous);
+        assert_eq!(parsed[1].connector, Some(ListOperator::Sequence));
+    }
+
+    #[test]
     fn pipeline_split_preserves_stage_order() {
         let stages = split_pipeline(lexer::lex("echo one | cat | wc").unwrap()).unwrap();
         assert_eq!(stages.stages.len(), 3);
