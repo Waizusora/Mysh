@@ -81,7 +81,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
 /// Return true for POSIX operators that the lexer recognizes but the
 /// current execution engine does not implement yet.
 fn is_unsupported_operator(token: &Word) -> bool {
-    if [";;", "<<", "<<-", "<>", "<&", ">&", ">|"]
+    if ["<<", "<<-", "<>", "<&", ">&", ">|"]
         .iter()
         .any(|operator| token.is_unquoted_literal(operator))
     {
@@ -988,7 +988,19 @@ pub fn classify_input(input: &str) -> InputState {
     let mut stack = Vec::new();
     let mut subshell_depth = 0usize;
     let mut brace_depth = 0usize;
+    let mut case_pattern = Vec::<bool>::new();
     for index in 0..tokens.len() {
+        if is_reserved_word(&tokens, index, "case") {
+            case_pattern.push(false);
+        } else if tokens[index].is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
+            if let Some(active) = case_pattern.last_mut() { *active = true; }
+        } else if tokens[index].is_unquoted_literal(";;") && !case_pattern.is_empty() {
+            if let Some(active) = case_pattern.last_mut() { *active = true; }
+        } else if tokens[index].is_unquoted_literal(")") && case_pattern.last() == Some(&true) {
+            if let Some(active) = case_pattern.last_mut() { *active = false; }
+        } else if is_reserved_word(&tokens, index, "esac") {
+            case_pattern.pop();
+        }
         if tokens[index].is_unquoted_literal("(") {
             subshell_depth += 1;
         } else if tokens[index].is_unquoted_literal(")") {
@@ -1175,6 +1187,14 @@ mod tests {
             classify_input("if true; then echo \"fi\nnot-a-keyword\"; fi\n"),
             InputState::Complete,
         );
+    }
+
+
+    #[test]
+    fn case_patterns_do_not_conflict_with_subshell_delimiters() {
+        assert_eq!(classify_input("case value in value) echo matched ;; esac\n"), InputState::Complete);
+        assert_eq!(classify_input("case value in value) echo matched ;;\n"), InputState::Incomplete);
+        assert_eq!(classify_input("case value in value) ( echo nested ) ;; esac\n"), InputState::Complete);
     }
 
     #[test]
