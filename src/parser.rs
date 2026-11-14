@@ -34,36 +34,58 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     let mut commands = Vec::new();
     let mut current = Vec::new();
     let mut next_condition = None;
-    let mut brace_depth = 0usize;
     let mut subshell_depth = 0usize;
-    for (index, token) in tokens.iter().cloned().enumerate() {
-        if is_reserved_word(&tokens, index, "{") {
-            brace_depth += 1;
-        } else if is_reserved_word(&tokens, index, "}") {
-            if brace_depth == 0 { return Err("unmatched closing brace"); }
-            brace_depth -= 1;
-        } else if token.is_unquoted_literal("(") {
+    let mut index = 0usize;
+
+    while index < tokens.len() {
+        let at_pipeline_stage_start = current.is_empty()
+            || current.last().is_some_and(|word: &Word| word.is_unquoted_literal("|"));
+        if at_pipeline_stage_start && is_compound_command_start(&tokens, index) {
+            let end = compound_command_end(&tokens, index)?;
+            current.extend_from_slice(&tokens[index..end]);
+            index = end;
+            continue;
+        }
+
+        let token = tokens[index].clone();
+        if token.is_unquoted_literal("(") {
             subshell_depth += 1;
         } else if token.is_unquoted_literal(")") {
-            if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
+            if subshell_depth == 0 {
+                return Err("unmatched closing parenthesis");
+            }
             subshell_depth -= 1;
         }
-        let at_list_level = brace_depth == 0 && subshell_depth == 0;
-        let operator = if at_list_level && token.is_unquoted_literal(";") { Some(ListOperator::Sequence) }
-        else if at_list_level && token.is_unquoted_literal("&&") { Some(ListOperator::And) }
-        else if at_list_level && token.is_unquoted_literal("||") { Some(ListOperator::Or) }
-        else if at_list_level && token.is_unquoted_literal("&") { return Err("background execution with '&' is not supported"); }
-        else { None };
+
+        let at_list_level = subshell_depth == 0;
+        let operator = if at_list_level && token.is_unquoted_literal(";") {
+            Some(ListOperator::Sequence)
+        } else if at_list_level && token.is_unquoted_literal("&&") {
+            Some(ListOperator::And)
+        } else if at_list_level && token.is_unquoted_literal("||") {
+            Some(ListOperator::Or)
+        } else if at_list_level && token.is_unquoted_literal("&") {
+            return Err("background execution with '&' is not supported");
+        } else {
+            None
+        };
+
         if let Some(operator) = operator {
-            if current.is_empty() { return Err("command-list operator requires a command before it"); }
+            if current.is_empty() {
+                return Err("command-list operator requires a command before it");
+            }
             commands.push(CommandListEntry {
                 pipeline: split_pipeline(std::mem::take(&mut current))?,
                 connector: next_condition.take(),
             });
             next_condition = Some(operator);
-        } else { current.push(token); }
+        } else {
+            current.push(token);
+        }
+        index += 1;
     }
-    if brace_depth != 0 || subshell_depth != 0 {
+
+    if subshell_depth != 0 {
         return Err("compound command in command list is not closed");
     }
     if !current.is_empty() {
@@ -74,8 +96,20 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     } else if matches!(next_condition, Some(ListOperator::And | ListOperator::Or)) {
         return Err("conditional operator requires a command after it");
     }
-    if commands.is_empty() { return Err("command list is empty"); }
+    if commands.is_empty() {
+        return Err("command list is empty");
+    }
     Ok(commands)
+}
+
+/// Recognize a compound command only at the beginning of a pipeline stage.
+fn is_compound_command_start(tokens: &[Word], index: usize) -> bool {
+    tokens.get(index).is_some_and(|word| word.is_unquoted_literal("("))
+        || is_reserved_word(tokens, index, "{")
+        || ["if", "case", "for", "while", "until"]
+            .iter()
+            .any(|keyword| is_reserved_word(tokens, index, keyword))
+        || is_function_definition_start(tokens, index)
 }
 
 /// Return true for POSIX operators that the lexer recognizes but the
