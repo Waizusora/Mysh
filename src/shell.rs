@@ -969,7 +969,8 @@ fn ifs_join_separator(environment: &BTreeMap<String, String>) -> String {
 }
 
 fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
-    let mut fields: Vec<Vec<(char, bool)>> = vec![Vec::new()];
+    // (character, field-splitting eligible, pathname-pattern eligible)
+    let mut fields: Vec<Vec<(char, bool, bool)>> = vec![Vec::new()];
     let mut keep_empty = vec![word.is_quoted()];
     let mut expanded_at = false;
     for part in word.parts() {
@@ -987,31 +988,31 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
                 if length == 0 { index += 1; continue; }
                 let literal: String = chars[literal_start..index].iter().collect();
                 let value = expand_variables(&literal, environment, last_status);
-                fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
+                fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
                 let params = positional_parameters(environment);
                 if parameter == Some('@') {
                     expanded_at = true;
                     if let Some(first) = params.first() {
-                        fields.last_mut().unwrap().extend(first.chars().map(|c| (c, false)));
+                        fields.last_mut().unwrap().extend(first.chars().map(|c| (c, false, false)));
                         for value in params.into_iter().skip(1) {
-                            fields.push(value.chars().map(|c| (c, false)).collect());
+                            fields.push(value.chars().map(|c| (c, false, false)).collect());
                             keep_empty.push(true);
                         }
                     }
                 } else {
                     let value = params.join(&ifs_join_separator(environment));
-                    fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
+                    fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
                 }
                 index += length;
                 literal_start = index;
             }
             let literal: String = chars[literal_start..].iter().collect();
             let value = expand_variables(&literal, environment, last_status);
-            fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
+            fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false, false)));
         } else if part.expandable {
             append_unquoted_expansion(&mut fields, &mut keep_empty, &part.text, environment, last_status);
         } else {
-            fields.last_mut().unwrap().extend(part.text.chars().map(|c| (c, false)));
+            fields.last_mut().unwrap().extend(part.text.chars().map(|c| (c, false, false)));
         }
     }
     if expanded_at && positional_count(environment) == 0 && word.parts().len() == 1
@@ -1021,16 +1022,15 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
     if word.parts().is_empty() && word.is_quoted() {
         return vec![String::new()];
     }
-    let expanded = split_expansion_fields(fields, keep_empty, environment);
-    pathname_expand_fields(word, expanded)
+    pathname_expand_fields(split_expansion_fields(fields, keep_empty, environment))
 }
 
-fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &mut Vec<bool>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
+fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool, bool)>>, keep_empty: &mut Vec<bool>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
     let chars: Vec<char> = source.chars().collect();
     let mut index = 0;
     while index < chars.len() {
         if chars[index] != '$' {
-            fields.last_mut().unwrap().push((chars[index], false));
+            fields.last_mut().unwrap().push((chars[index], false, true));
             index += 1;
             continue;
         }
@@ -1040,19 +1040,14 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
         {
             index + 2
         } else if chars.get(index + 1) == Some(&'{') {
-            chars[index + 2..]
-                .iter()
-                .position(|character| *character == '}')
-                .map(|offset| index + 3 + offset)
-                .unwrap_or(index + 1)
+            chars[index + 2..].iter().position(|character| *character == '}')
+                .map(|offset| index + 3 + offset).unwrap_or(index + 1)
         } else if chars.get(index + 1).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             let mut end = index + 2;
-            while chars.get(end).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
-                end += 1;
-            }
+            while chars.get(end).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { end += 1; }
             end
         } else {
-            fields.last_mut().unwrap().push(('$', false));
+            fields.last_mut().unwrap().push(('$', false, true));
             index += 1;
             continue;
         };
@@ -1061,66 +1056,43 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
         if expression == "$@" || expression == concat!("$", "{@}") {
             let parameters = positional_parameters(environment);
             if let Some(first) = parameters.first() {
-                fields.last_mut().unwrap().extend(first.chars().map(|character| (character, true)));
+                fields.last_mut().unwrap().extend(first.chars().map(|character| (character, true, true)));
                 for parameter in parameters.into_iter().skip(1) {
-                    fields.push(parameter.chars().map(|character| (character, true)).collect());
+                    fields.push(parameter.chars().map(|character| (character, true, true)).collect());
                     keep_empty.push(false);
                 }
             }
         } else {
             let value = expand_variables(&expression, environment, last_status);
-            fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true)));
+            fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true, true)));
         }
         index = end;
     }
 }
 
-/// Apply pathname expansion after field splitting. Unmatched patterns remain literal.
-fn pathname_expand_fields(word: &Word, fields: Vec<String>) -> Vec<String> {
-    // Private-use sentinels preserve quoted and escaped pattern characters.
+/// Apply pathname expansion after field splitting while preserving per-character quoting.
+fn pathname_expand_fields(fields: Vec<Vec<(char, bool, bool)>>) -> Vec<String> {
     const LITERAL_STAR: char = '\u{e000}';
     const LITERAL_QUESTION: char = '\u{e001}';
     const LITERAL_BRACKET: char = '\u{e002}';
 
-    let mut encoded_pattern = String::new();
-    let mut can_reconstruct = true;
-    for part in word.parts() {
-        if part.expandable && part.text.as_bytes().contains(&b'$') {
-            can_reconstruct = false;
-            break;
-        }
-        for character in part.text.chars() {
-            let is_literal = part.quoted || !part.expandable;
-            encoded_pattern.push(if is_literal {
+    fields.into_iter().flat_map(|field| {
+        let original: String = field.iter().map(|(character, _, _)| *character).collect();
+        let pattern: String = field.iter().map(|(character, _, glob_eligible)| {
+            if *glob_eligible { *character } else {
                 match character {
                     '*' => LITERAL_STAR,
                     '?' => LITERAL_QUESTION,
                     '[' => LITERAL_BRACKET,
-                    other => other,
+                    other => *other,
                 }
-            } else {
-                character
-            });
-        }
-    }
-
-    let patterns: Vec<String> = if can_reconstruct {
-        fields.iter().map(|_| encoded_pattern.clone()).collect()
-    } else {
-        // Variable-produced wildcard provenance will be carried per character
-        // in a later expansion-pipeline refinement.
-        if !word.parts().iter().any(|part| !part.quoted && part.expandable) {
-            return fields;
-        }
-        fields.clone()
-    };
-
-    fields.into_iter().zip(patterns).flat_map(|(field, pattern)| {
+            }
+        }).collect();
         if !pattern.chars().any(|character| matches!(character, '*' | '?' | '[')) {
-            return vec![field];
+            return vec![original];
         }
         let matches = expand_path_pattern(&pattern);
-        if matches.is_empty() { vec![field] } else { matches }
+        if matches.is_empty() { vec![original] } else { matches }
     }).collect()
 }
 
@@ -1170,25 +1142,25 @@ fn expand_path_pattern(pattern: &str) -> Vec<String> {
     result
 }
 
-fn split_expansion_fields(fields: Vec<Vec<(char, bool)>>, keep: Vec<bool>, environment: &BTreeMap<String, String>) -> Vec<String> {
+fn split_expansion_fields(fields: Vec<Vec<(char, bool, bool)>>, keep: Vec<bool>, environment: &BTreeMap<String, String>) -> Vec<Vec<(char, bool, bool)>> {
     let ifs = environment.get("IFS").map(String::as_str).unwrap_or(" \t\n");
     if ifs.is_empty() {
         return fields.into_iter().zip(keep).filter_map(|(field, preserve)| {
-            let value: String = field.into_iter().map(|(c, _)| c).collect();
-            (!value.is_empty() || preserve).then_some(value)
+            let value: String = field.iter().map(|(c, _, _)| *c).collect();
+            (!value.is_empty() || preserve).then_some(field)
         }).collect();
     }
     let delimiters: std::collections::BTreeSet<char> = ifs.chars().collect();
     let white: std::collections::BTreeSet<char> = ifs.chars().filter(|c| matches!(c, ' ' | '\t' | '\n')).collect();
     let mut result = Vec::new();
     for (field, preserve) in fields.into_iter().zip(keep) {
-        let mut current = String::new();
+        let mut current = Vec::new();
         let mut preserve_current = preserve;
         let mut index = 0;
         let mut delimiter_seen = false;
         while index < field.len() {
-            let (c, eligible) = field[index];
-            if !eligible || !delimiters.contains(&c) { current.push(c); index += 1; continue; }
+            let (c, eligible, _) = field[index];
+            if !eligible || !delimiters.contains(&c) { current.push(field[index]); index += 1; continue; }
             delimiter_seen = true;
             if white.contains(&c) {
                 while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
