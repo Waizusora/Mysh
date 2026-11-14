@@ -109,6 +109,56 @@ mod command_structure_tests {
 }
 
 
+
+/// Kind of a supported loop compound command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopKind { While, Until }
+
+/// Parsed loop structure. The executor receives explicit condition and body
+/// token sequences instead of rediscovering the outer do/done boundaries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopStatement {
+    pub kind: LoopKind,
+    pub condition: Vec<Word>,
+    pub body: Vec<Word>,
+}
+
+/// Parse one complete while or until compound command.
+pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static str> {
+    let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+        &tokens[..tokens.len() - 1]
+    } else { tokens };
+    let kind = match tokens.first() {
+        Some(word) if word.is_unquoted_literal("while") => LoopKind::While,
+        Some(word) if word.is_unquoted_literal("until") => LoopKind::Until,
+        _ => return Err("expected while or until"),
+    };
+    let mut depth = 1usize;
+    let mut do_index = None;
+    let mut done_index = None;
+    for index in 1..tokens.len() {
+        if is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") {
+            depth += 1;
+        } else if is_reserved_word(tokens, index, "do") && depth == 1 && do_index.is_none() {
+            do_index = Some(index);
+        } else if is_reserved_word(tokens, index, "done") {
+            depth = depth.saturating_sub(1);
+            if depth == 0 { done_index = Some(index); break; }
+        }
+    }
+    let (Some(body_start), Some(body_end)) = (do_index, done_index) else {
+        return Err("while or until requires do and done");
+    };
+    if body_end + 1 != tokens.len() || body_start <= 1 {
+        return Err("malformed while or until compound command");
+    }
+    Ok(LoopStatement {
+        kind,
+        condition: tokens[1..body_start].to_vec(),
+        body: tokens[body_start + 1..body_end].to_vec(),
+    })
+}
+
 /// State of a physical input buffer before command execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputState {
@@ -336,6 +386,36 @@ pub fn classify_input(input: &str) -> InputState {
 mod tests {
     use super::{classify_input, is_reserved_word, InputState};
     use crate::lexer;
+
+
+    #[test]
+    fn loop_parser_builds_typed_while_and_until_nodes() {
+        use super::{parse_loop_statement, LoopKind};
+        let tokens = lexer::lex("while true; do echo body; done").unwrap();
+        let parsed = parse_loop_statement(&tokens).unwrap();
+        assert_eq!(parsed.kind, LoopKind::While);
+        assert_eq!(parsed.condition.len(), 1);
+        assert_eq!(parsed.body.len(), 2);
+        let tokens = lexer::lex("until false; do echo body; done").unwrap();
+        assert_eq!(parse_loop_statement(&tokens).unwrap().kind, LoopKind::Until);
+    }
+
+    #[test]
+    fn loop_parser_preserves_nested_loop_as_body_tokens() {
+        use super::parse_loop_statement;
+        let tokens = lexer::lex("while true; do until false; do echo nested; done; echo outer; done").unwrap();
+        let parsed = parse_loop_statement(&tokens).unwrap();
+        assert!(parsed.body.iter().any(|word| word.is_unquoted_literal("until")));
+        assert!(parsed.body.iter().any(|word| word.is_unquoted_literal("done")));
+    }
+
+    #[test]
+    fn loop_parser_rejects_incomplete_and_trailing_structure() {
+        use super::parse_loop_statement;
+        for input in ["while true; done", "while true; do echo body", "while true; do echo body; done; echo extra"] {
+            assert!(parse_loop_statement(&lexer::lex(input).unwrap()).is_err(), "{input}");
+        }
+    }
 
     #[test]
     fn ordinary_arguments_do_not_change_compound_depth() {
