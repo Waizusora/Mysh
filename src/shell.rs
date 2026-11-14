@@ -2611,6 +2611,36 @@ mod tests {
     }
 
     #[test]
+    fn pathname_expansion_tracks_quoted_and_unquoted_variable_results() {
+        let directory = std::env::temp_dir().join(format!("mysh-variable-glob-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in ["alpha-one.txt", "alpha-two.txt", "beta-one.txt"] {
+            std::fs::write(directory.join(name), "").unwrap();
+        }
+        let mut environment = BTreeMap::new();
+        environment.insert("PATTERN".to_owned(), format!("{}/*.txt", directory.display()));
+        environment.insert("SUFFIX".to_owned(), "-*.txt".to_owned());
+        let expand = |source: &str, environment: &BTreeMap<String, String>| {
+            let word = crate::lexer::lex(source).unwrap().remove(0);
+            expand_word_fields(&word, environment, 0)
+        };
+
+        let mut expected: Vec<String> = ["alpha-one.txt", "alpha-two.txt", "beta-one.txt"]
+            .into_iter().map(|name| directory.join(name).to_string_lossy().into_owned()).collect();
+        expected.sort();
+        assert_eq!(expand("$PATTERN", &environment), expected);
+        assert_eq!(expand("\"$PATTERN\"", &environment), [environment["PATTERN"].clone()]);
+
+        let source = format!("{}/\"alpha\"$SUFFIX", directory.display());
+        assert_eq!(expand(&source, &environment), [
+            directory.join("alpha-one.txt").to_string_lossy().into_owned(),
+            directory.join("alpha-two.txt").to_string_lossy().into_owned(),
+        ]);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn bracket_patterns_support_negation_ranges_and_literal_closing_bracket() {
         assert!(shell_pattern_matches("[!a-c]", "z"));
         assert!(!shell_pattern_matches("[!a-c]", "b"));
