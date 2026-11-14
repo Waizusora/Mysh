@@ -1127,14 +1127,14 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
         let tilde = fields.iter().all(Vec::is_empty)
             && !part.quoted
             && part.expandable
-            && text.starts_with('~')
-            && (text.len() == 1 || text.as_bytes().get(1) == Some(&b'/'));
+            && part.text.starts_with('~')
+            && (part.text.len() == 1 || part.text.as_bytes().get(1) == Some(&b'/'));
         let text = if tilde {
             let home = environment.get("HOME").cloned().unwrap_or_else(|| "~".to_owned());
             fields.last_mut().unwrap().extend(home.chars().map(|character| (character, false, false)));
-            text[1..].to_owned()
+            part.text[1..].to_owned()
         } else {
-            text.clone()
+            part.text.clone()
         };
         if part.quoted { *keep_empty.last_mut().unwrap() = true; }
         if part.expandable && part.quoted {
