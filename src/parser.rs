@@ -1015,6 +1015,9 @@ pub fn parse_compound_list(tokens: &[Word]) -> Result<CompoundList, &'static str
             return Err("asynchronous-list operator requires a command before it");
         }
         if tokens[index].is_unquoted_literal(";") {
+            if entries.is_empty() || connector.is_some() {
+                return Err("unexpected command-list separator");
+            }
             connector = Some(ListOperator::Sequence);
             index += 1;
             continue;
@@ -1527,6 +1530,16 @@ mod tests {
     use super::{classify_input, is_reserved_word, InputState};
     use crate::lexer;
 
+
+    #[test]
+    fn compound_lists_reject_leading_and_repeated_separators() {
+        for input in ["; echo one", "echo one; ; echo two", "echo one && ; echo two"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(super::parse_compound_list(&tokens).is_err(), "{input}");
+        }
+        let trailing = lexer::lex("echo one;").unwrap();
+        assert!(super::parse_compound_list(&trailing).is_ok());
+    }
 
     #[test]
     fn loop_parser_builds_typed_while_and_until_nodes() {
