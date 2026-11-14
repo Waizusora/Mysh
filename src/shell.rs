@@ -482,6 +482,15 @@ impl Shell {
                         let value = parameter_value(name, environment, last_status);
                         if !is_set || (colon && value.is_empty()) {
                             let supplied = &expression[position + operator_len..];
+                            if !supplied.is_empty() {
+                                // A nested required-parameter expansion fails at its own
+                                // expansion point, before the outer diagnostic is formed.
+                                if let Some(message) = scan(
+                                    shell, supplied, environment, last_status, next_id, stderr,
+                                ) {
+                                    return Some(message);
+                                }
+                            }
                             let message = if supplied.is_empty() {
                                 format!("parameter {} or not set", if colon { "null" } else { "unset" })
                             } else {
@@ -2565,6 +2574,21 @@ mod tests {
         assert!(shell.execute_line(r"echo ${MISSING:?$(printf required)}", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "kept\n");
         assert!(String::from_utf8(errors).unwrap().contains("MISSING: required"));
+    }
+
+    #[test]
+    fn nested_required_parameter_diagnostics_fail_at_the_inner_expansion() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            r"echo ${OUTER:?outer: ${INNER:?inner failure}}",
+            &mut output,
+            &mut errors,
+        ));
+        assert!(output.is_empty());
+        assert!(String::from_utf8(errors).unwrap().contains("INNER: inner failure"));
     }
 
     #[test]
