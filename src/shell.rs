@@ -796,7 +796,7 @@ mod tests {
         let mut errors = Vec::new();
         let original_directory = std::env::current_dir().unwrap();
         assert!(shell.execute_line("export MYSH_SUBSHELL_VALUE=parent; ( export MYSH_SUBSHELL_VALUE=child; cd /; exit 7 ); echo $MYSH_SUBSHELL_VALUE", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "parent\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "parent\n");
         assert_eq!(std::env::current_dir().unwrap(), original_directory);
         assert_eq!(shell.last_status(), 7);
         assert!(errors.is_empty());
