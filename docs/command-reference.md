@@ -66,11 +66,11 @@ The shell tracks shell variables separately from exported variables. \`NAME=valu
 
 When \`MYSH_PREFIX\` is set and \`$MYSH_PREFIX/bin\` exists, Mysh prepends that directory to \`PATH\` at startup. Multi-stage pipeline stages use isolated snapshots, including brace-group and subshell stages. Pipeline execution remains sequential and buffered; compound stages currently support output into a following simple stage, but do not yet receive the preceding stage's input.
 
-Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-exit-status parameter \`$?\` / \`\${?}\` are currently substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Expansion remains preliminary: positional parameters, parameter operators, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
+Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-exit-status parameter \`$?\` / \`\${?}\` are currently substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Function calls expose \`$1\` through \`$9\` and \`$#\` inside the function body and restore the caller's positional values after return. General script positional parameters, \`$@\`, \`$*\`, parameter operators, field splitting, pathname expansion, command substitution, and arithmetic expansion are not implemented.
 
 ## Limitations
 
-Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, positional parameters, functions, complete quote-aware case-pattern semantics, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
+Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, general positional-parameter semantics, complete function semantics and the \`return\` special built-in, complete quote-aware case-pattern semantics, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
 
 ## Command Ownership and Migration Status
 
