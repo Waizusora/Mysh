@@ -1944,6 +1944,22 @@ impl<'a> ArithmeticParser<'a> {
     }
     fn unary(&mut self) -> Option<i64> {
         self.whitespace();
+        for (operator, delta) in [("++", 1i64), ("--", -1i64)] {
+            if self.chars[self.index..].starts_with(&operator.chars().collect::<Vec<_>>()) {
+                self.index += 2;
+                self.whitespace();
+                let start = self.index;
+                if !self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') { return None; }
+                self.index += 1;
+                while self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { self.index += 1; }
+                let name: String = self.chars[start..self.index].iter().collect();
+                if !self.evaluating { return Some(0); }
+                let current = parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0"))?;
+                let updated = current.checked_add(delta)?;
+                self.environment.insert(name, updated.to_string());
+                return Some(updated);
+            }
+        }
         for operator in ["+", "-", "!", "~"] {
             if self.chars.get(self.index).copied() == operator.chars().next() {
                 self.index += 1;
@@ -1974,8 +1990,21 @@ impl<'a> ArithmeticParser<'a> {
             self.index += 1;
             while self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { self.index += 1; }
             let name: String = self.chars[start..self.index].iter().collect();
-            if !self.evaluating { return Some(0); }
-            return parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0")).or(Some(0));
+            let current = if self.evaluating {
+                parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0")).unwrap_or(0)
+            } else { 0 };
+            self.whitespace();
+            for (operator, delta) in [("++", 1i64), ("--", -1i64)] {
+                if self.chars[self.index..].starts_with(&operator.chars().collect::<Vec<_>>()) {
+                    self.index += 2;
+                    if self.evaluating {
+                        let updated = current.checked_add(delta)?;
+                        self.environment.insert(name, updated.to_string());
+                    }
+                    return Some(current);
+                }
+            }
+            return Some(current);
         }
         None
     }
@@ -2244,6 +2273,28 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line("echo $((MYSH_ORDER_VALUE = 1)) $((MYSH_ORDER_VALUE += 1)) $MYSH_ORDER_VALUE", &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "1 2 2\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_prefix_and_postfix_increment_decrement_return_correct_values() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "MYSH_INC_VALUE=4; echo $((MYSH_INC_VALUE++)) $MYSH_INC_VALUE $((++MYSH_INC_VALUE)) $MYSH_INC_VALUE $((MYSH_INC_VALUE--)) $MYSH_INC_VALUE $((--MYSH_INC_VALUE)) $MYSH_INC_VALUE";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "4 5 6 6 6 5 4 4\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_increment_side_effects_respect_short_circuit_and_ternary() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "MYSH_INC_SKIP=3; echo $((0 && MYSH_INC_SKIP++)) $((1 ? MYSH_INC_SKIP++ : ++MYSH_INC_SKIP)) $MYSH_INC_SKIP";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "0 3 4\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
