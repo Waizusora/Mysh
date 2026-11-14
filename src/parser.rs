@@ -652,6 +652,8 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("&&")
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
+        || previous.is_unquoted_literal("{")
+        || previous.is_unquoted_literal("(")
     {
         return true;
     }
@@ -934,6 +936,22 @@ mod tests {
         assert!(is_reserved_word(&after_else, 1, "if"));
         assert!(!is_reserved_word(&tokens, 8, "fi"));
         assert!(is_reserved_word(&tokens, 10, "fi"));
+    }
+
+    #[test]
+    fn compound_group_openers_establish_reserved_word_command_positions() {
+        for input in [
+            "{ if true; then echo ok; fi; }",
+            "( if true; then echo ok; fi )",
+            "{ for item in one; do echo $item; done; }",
+        ] {
+            let tokens = lexer::lex(input).unwrap();
+            let keyword = tokens.iter().position(|word| {
+                ["if", "for"].iter().any(|value| word.is_unquoted_literal(value))
+            }).unwrap();
+            assert!(is_reserved_word(&tokens, keyword, &tokens[keyword].literal_value()), "{input}");
+            assert!(super::parse_compound_list(&tokens).is_ok(), "{input}");
+        }
     }
 
     #[test]
