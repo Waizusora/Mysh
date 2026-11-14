@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Emulator instances are memory/CPU intensive on hosted Linux runners.
+      # Serialize them to avoid simultaneous boots starving the x86_64 AVD.
+      max-parallel: 1
       matrix:
         include:
           - abi: arm64-v8a
@@ -96,24 +99,42 @@ jobs:
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Smoke-test Mysh against Android Bionic
-        if: matrix.abi == 'x86_64'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          target: google_apis
           arch: x86_64
-          profile: pixel_2
+          profile: pixel_5
           disable-animations: true
+          cores: 4
+          ram-size: 4096
+          emulator-boot-timeout: 900
           script: |
-            adb push target/x86_64-linux-android/release/mysh /data/local/tmp/mysh
-            adb shell chmod 755 /data/local/tmp/mysh
+            adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
+            adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
+            adb shell chmod 755 /data/local/tmp/mysh /data/local/tmp/mysh-prefix/bin/coreutils
             adb shell mkdir -p /data/local/tmp/mysh-glob
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
-            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
+            output="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
-            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
-            printf 'Bionic pathname expansion output: <%s>\\n' "$glob"
+            adb shell ls -la /data/local/tmp/mysh-glob
+            literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" | tr -d '\r')"
+            printf 'Bionic literal echo output: <%s>\\n' "$literal"
+            test "$literal" = "literal-ok"
+            exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
+            printf 'Bionic exact-path output: <%s>\\n' "$exact"
+            test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
+            if glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
+              glob_status=0
+            else
+              glob_status=$?
+            fi
+            printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
+            class_glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
+            test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Package Android runtime
@@ -176,6 +197,12 @@ jobs:
           else
             cargo build -p mysh --target "${{ matrix.rust_target }}" --release
           fi
+      - name: Register ARM64 binfmt handler for nested test processes
+        if: matrix.arch == 'aarch64'
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          test -r /proc/sys/fs/binfmt_misc/qemu-aarch64
+          grep -q enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
       - name: Run Mysh tests on musl
         run: |
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
