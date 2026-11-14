@@ -79,7 +79,7 @@ jobs:
           path = Path(".build/uutils-coreutils/src/uu/tail/src/args.rs")
           source = path.read_text()
           old = "stat.st_mode & libc::S_IFMT == libc::S_IFREG"
-          new = "stat.st_mode & (libc::S_IFMT as _) == (libc::S_IFREG as _)"
+          new = "stat.st_mode & (libc::S_IFMT as u32) == (libc::S_IFREG as u32)"
           if source.count(old) != 1:
               raise SystemExit("unexpected uutils tail source; refusing to apply compatibility patch")
           path.write_text(source.replace(old, new))
