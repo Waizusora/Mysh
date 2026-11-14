@@ -1928,6 +1928,7 @@ fn matching_arithmetic_end(chars: &[char], opening: usize) -> Option<usize> {
     None
 }
 
+#[cfg(test)]
 fn expand_variables(value: &str, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut environment = environment.clone();
     expand_variables_mut(value, &mut environment, last_status)
