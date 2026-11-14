@@ -34,11 +34,25 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
     let mut commands = Vec::new();
     let mut current = Vec::new();
     let mut next_condition = None;
+    let mut brace_depth = 0usize;
+    let mut subshell_depth = 0usize;
     for token in tokens {
-        let operator = if token.is_unquoted_literal(";") { Some(ListOperator::Sequence) }
-        else if token.is_unquoted_literal("&&") { Some(ListOperator::And) }
-        else if token.is_unquoted_literal("||") { Some(ListOperator::Or) }
-        else if token.is_unquoted_literal("&") { return Err("background execution with '&' is not supported"); }
+        if token.is_unquoted_literal("{") {
+            brace_depth += 1;
+        } else if token.is_unquoted_literal("}") {
+            if brace_depth == 0 { return Err("unmatched closing brace"); }
+            brace_depth -= 1;
+        } else if token.is_unquoted_literal("(") {
+            subshell_depth += 1;
+        } else if token.is_unquoted_literal(")") {
+            if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
+            subshell_depth -= 1;
+        }
+        let at_list_level = brace_depth == 0 && subshell_depth == 0;
+        let operator = if at_list_level && token.is_unquoted_literal(";") { Some(ListOperator::Sequence) }
+        else if at_list_level && token.is_unquoted_literal("&&") { Some(ListOperator::And) }
+        else if at_list_level && token.is_unquoted_literal("||") { Some(ListOperator::Or) }
+        else if at_list_level && token.is_unquoted_literal("&") { return Err("background execution with '&' is not supported"); }
         else { None };
         if let Some(operator) = operator {
             if current.is_empty() { return Err("command-list operator requires a command before it"); }
@@ -48,6 +62,9 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
             });
             next_condition = Some(operator);
         } else { current.push(token); }
+    }
+    if brace_depth != 0 || subshell_depth != 0 {
+        return Err("compound command in command list is not closed");
     }
     if !current.is_empty() {
         commands.push(CommandListEntry {
