@@ -393,19 +393,29 @@ impl Shell {
             }
         }
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
-        let executable = match resolve_command(&command[0], &search_path) {
-            Ok(path) => path,
+        let (executable, process_args) = match resolve_command(&command[0], &search_path) {
+            Ok(path) => (path, command[1..].to_vec()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                match resolve_command("coreutils", &search_path) {
+                    Ok(multicall) => {
+                        let arguments = std::iter::once(command[0].clone())
+                            .chain(command[1..].iter().cloned())
+                            .collect();
+                        (multicall, arguments)
+                    }
+                    Err(_) => {
+                        let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                        return StageOutcome::Continue(127);
+                    }
+                }
+            }
             Err(error) => {
                 let _ = writeln!(err, "mysh: {}: {error}", command[0]);
-                return StageOutcome::Continue(if error.kind() == io::ErrorKind::NotFound {
-                    127
-                } else {
-                    126
-                });
+                return StageOutcome::Continue(126);
             }
         };
         let mut process = Command::new(executable);
-        process.args(&command[1..]).env_clear().envs(self.exported.iter().map(|name| (name, self.variables.get(name).map(String::as_str).unwrap_or("")))).stdout(Stdio::piped()).stderr(Stdio::piped());
+        process.args(&process_args).env_clear().envs(self.exported.iter().map(|name| (name, self.variables.get(name).map(String::as_str).unwrap_or("")))).stdout(Stdio::piped()).stderr(Stdio::piped());
         if redirections.input.is_some() || input.is_some() {
             process.stdin(Stdio::piped());
         }
