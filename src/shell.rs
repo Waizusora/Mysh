@@ -2548,13 +2548,22 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
 
+        shell.variables.remove("MYSH_REQUIRED_OUTER_702");
+        shell.variables.remove("MYSH_REQUIRED_INNER_702");
+        let tokens = crate::lexer::lex(
+            r"echo ${MYSH_REQUIRED_OUTER_702:?outer: ${MYSH_REQUIRED_INNER_702:?inner failure}}",
+        ).unwrap();
+        assert_eq!(
+            shell.required_parameter_expansion_error(&tokens, &mut errors).as_deref(),
+            Some("MYSH_REQUIRED_INNER_702: inner failure"),
+        );
         assert!(shell.execute_line(
             r"echo ${MYSH_REQUIRED_OUTER_702:?outer: ${MYSH_REQUIRED_INNER_702:?inner failure}}",
             &mut output,
             &mut errors,
         ));
-        assert!(output.is_empty());
-        assert!(String::from_utf8(errors).unwrap().contains("INNER: inner failure"));
+        assert!(output.is_empty(), "unexpected output: {}", String::from_utf8_lossy(&output));
+        assert!(String::from_utf8(errors).unwrap().contains("MYSH_REQUIRED_INNER_702: inner failure"));
     }
 
     #[test]
