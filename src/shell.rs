@@ -1735,8 +1735,7 @@ impl<'a> ArithmeticParser<'a> {
     }
     fn expression(&mut self, minimum: u8) -> Option<i64> {
         let mut left = self.unary()?;
-        loop {
-            let Some((operator, precedence)) = self.operator() else { break; };
+        while let Some((operator, precedence)) = self.operator() {
             if precedence < minimum { break; }
             self.index += operator.chars().count();
             let right = self.expression(precedence + 1)?;
