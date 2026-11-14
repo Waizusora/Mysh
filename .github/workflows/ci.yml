@@ -108,10 +108,10 @@ jobs:
             adb shell chmod 755 /data/local/tmp/mysh
             adb shell mkdir -p /data/local/tmp/mysh-glob
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
-            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\\r')"
-            expected="$(printf '4 5\\nleft middle value right')"
+            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
+            expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
-            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\\r')"
+            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
