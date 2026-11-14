@@ -99,3 +99,5 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added per-character field-splitting and pathname-pattern eligibility metadata to the expansion pipeline.
 - Preserved quoted and escaped wildcard characters as literals while allowing unquoted wildcard fragments and unquoted variable-expansion results to participate in pathname expansion.
 - Added regression tests for mixed quoted/unquoted pathname patterns and quoted versus unquoted variable-produced wildcard patterns.
+
+- Implemented default and alternate parameter expansion plus shortest/longest prefix and suffix pattern removal, with regression coverage for unset, empty, and set values.
