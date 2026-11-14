@@ -656,4 +656,41 @@ mod tests {
             assert_eq!(classify_input(input), InputState::Complete);
         }
     }
+
+    #[test]
+    fn if_parser_builds_typed_if_elif_and_else_clauses() {
+        use super::parse_if_statement;
+        let tokens = lexer::lex("if true; then echo one; elif false; then echo two; else echo three; fi").unwrap();
+        let parsed = parse_if_statement(&tokens).unwrap();
+        assert_eq!(parsed.clauses.len(), 2);
+        assert_eq!(parsed.clauses[0].condition[0].literal_value(), "true");
+        assert_eq!(parsed.clauses[1].condition[0].literal_value(), "false");
+        assert!(parsed.else_body.is_some());
+    }
+
+    #[test]
+    fn if_parser_preserves_nested_if_boundaries() {
+        use super::parse_if_statement;
+        let tokens = lexer::lex("if true; then if false; then echo inner; else echo nested; fi; echo outer; fi").unwrap();
+        let parsed = parse_if_statement(&tokens).unwrap();
+        assert_eq!(parsed.clauses.len(), 1);
+        assert!(parsed.clauses[0].body.iter().any(|word| word.is_unquoted_literal("fi")));
+        assert!(parsed.else_body.is_none());
+    }
+
+    #[test]
+    fn if_parser_rejects_malformed_and_trailing_clauses() {
+        use super::parse_if_statement;
+        for input in [
+            "if true; echo missing_then; fi",
+            "if; then echo missing_condition; fi",
+            "if true; then; fi",
+            "if true; then echo one; else; fi",
+            "if true; then echo one; else echo two; elif false; then echo three; fi",
+            "if true; then echo one; fi; echo trailing",
+        ] {
+            assert!(parse_if_statement(&lexer::lex(input).unwrap()).is_err(), "{input}");
+        }
+    }
+
 }
