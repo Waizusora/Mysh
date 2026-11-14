@@ -3982,6 +3982,8 @@ mod tests {
         let pattern = directory.join("*.txt").to_string_lossy().into_owned();
         let hidden = directory.join(".hidden.txt").to_string_lossy().into_owned();
         assert!(!expand(&pattern).contains(&hidden));
+        let explicit_hidden_pattern = directory.join(".*").to_string_lossy().into_owned();
+        assert_eq!(expand(&explicit_hidden_pattern), [hidden]);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }
