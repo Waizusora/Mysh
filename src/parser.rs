@@ -42,7 +42,7 @@ pub fn split_command_list(tokens: Vec<Word>) -> Result<CommandList, &'static str
         } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 { return Err("unmatched closing brace"); }
             brace_depth -= 1;
-        } else if token.is_unquoted_literal("(") && !opens_case_pattern {
+        } else if token.is_unquoted_literal("(") {
             subshell_depth += 1;
         } else if token.is_unquoted_literal(")") {
             if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
@@ -164,9 +164,9 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         } else if is_reserved_word(&tokens, index, "}") {
             if brace_depth == 0 { return Err("unmatched closing brace"); }
             brace_depth -= 1;
-        } else if token.is_unquoted_literal("(") {
+        } else if token.is_unquoted_literal("(") && !opens_case_pattern {
             subshell_depth += 1;
-        } else if token.is_unquoted_literal(")") {
+        } else if token.is_unquoted_literal(")") && !closes_case_pattern {
             if subshell_depth == 0 { return Err("unmatched closing parenthesis"); }
             subshell_depth -= 1;
         }
