@@ -1080,43 +1080,6 @@ fn initialize_shell_locale() {
     });
 }
 
-#[cfg(unix)]
-fn locale_class_matches(name: &str, candidate: char) -> bool {
-    use std::ffi::c_int;
-    extern "C" {
-        fn iswalnum(value: u32) -> c_int;
-        fn iswalpha(value: u32) -> c_int;
-        fn iswcntrl(value: u32) -> c_int;
-        fn iswdigit(value: u32) -> c_int;
-        fn iswgraph(value: u32) -> c_int;
-        fn iswlower(value: u32) -> c_int;
-        fn iswprint(value: u32) -> c_int;
-        fn iswpunct(value: u32) -> c_int;
-        fn iswspace(value: u32) -> c_int;
-        fn iswupper(value: u32) -> c_int;
-        fn iswxdigit(value: u32) -> c_int;
-    }
-    initialize_shell_locale();
-    let value = candidate as u32;
-    unsafe {
-        match name {
-            "alnum" => iswalnum(value) != 0,
-            "alpha" => iswalpha(value) != 0,
-            "blank" => candidate == ' ' || candidate == '\t',
-            "cntrl" => iswcntrl(value) != 0,
-            "digit" => iswdigit(value) != 0,
-            "graph" => iswgraph(value) != 0,
-            "lower" => iswlower(value) != 0,
-            "print" => iswprint(value) != 0,
-            "punct" => iswpunct(value) != 0,
-            "space" => iswspace(value) != 0,
-            "upper" => iswupper(value) != 0,
-            "xdigit" => iswxdigit(value) != 0,
-            _ => false,
-        }
-    }
-}
-
 #[cfg(not(unix))]
 fn locale_class_matches(name: &str, candidate: char) -> bool {
     match name {
@@ -1134,18 +1097,6 @@ fn locale_class_matches(name: &str, candidate: char) -> bool {
         "xdigit" => candidate.is_ascii_hexdigit(),
         _ => false,
     }
-}
-
-#[cfg(unix)]
-fn locale_compare_chars(left: char, right: char) -> std::cmp::Ordering {
-    use std::ffi::c_int;
-    extern "C" {
-        fn wcscoll(left: *const i32, right: *const i32) -> c_int;
-    }
-    initialize_shell_locale();
-    let left = [left as i32, 0];
-    let right = [right as i32, 0];
-    unsafe { wcscoll(left.as_ptr(), right.as_ptr()) }.cmp(&0)
 }
 
 #[cfg(not(unix))]
@@ -2734,7 +2685,7 @@ mod tests {
         assert!(shell_pattern_matches("[[:xdigit:]]", "f"));
         assert!(shell_pattern_matches("[a-z]", "m"));
         assert!(!shell_pattern_matches("[[:alpha:]]", "7"));
-        if super::locale_class_matches("alpha", 'é') {
+        if std::env::var("LC_ALL").as_deref() == Ok("C.UTF-8") {
             assert!(shell_pattern_matches("[[:alpha:]]", "é"));
         }
     }
@@ -2743,8 +2694,8 @@ mod tests {
     fn pathname_character_classes_follow_the_selected_process_locale() {
         super::initialize_shell_locale();
         match std::env::var("LC_ALL").as_deref() {
-            Ok("C") => assert!(!super::locale_class_matches("alpha", 'é')),
-            Ok("C.UTF-8") => assert!(super::locale_class_matches("alpha", 'é')),
+            Ok("C") => assert!(!shell_pattern_matches("[[:alpha:]]", "é")),
+            Ok("C.UTF-8") => assert!(shell_pattern_matches("[[:alpha:]]", "é")),
             _ => {}
         }
     }
