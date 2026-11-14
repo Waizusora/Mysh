@@ -1802,11 +1802,12 @@ struct ArithmeticParser<'a> {
     chars: Vec<char>,
     index: usize,
     environment: &'a BTreeMap<String, String>,
+    evaluating: bool,
 }
 
 impl<'a> ArithmeticParser<'a> {
     fn new(input: &str, environment: &'a BTreeMap<String, String>) -> Self {
-        Self { chars: input.chars().collect(), index: 0, environment }
+        Self { chars: input.chars().collect(), index: 0, environment, evaluating: true }
     }
     fn whitespace(&mut self) {
         while self.chars.get(self.index).is_some_and(|character| character.is_whitespace()) { self.index += 1; }
@@ -1829,7 +1830,16 @@ impl<'a> ArithmeticParser<'a> {
         while let Some((operator, precedence)) = self.operator() {
             if precedence < minimum { break; }
             self.index += operator.chars().count();
+            let was_evaluating = self.evaluating;
+            let evaluate_right = was_evaluating
+                && !((operator == "&&" && left == 0) || (operator == "||" && left != 0));
+            self.evaluating = evaluate_right;
             let right = self.expression(precedence + 1)?;
+            self.evaluating = was_evaluating;
+            if !was_evaluating {
+                left = 0;
+                continue;
+            }
             left = match operator {
                 "," => right,
                 "||" => if left != 0 || right != 0 { 1 } else { 0 }, "&&" => if left != 0 && right != 0 { 1 } else { 0 },
@@ -1844,11 +1854,16 @@ impl<'a> ArithmeticParser<'a> {
         }
         if minimum <= 1 && self.chars.get(self.index) == Some(&'?') {
             self.index += 1;
+            let was_evaluating = self.evaluating;
+            self.evaluating = was_evaluating && left != 0;
             let when_true = self.expression(0)?;
             self.whitespace();
             if self.chars.get(self.index) != Some(&':') { return None; }
             self.index += 1;
+            self.evaluating = was_evaluating && left == 0;
             let when_false = self.expression(1)?;
+            self.evaluating = was_evaluating;
+            if !was_evaluating { return Some(0); }
             return Some(if left != 0 { when_true } else { when_false });
         }
         Some(left)
@@ -1859,6 +1874,7 @@ impl<'a> ArithmeticParser<'a> {
             if self.chars.get(self.index).copied() == operator.chars().next() {
                 self.index += 1;
                 let value = self.unary()?;
+                if !self.evaluating { return Some(0); }
                 return match operator { "+" => Some(value), "-" => value.checked_neg(), "!" => Some(if value == 0 { 1 } else { 0 }), "~" => Some(!value), _ => None };
             }
         }
@@ -1877,12 +1893,14 @@ impl<'a> ArithmeticParser<'a> {
         let start = self.index;
         if self.chars.get(self.index).is_some_and(|character| character.is_ascii_digit()) {
             while self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '#') { self.index += 1; }
-            return parse_arithmetic_integer(&self.chars[start..self.index].iter().collect::<String>());
+            let value = parse_arithmetic_integer(&self.chars[start..self.index].iter().collect::<String>());
+            return if self.evaluating { value } else { Some(0) };
         }
         if self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             self.index += 1;
             while self.chars.get(self.index).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') { self.index += 1; }
             let name: String = self.chars[start..self.index].iter().collect();
+            if !self.evaluating { return Some(0); }
             return parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0")).or(Some(0));
         }
         None
@@ -2141,6 +2159,11 @@ mod tests {
         assert_eq!(expand_variables("$((1 ? 7 : 9))", &environment, 0), "7");
         assert_eq!(expand_variables("$((0 ? 7 : 2 + 3))", &environment, 0), "5");
         assert_eq!(expand_variables("$((1 ? 0 ? 4 : 6 : 9))", &environment, 0), "6");
+        assert_eq!(expand_variables("$((0 && (1 / 0)))", &environment, 0), "0");
+        assert_eq!(expand_variables("$((1 || (1 / 0)))", &environment, 0), "1");
+        assert_eq!(expand_variables("$((1 ? 7 : (1 / 0)))", &environment, 0), "7");
+        assert_eq!(expand_variables("$((0 ? (1 / 0) : 9))", &environment, 0), "9");
+        assert_eq!(expand_variables("$((1 && (0 || 4)))", &environment, 0), "1");
     }
     #[test]
     fn pathname_patterns_support_posix_ascii_character_classes() {
