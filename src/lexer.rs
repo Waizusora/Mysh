@@ -144,6 +144,7 @@ fn consume_backquote_substitution<I: Iterator<Item = char>>(
 ///
 /// This is a lexical foundation, not a complete POSIX shell parser. Operator
 /// recognition and grammar parsing are handled by later parser stages.
+#[allow(clippy::while_let_on_iterator)]
 pub fn lex(input: &str) -> Result<Vec<Word>, LexError> {
     let mut tokens = Vec::new();
     let mut word = Word::default();
