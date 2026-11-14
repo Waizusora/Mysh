@@ -455,60 +455,115 @@ impl Shell {
     fn substitute_command_words(&self, word: &Word, stderr: &mut dyn Write) -> (Word, BTreeMap<String, String>) {
         let mut environment = self.variables.clone();
         let mut next_id = 0usize;
-        let mut parts = Vec::with_capacity(word.parts().len());
-        for part in word.parts() {
-            if !part.expandable {
-                parts.push(part.clone());
-                continue;
-            }
-            let chars: Vec<char> = part.text.chars().collect();
-            let mut rewritten = String::new();
-            let mut index = 0usize;
-            while index < chars.len() {
-                if chars[index] as u32 == 96 {
-                    if let Some(end) = matching_backquote_end(&chars, index) {
-                        let command = decode_backquote_body(&chars[index + 1..end]);
-                        let value = self.run_command_substitution(&command, stderr);
-                        let name = format!("__MYSH_COMMAND_SUBSTITUTION_{next_id}");
-                        next_id += 1;
-                        environment.insert(name.clone(), value);
-                        rewritten.push(char::from(36));
-                        rewritten.push('{');
-                        rewritten.push_str(&name);
-                        rewritten.push('}');
-                        index = end + 1;
-                        continue;
-                    }
-                }
-                if chars[index] as u32 == 36 && chars.get(index + 1) == Some(&'(')
-                    && chars.get(index + 2) != Some(&'(')
-                {
-                    if let Some(end) = matching_command_substitution_end(&chars, index + 1) {
-                        let command: String = chars[index + 2..end].iter().collect();
-                        let value = self.run_command_substitution(&command, stderr);
-                        let name = format!("__MYSH_COMMAND_SUBSTITUTION_{next_id}");
-                        next_id += 1;
-                        environment.insert(name.clone(), value);
-                        rewritten.push(char::from(36));
-                        rewritten.push('{');
-                        rewritten.push_str(&name);
-                        rewritten.push('}');
-                        index = end + 1;
-                        continue;
-                    }
-                }
-                rewritten.push(chars[index]);
-                index += 1;
-            }
-            parts.push(crate::lexer::WordPart {
-                text: rewritten,
+        let parts = word.parts().iter().map(|part| {
+            if !part.expandable { return part.clone(); }
+            crate::lexer::WordPart {
+                text: self.substitute_command_text(&part.text, &mut environment, &mut next_id, stderr),
                 expandable: part.expandable,
                 quoted: part.quoted,
-            });
-        }
+            }
+        }).collect();
         (Word::from_parts(parts, word.is_quoted()), environment)
     }
 
+    fn substitute_command_text(
+        &self,
+        source: &str,
+        environment: &mut BTreeMap<String, String>,
+        next_id: &mut usize,
+        stderr: &mut dyn Write,
+    ) -> String {
+        let chars: Vec<char> = source.chars().collect();
+        let mut rewritten = String::new();
+        let mut index = 0usize;
+        let mut single_quoted = false;
+        let mut double_quoted = false;
+        let mut escaped = false;
+        while index < chars.len() {
+            let character = chars[index];
+            if escaped {
+                rewritten.push(character);
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            if character as u32 == 92 && !single_quoted {
+                rewritten.push(character);
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            if character as u32 == 39 && !double_quoted {
+                single_quoted = !single_quoted;
+                rewritten.push(character);
+                index += 1;
+                continue;
+            }
+            if character as u32 == 34 && !single_quoted {
+                double_quoted = !double_quoted;
+                rewritten.push(character);
+                index += 1;
+                continue;
+            }
+            if !single_quoted && character == '$' && chars.get(index + 1) == Some(&'{') {
+                if let Some(end) = matching_brace_end(&chars, index + 1) {
+                    let expression: String = chars[index + 2..end].iter().collect();
+                    if let Some((word_start, word_end)) = parameter_expansion_word_range(&expression, environment) {
+                        rewritten.push('$');
+                        rewritten.push('{');
+                        rewritten.push_str(&expression[..word_start]);
+                        let nested = self.substitute_command_text(
+                            &expression[word_start..word_end], environment, next_id, stderr,
+                        );
+                        rewritten.push_str(&nested);
+                        rewritten.push('}');
+                    } else {
+                        rewritten.push('$');
+                        rewritten.push('{');
+                        rewritten.push_str(&expression);
+                        rewritten.push('}');
+                    }
+                    index = end + 1;
+                    continue;
+                }
+            }
+            if !single_quoted && character as u32 == 96 {
+                if let Some(end) = matching_backquote_end(&chars, index) {
+                    let command = decode_backquote_body(&chars[index + 1..end]);
+                    let value = self.run_command_substitution(&command, stderr);
+                    let name = format!("__MYSH_COMMAND_SUBSTITUTION_{}", *next_id);
+                    *next_id += 1;
+                    environment.insert(name.clone(), value);
+                    rewritten.push('$');
+                    rewritten.push('{');
+                    rewritten.push_str(&name);
+                    rewritten.push('}');
+                    index = end + 1;
+                    continue;
+                }
+            }
+            if !single_quoted && character == '$' && chars.get(index + 1) == Some(&'(')
+                && chars.get(index + 2) != Some(&'(')
+            {
+                if let Some(end) = matching_command_substitution_end(&chars, index + 1) {
+                    let command: String = chars[index + 2..end].iter().collect();
+                    let value = self.run_command_substitution(&command, stderr);
+                    let name = format!("__MYSH_COMMAND_SUBSTITUTION_{}", *next_id);
+                    *next_id += 1;
+                    environment.insert(name.clone(), value);
+                    rewritten.push('$');
+                    rewritten.push('{');
+                    rewritten.push_str(&name);
+                    rewritten.push('}');
+                    index = end + 1;
+                    continue;
+                }
+            }
+            rewritten.push(character);
+            index += 1;
+        }
+        rewritten
+    }
     fn expand_word_fields_runtime(&mut self, word: &Word, stderr: &mut dyn Write) -> Vec<String> {
         let (substituted, mut environment) = self.substitute_command_words(word, stderr);
         let fields = expand_word_fields_mut(&substituted, &mut environment, self.last_status);
@@ -1891,6 +1946,43 @@ fn expand_parameter_word_mut(word: &str, environment: &mut BTreeMap<String, Stri
     if !expandable.is_empty() { result.push_str(&expand_variables_mut(&expandable, environment, last_status)); }
     result
 }
+fn parameter_expansion_word_range(
+    expression: &str,
+    environment: &BTreeMap<String, String>,
+) -> Option<(usize, usize)> {
+    for (operator, colon, mode) in [
+        (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
+        (":+", true, "alternate"), ("+", false, "alternate"),
+        (":?", true, "required"), ("?", false, "required"),
+    ] {
+        if let Some(index) = expression.find(operator) {
+            let name = &expression[..index];
+            if !valid_parameter_reference(name) { continue; }
+            let value = parameter_value(name, environment, 0);
+            let is_set = parameter_is_set(name, environment);
+            let selected = match mode {
+                "default" | "required" => !is_set || (colon && value.is_empty()),
+                "alternate" => is_set && (!colon || !value.is_empty()),
+                _ => false,
+            };
+            if selected {
+                let start = index + operator.len();
+                return Some((start, expression.len()));
+            }
+            return None;
+        }
+    }
+    for operator in ["##", "#", "%%", "%"] {
+        if let Some(index) = expression.find(operator) {
+            if valid_parameter_reference(&expression[..index]) {
+                let start = index + operator.len();
+                return Some((start, expression.len()));
+            }
+        }
+    }
+    None
+}
+
 fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> Option<String> {
     for (operator, colon, mode) in [
         (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
@@ -2396,6 +2488,17 @@ mod tests {
     }
 
     #[test]
+    fn nested_command_substitution_runs_only_in_selected_parameter_words() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "SET=kept; echo \${SET:-$(mysh_command_that_must_not_run)} \${MISSING:-$(printf nested)} \${OUTER:-\${INNER:-$(printf deep)}}";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "kept nested deep\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn arithmetic_side_effects_inside_selected_parameter_words_are_ordered() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
@@ -2506,7 +2609,8 @@ mod tests {
         assert!(shell_pattern_matches("[=a=]", "a"));
         assert!(shell_pattern_matches("[.ch.]x", "chx"));
         assert!(!shell_pattern_matches("[.ch.]x", "cx"));
-        assert!(shell_pattern_matches("[! [=a=]]", "b") == false || true);
+        assert!(shell_pattern_matches("[!a]", "b"));
+        assert!(!shell_pattern_matches("[!a]", "a"));
     }
 
     #[test]
