@@ -95,6 +95,24 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      - name: Smoke-test Mysh against Android Bionic
+        if: matrix.abi == 'x86_64'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb push target/x86_64-linux-android/release/mysh /data/local/tmp/mysh
+            adb shell chmod 755 /data/local/tmp/mysh
+            adb shell mkdir -p /data/local/tmp/mysh-glob
+            adb shell touch /data/local/tmp/mysh-glob/alpha.txt
+            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\\r')"
+            expected="$(printf '4 5\\nleft middle value right')"
+            test "$output" = "$expected"
+            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\\r')"
+            test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Package Android runtime
