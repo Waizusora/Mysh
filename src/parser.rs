@@ -38,8 +38,91 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 ///
 /// Unterminated quotes and a trailing escape are recoverable at a physical
 /// line boundary. Other lexical or structural errors are reported immediately.
+fn delimit_physical_newlines(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut characters = input.chars().peekable();
+    let mut quote = None;
+    let mut word_started = false;
+    let mut comment = false;
+
+    while let Some(character) = characters.next() {
+        if comment {
+            if character == '\n' {
+                comment = false;
+                output.push(';');
+                word_started = false;
+            }
+            continue;
+        }
+
+        match quote {
+            Some('\'') => {
+                output.push(character);
+                if character == '\'' {
+                    quote = None;
+                }
+            }
+            Some('"') => {
+                output.push(character);
+                if character == '"' {
+                    quote = None;
+                } else if character == '\\' {
+                    if let Some(next) = characters.next() {
+                        if next != '\n' {
+                            output.push(next);
+                        }
+                    }
+                }
+            }
+            None => match character {
+                '\'' | '"' => {
+                    quote = Some(character);
+                    word_started = true;
+                    output.push(character);
+                }
+                '\\' => {
+                    output.push(character);
+                    if let Some(next) = characters.next() {
+                        if next != '\n' {
+                            output.push(next);
+                            word_started = true;
+                        }
+                    }
+                }
+                '#' if !word_started => {
+                    comment = true;
+                }
+                '\n' => {
+                    output.push(';');
+                    word_started = false;
+                }
+                value if value.is_whitespace() => {
+                    output.push(value);
+                    word_started = false;
+                }
+                '|' | '<' | '>' | ';' | '&' => {
+                    output.push(character);
+                    word_started = false;
+                }
+                _ => {
+                    output.push(character);
+                    word_started = true;
+                }
+            },
+            _ => unreachable!("only single and double quote states are used"),
+        }
+    }
+    output
+}
+
+/// Classify buffered input without treating every lexer error as continuation.
+///
+/// Physical newlines outside quotes are command separators. Unterminated quotes
+/// and a trailing escape are recoverable at a physical line boundary. Other
+/// lexical or structural errors are reported immediately.
 pub fn classify_input(input: &str) -> InputState {
-    let tokens = match lexer::lex(input) {
+    let normalized = delimit_physical_newlines(input);
+    let tokens = match lexer::lex(&normalized) {
         Ok(tokens) => tokens,
         Err(error) => {
             let message = error.to_string();
