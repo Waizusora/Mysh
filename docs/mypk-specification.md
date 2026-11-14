@@ -127,6 +127,17 @@ Implemented in the Rust library: strict root and index metadata parsing, exact-b
 
 Not yet implemented: network synchronization, persistent version floors, secure clock handling, root-key rotation, threshold signatures, and integration into the `mypk sync` or `mypk install` command paths. Until those operations are integrated, this library API is a verification primitive and does not by itself make repository synchronization secure.
 
+
+### Persistent anti-rollback state
+
+The client stores the highest accepted root and repository-index versions per repository in a private state file, normally `var/lib/mypk/trust-state.json` beneath the configured prefix. The state file uses the `MYPK-TRUST-STATE` format, version 1, and records the SHA-256 digest of the exact metadata bytes accepted at each version.
+
+The client must verify metadata cryptographically and validate its repository identity, timestamps, expiration, and referenced content before recording it. State updates reject lower versions and reject different metadata bytes reusing an already accepted version (version equivocation). Re-reading the exact same version and bytes is permitted. Updates are written to a new file, flushed, and atomically renamed into place; newly created state files use owner-only permissions on Unix-like platforms. Symbolic links and non-regular state files are rejected, and the state file is limited to 1 MiB.
+
+The caller must load the state before verification, pass `minimum_root_version(repository_id)` and `minimum_index_version(repository_id)` to the corresponding verification functions, and call `accept_root` or `accept_index` only after successful verification. The client must not reset this state during ordinary cache cleanup or package removal. On Android, the file belongs in the application's private prefix and must not be placed in shared external storage.
+
+This protects against replay and rollback across ordinary process restarts. It does not protect against an attacker who can restore or modify the application's private data, alter the device clock, or replace the application itself; stronger guarantees require platform-backed integrity and secure time.
+
 ## Repository and State
 
 Repository configuration is stored at etc/mypk/repositories.conf and trusted keys at etc/mypk/keys/. Repository indexes must be signed and verified before package selection. Repository downloads require authenticated TLS and bounded redirects, sizes, and decompression.
