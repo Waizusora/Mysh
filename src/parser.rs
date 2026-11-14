@@ -118,15 +118,6 @@ pub fn is_function_definition_start(tokens: &[Word], index: usize) -> bool {
     }
     tokens.get(index + 1).is_some_and(|word| word.is_unquoted_literal("("))
         && tokens.get(index + 2).is_some_and(|word| word.is_unquoted_literal(")"))
-        && tokens.get(index + 3).is_some_and(|word| {
-            word.is_unquoted_literal("{")
-                || word.is_unquoted_literal("(")
-                || is_reserved_word(tokens, index + 3, "if")
-                || is_reserved_word(tokens, index + 3, "for")
-                || is_reserved_word(tokens, index + 3, "while")
-                || is_reserved_word(tokens, index + 3, "until")
-                || is_reserved_word(tokens, index + 3, "case")
-        })
 }
 
 /// Split one pipeline into its ordered stages.
