@@ -67,6 +67,12 @@ impl Shell {
     }
 
     fn execute_if_statement(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        // A compound command may be terminated by a semicolon before its enclosing command ends.
+        let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+            &tokens[..tokens.len() - 1]
+        } else {
+            tokens
+        };
         if !tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
             let _ = writeln!(stderr, "mysh: syntax error: expected if");
             self.last_status = 2;
