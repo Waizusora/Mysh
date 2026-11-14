@@ -694,7 +694,6 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 mod tests {
     use super::{configure_prefix_path, expand_variables, external_status_code, requires_more_input, Shell};
     use std::collections::{BTreeMap, BTreeSet};
-    use crate::lexer;
 
     #[test]
     fn executes_builtin_commands() {
