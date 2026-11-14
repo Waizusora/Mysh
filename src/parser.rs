@@ -1275,6 +1275,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("&&")
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
+        || previous.is_unquoted_literal("!")
         || previous.is_unquoted_literal(")")
         || previous.is_unquoted_literal("fi") && is_reserved_word(tokens, index - 1, "fi")
         || previous.is_unquoted_literal("done") && is_reserved_word(tokens, index - 1, "done")
