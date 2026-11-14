@@ -53,6 +53,11 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 
 ## Unreleased
 
+### Documentation
+
+- Added a seven-phase Mysh maturity roadmap covering the native shell foundation, POSIX grammar, expansion, execution semantics, built-ins, interactive job control, and conformance and release stabilization.
+- Linked the roadmap from the README and architecture documentation, with explicit phase statuses and testable exit criteria.
+
 - Added a shell-managed environment map initialized from inherited process variables.
 - Added `export` and `unset` built-ins and passed the current environment to external child processes.
 - Added regression coverage for exported variable expansion and removal.
