@@ -29,7 +29,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
 2. The shell reads input lines and classifies buffered input as complete, incomplete, or invalid. Open quotes and unmatched `if` compounds request continuation; invalid input is passed to the parser for an immediate syntax error. Interactive continuation input uses a secondary prompt.
 3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input. The parser helper recognizes reserved words only at command boundaries, so argument text such as `echo if` does not alter compound-command structure.
-4. The parser identifies unquoted command-list and pipeline operators and produces structural token groups before execution; redirection parsing remains in the shell execution layer. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. The `if` compound-command evaluator supports `if`, `then`, repeated `elif` clauses, optional `else`, and `fi` across multiple input lines. Nested `if` statements can appear alongside sequential commands and conditional command lists in a selected branch.
+4. The parser identifies unquoted command-list and pipeline operators and produces a typed command-list/pipeline representation before execution; redirection parsing remains in the shell execution layer. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. The `if` compound-command evaluator supports `if`, `then`, repeated `elif` clauses, optional `else`, and `fi` across multiple input lines. Nested `if` statements can appear alongside sequential commands and conditional command lists in a selected branch.
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
 7. Built-ins execute in the current process. This is required for stateful operations such as `cd`, `export`, and `unset`.
@@ -45,7 +45,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | `main.rs` | Process entry point and command-line options |
 | `lib.rs` | Public library module declarations |
 | `lexer.rs` | Shell-word tokenization and quote/escape metadata |
-| `parser.rs` | Incremental input classification, reserved-word recognition, command-list parsing, and pipeline splitting |
+| `parser.rs` | Incremental input classification, reserved-word recognition, command-list and pipeline AST construction |
 | `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 | `command.rs` | Explicit external-command resolution and `PATH` search |
