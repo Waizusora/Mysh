@@ -465,6 +465,19 @@ impl Shell {
             let mut rewritten = String::new();
             let mut index = 0usize;
             while index < chars.len() {
+                if chars[index] as u32 == 96 {
+                    if let Some(end) = matching_backquote_end(&chars, index) {
+                        let command = decode_backquote_body(&chars[index + 1..end]);
+                        let value = self.run_command_substitution(&command, stderr);
+                        let name = format!("__MYSH_COMMAND_SUBSTITUTION_{next_id}");
+                        next_id += 1;
+                        environment.insert(name.clone(), value);
+                        rewritten.push(char::from(36));
+                        rewritten.push_str(&name);
+                        index = end + 1;
+                        continue;
+                    }
+                }
                 if chars[index] as u32 == 36 && chars.get(index + 1) == Some(&'(')
                     && chars.get(index + 2) != Some(&'(')
                 {
@@ -1448,6 +1461,34 @@ fn matching_command_substitution_end(chars: &[char], opening: usize) -> Option<u
     None
 }
 
+fn matching_backquote_end(chars: &[char], opening: usize) -> Option<usize> {
+    let mut index = opening + 1;
+    let mut escaped = false;
+    while index < chars.len() {
+        let character = chars[index];
+        if escaped { escaped = false; index += 1; continue; }
+        if character == '\\' { escaped = true; index += 1; continue; }
+        if character as u32 == 96 { return Some(index); }
+        index += 1;
+    }
+    None
+}
+
+fn decode_backquote_body(chars: &[char]) -> String {
+    let mut result = String::new();
+    let mut index = 0usize;
+    while index < chars.len() {
+        if chars[index] == '\\' && chars.get(index + 1).is_some_and(|character| {
+            *character as u32 == 36 || *character as u32 == 96 || *character == '\\'
+        }) {
+            index += 1;
+        }
+        result.push(chars[index]);
+        index += 1;
+    }
+    result
+}
+
 fn matching_arithmetic_end(chars: &[char], opening: usize) -> Option<usize> {
     let mut depth = 2usize;
     let mut index = opening + 3;
@@ -1801,6 +1842,15 @@ mod tests {
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
+    #[test]
+    fn backquoted_command_substitution_executes() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo `echo legacy`", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "legacy\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
     #[test]
     fn nested_command_substitution_is_evaluated_recursively() {
         let mut shell = Shell::new();
