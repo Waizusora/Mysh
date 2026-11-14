@@ -117,3 +117,21 @@ jobs:
           name: mypk-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
+  musl:
+    name: Build Linux (musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - name: Install musl linker
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+      - name: Configure musl linker
+        run: echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+      - name: Build Mysh for musl
+        run: cargo build -p mysh --target x86_64-unknown-linux-musl --release
+      - name: Build MYPK for musl
+        run: cargo build -p my-pkg-keeper --target x86_64-unknown-linux-musl --release
