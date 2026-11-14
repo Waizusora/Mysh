@@ -114,12 +114,17 @@ mod command_structure_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopKind { While, Until }
 
+/// Parsed POSIX-style for command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForStatement { pub name: String, pub words: Vec<Word>, pub body: CompoundList }
+
 /// A recursively parsed command in a compound command list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompoundCommand {
     Simple(Vec<Word>),
     If(IfStatement),
     Loop(LoopStatement),
+    For(ForStatement),
 }
 
 /// One command and its connector to the preceding command.
@@ -191,6 +196,38 @@ pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static s
         condition: parse_compound_list(&tokens[1..condition_end])?,
         body: parse_compound_list(&tokens[body_start + 1..body_end])?,
     })
+}
+
+
+/// Parse a complete for compound command. Positional parameters are not yet
+/// modeled, so an omitted explicit word list currently produces zero iterations.
+pub fn parse_for_statement(tokens: &[Word]) -> Result<ForStatement, &'static str> {
+    let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) { &tokens[..tokens.len()-1] } else { tokens };
+    if !tokens.first().is_some_and(|word| word.is_unquoted_literal("for")) { return Err("expected for"); }
+    let name = tokens.get(1).ok_or("for requires a variable name")?.literal_value().to_owned();
+    let mut chars = name.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("for requires a valid variable name");
+    }
+    let mut do_index = None;
+    for index in 2..tokens.len() {
+        if is_reserved_word(tokens, index, "do") { do_index = Some(index); break; }
+    }
+    let body_start = do_index.ok_or("for requires do and done")?;
+    let body_end = tokens.len().checked_sub(1).ok_or("for requires done")?;
+    if !tokens[body_end].is_unquoted_literal("done") || body_start + 1 > body_end { return Err("malformed for compound command"); }
+    let words = if tokens.get(2).is_some_and(|word| word.is_unquoted_literal("in")) {
+        let mut end = body_start;
+        if end > 3 && tokens[end-1].is_unquoted_literal(";") { end -= 1; }
+        tokens[3..end].to_vec()
+    } else {
+        if body_start != 2 && !(body_start == 3 && tokens[2].is_unquoted_literal(";")) { return Err("expected in or command separator before do"); }
+        Vec::new()
+    };
+    let mut body_end = body_end;
+    if body_end > body_start + 1 && tokens[body_end-1].is_unquoted_literal(";") { body_end -= 1; }
+    let body = parse_compound_list(&tokens[body_start+1..body_end])?;
+    Ok(ForStatement { name, words, body })
 }
 
 /// One condition/body pair in an if compound command.
@@ -430,7 +467,7 @@ pub fn compound_command_end(tokens: &[Word], start: usize) -> Result<usize, &'st
         return Err("if requires a closing fi");
     }
 
-    if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
+    if first.is_unquoted_literal("for") && is_reserved_word(tokens, start, "for") {\n        let mut depth = 1usize;\n        for index in start + 1..tokens.len() {\n            if is_reserved_word(tokens, index, "for") || is_reserved_word(tokens, index, "while") || is_reserved_word(tokens, index, "until") { depth += 1; }\n            else if is_reserved_word(tokens, index, "done") { depth -= 1; if depth == 0 { return Ok(index + 1); } }\n        }\n        return Err("for requires a closing done");\n    }\n\n    if (first.is_unquoted_literal("while") && is_reserved_word(tokens, start, "while"))
         || (first.is_unquoted_literal("until") && is_reserved_word(tokens, start, "until"))
     {
         let mut depth = 1usize;
@@ -487,7 +524,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 
     // Compound-list introducers establish a command position only when the
     // introducer itself was recognized as a reserved word in its own context.
-    ["if", "then", "elif", "else", "do", "while", "until"]
+    ["if", "then", "elif", "else", "do", "while", "until", "for"]
         .iter()
         .any(|introducer| {
             previous.is_unquoted_literal(introducer)
@@ -655,7 +692,7 @@ pub fn classify_input(input: &str) -> InputState {
             *phase = CompoundPhase::LoopInBody;
         } else if is_reserved_word(&tokens, index, "done") {
             match stack.pop() {
-                Some(CompoundPhase::LoopInBody) => {}
+                Some(CompoundPhase::LoopInBody | CompoundPhase::ForInBody) => {}
                 _ => return InputState::Invalid,
             }
         } else if is_reserved_word(&tokens, index, "fi") {
