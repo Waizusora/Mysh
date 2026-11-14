@@ -1128,12 +1128,28 @@ fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
                     {
                         let name: String = expression[tail..tail + offset].iter().collect();
                         match marker.unwrap() {
-                            ':' => members.push(Member::Class(name)),
-                            '.' => members.push(Member::Collating(name)),
-                            '=' => members.push(Member::Equivalence(name)),
+                            ':' => {
+                                members.push(Member::Class(name));
+                                index = tail + offset + 2;
+                            }
+                            '.' => {
+                                members.push(Member::Collating(name));
+                                index = tail + offset + 2;
+                                if index == expression.len() {
+                                    close = Some(index - 1);
+                                    break;
+                                }
+                            }
+                            '=' => {
+                                members.push(Member::Equivalence(name));
+                                index = tail + offset + 2;
+                                if index == expression.len() {
+                                    close = Some(index - 1);
+                                    break;
+                                }
+                            }
                             _ => unreachable!(),
                         }
-                        index = tail + offset + 2;
                         continue;
                     }
                 }
@@ -4011,7 +4027,7 @@ mod tests {
         environment.insert("IFS".to_owned(), " :".to_owned());
         environment.insert("VALUE".to_owned(), "  left :  : right  ".to_owned());
         assert_eq!(expand("$VALUE", &environment), ["left", "", "right"]);
-        assert_eq!(expand("literal:$VALUE", &environment), ["literal:left", "", "right"]);
+        assert_eq!(expand("literal:$VALUE", &environment), ["literal:", "left", "", "right"]);
         assert_eq!(expand("pre\"$VALUE\"post", &environment), ["pre  left :  : right  post"]);
 
         environment.insert("IFS".to_owned(), "\t".to_owned());
