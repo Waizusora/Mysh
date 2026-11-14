@@ -1540,10 +1540,10 @@ mod tests {
             ("SET".to_owned(), "value".to_owned()),
             ("EMPTY".to_owned(), String::new()),
         ]);
-        let tokens = crate::lexer::lex("echo ${MISSING:?custom failure}").unwrap();
+        let tokens = crate::lexer::lex("echo ${MISSING:?custom_failure}").unwrap();
         assert_eq!(
             required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
-            Some("custom failure")
+            Some("custom_failure")
         );
         let tokens = crate::lexer::lex("echo ${EMPTY:?}").unwrap();
         assert_eq!(
@@ -1561,10 +1561,10 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("echo ${MYSH_REQUIRED_MISSING:?required value}", &mut output, &mut errors));
+        assert!(shell.execute_line("echo ${MYSH_REQUIRED_MISSING:?required_value}", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 1);
         assert!(output.is_empty());
-        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: required value");
+        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: required_value");
     }
 
     #[test]
