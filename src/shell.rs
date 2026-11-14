@@ -1697,6 +1697,17 @@ mod tests {
     }
 
     #[test]
+    fn asynchronous_lists_are_parsed_but_not_run_without_job_control() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo must_not_run &", &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert_eq!(shell.last_status(), 2);
+        assert!(String::from_utf8_lossy(&errors).contains("asynchronous command execution is not implemented"));
+    }
+
+    #[test]
     fn command_list_runs_semicolon_separated_commands() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
