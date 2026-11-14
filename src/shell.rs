@@ -60,7 +60,7 @@ impl Shell {
         let has_compound_command = tokens.iter().enumerate().any(|(index, _)| {
             is_reserved_word(&tokens, index, "if")
                 || is_reserved_word(&tokens, index, "while")
-                || is_reserved_word(&tokens, index, "until")
+                || is_reserved_word(&tokens, index, "until")\n                || is_reserved_word(&tokens, index, "for")
         });
         if has_compound_command {
             return self.execute_compound_branch(&tokens, stdout, stderr);
@@ -113,6 +113,26 @@ impl Shell {
                 keep_running = false;
                 break;
             }
+            if let Some(control) = self.loop_control.take() {
+                match control {
+                    LoopControl::Break(1) => break,
+                    LoopControl::Continue(1) => continue,
+                    LoopControl::Break(level) => { self.loop_control = Some(LoopControl::Break(level - 1)); break; }
+                    LoopControl::Continue(level) => { self.loop_control = Some(LoopControl::Continue(level - 1)); break; }
+                }
+            }
+        }
+        self.loop_depth -= 1;
+        keep_running
+    }
+
+    fn execute_for_statement(&mut self, statement: &crate::parser::ForStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let values: Vec<String> = statement.words.iter().map(|word| expand_word(word, &self.variables, self.last_status)).collect();
+        self.loop_depth += 1;
+        let mut keep_running = true;
+        for value in values {
+            self.variables.insert(statement.name.clone(), value);
+            if !self.execute_compound_list(&statement.body, stdout, stderr) { keep_running = false; break; }
             if let Some(control) = self.loop_control.take() {
                 match control {
                     LoopControl::Break(1) => break,
