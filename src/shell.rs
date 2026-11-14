@@ -1296,6 +1296,36 @@ mod tests {
     }
 
     #[test]
+    fn shell_functions_override_regular_builtins() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "pwd() { echo function; }; pwd",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "function\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn special_builtins_keep_precedence_over_shell_functions() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "export() { echo shadowed; }; export MYSH_FUNCTION_TEST=active; echo $MYSH_FUNCTION_TEST",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "active\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn if_then_executes_the_success_branch() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
