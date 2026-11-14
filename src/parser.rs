@@ -263,12 +263,16 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
                 break;
             }
         }
-        if body_start == delimiter {
+        let mut body = tokens[body_start..delimiter].to_vec();
+        if body.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+            body.pop();
+        }
+        if body.is_empty() {
             return Err("if branch cannot be empty");
         }
         clauses.push(IfClause {
             condition: tokens[cursor..condition_end].to_vec(),
-            body: tokens[body_start..delimiter].to_vec(),
+            body,
         });
 
         if delimiter == fi_index {
@@ -296,7 +300,14 @@ pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> 
                     return Err("elif or else cannot follow else");
                 }
             }
-            else_body = Some(tokens[start..fi_index].to_vec());
+            let mut body = tokens[start..fi_index].to_vec();
+            if body.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+                body.pop();
+            }
+            if body.is_empty() {
+                return Err("else branch cannot be empty");
+            }
+            else_body = Some(body);
             break;
         }
     }
