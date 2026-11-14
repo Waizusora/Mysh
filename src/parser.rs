@@ -152,9 +152,26 @@ pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static s
     if body_end + 1 != tokens.len() || body_start <= 1 {
         return Err("malformed while or until compound command");
     }
+    // The semicolon immediately before "do" and "done" is a list
+    // separator, not part of either compound-command payload.
+    let condition_end = if tokens[body_start - 1].is_unquoted_literal(";") {
+        body_start - 1
+    } else {
+        body_start
+    };
+    let body_end = if body_end > body_start + 1
+        && tokens[body_end - 1].is_unquoted_literal(";")
+    {
+        body_end - 1
+    } else {
+        body_end
+    };
+    if condition_end <= 1 {
+        return Err("while or until requires a condition");
+    }
     Ok(LoopStatement {
         kind,
-        condition: tokens[1..body_start].to_vec(),
+        condition: tokens[1..condition_end].to_vec(),
         body: tokens[body_start + 1..body_end].to_vec(),
     })
 }
