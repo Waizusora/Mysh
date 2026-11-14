@@ -1985,7 +1985,7 @@ fn external_status_code(status: std::process::ExitStatus) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_prefix_path, expand_variables, expand_word_fields, external_status_code, required_parameter_expansion_error, requires_more_input, shell_pattern_matches, Shell};
+    use super::{configure_prefix_path, expand_parameter_word, expand_variables, expand_word_fields, external_status_code, required_parameter_expansion_error, requires_more_input, shell_pattern_matches, Shell};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
@@ -2196,6 +2196,16 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: MYSH_REQUIRED_MISSING: unset_message");
     }
 
+    #[test]
+    fn parameter_operator_words_apply_quote_removal_and_nested_expansion() {
+        let environment = BTreeMap::from([
+            ("INNER".to_owned(), "two words".to_owned()),
+            ("MISSING".to_owned(), String::new()),
+        ]);
+        assert_eq!(expand_parameter_word("'two words'", &environment, 0), "two words");
+        assert_eq!(expand_variables("${MISSING:-\"$INNER\"}", &environment, 0), "two words");
+        assert_eq!(expand_variables("${MISSING:-\\$INNER}", &environment, 0), "$INNER");
+    }
     #[test]
     fn parameter_expansion_supports_default_and_alternate_operators() {
         let environment = BTreeMap::from([
