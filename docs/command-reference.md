@@ -70,7 +70,7 @@ Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-
 
 ## Limitations
 
-Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, positional parameters, functions, \`case\`, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
+Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, positional parameters, functions, complete quote-aware case-pattern semantics, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
 
 ## Command Ownership and Migration Status
 
