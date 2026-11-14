@@ -141,7 +141,11 @@ impl Shell {
         let values: Vec<String> = if statement.words.is_empty() {
             positional_parameters(&self.variables)
         } else {
-            statement.words.iter().flat_map(|word| expand_word_fields(word, &self.variables, self.last_status)).collect()
+            let mut values = Vec::new();
+            for word in &statement.words {
+                values.extend(self.expand_word_fields_runtime(word, stderr));
+            }
+            values
         };
         self.loop_depth += 1;
         let mut keep_running = true;
@@ -187,10 +191,10 @@ impl Shell {
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> bool {
-        let value = expand_word(&statement.word, &self.variables, self.last_status);
+        let value = self.expand_word_scalar_runtime(&statement.word, stderr);
         for arm in &statement.arms {
             let matched = arm.patterns.iter().any(|pattern| {
-                let pattern = expand_word(pattern, &self.variables, self.last_status);
+                let pattern = self.expand_word_scalar_runtime(pattern, stderr);
                 shell_pattern_matches(&pattern, &value)
             });
             if matched {
