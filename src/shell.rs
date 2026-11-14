@@ -1439,6 +1439,32 @@ mod tests {
     }
 
     #[test]
+    fn parameter_expansion_supports_default_and_alternate_operators() {
+        let environment = BTreeMap::from([
+            ("SET".to_owned(), "value".to_owned()),
+            ("EMPTY".to_owned(), String::new()),
+        ]);
+        assert_eq!(expand_variables("${MISSING-word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${MISSING:-word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${EMPTY-word}", &environment, 0), "");
+        assert_eq!(expand_variables("${EMPTY:-word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${SET-word}", &environment, 0), "value");
+        assert_eq!(expand_variables("${SET+word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${SET:+word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${EMPTY+word}", &environment, 0), "word");
+        assert_eq!(expand_variables("${EMPTY:+word}", &environment, 0), "");
+    }
+
+    #[test]
+    fn parameter_expansion_removes_shortest_and_longest_patterns() {
+        let environment = BTreeMap::from([("VALUE".to_owned(), "abcabc".to_owned())]);
+        assert_eq!(expand_variables("${VALUE#a*c}", &environment, 0), "abc");
+        assert_eq!(expand_variables("${VALUE##a*c}", &environment, 0), "");
+        assert_eq!(expand_variables("${VALUE%c*}", &environment, 0), "abc");
+        assert_eq!(expand_variables("${VALUE%%c*}", &environment, 0), "ab");
+    }
+
+    #[test]
     fn last_exit_status_parameter_expands_in_command_arguments() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
