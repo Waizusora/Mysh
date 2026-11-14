@@ -2583,7 +2583,7 @@ mod tests {
         let mut errors = Vec::new();
 
         assert!(shell.execute_line(
-            r"echo ${OUTER:?outer: ${INNER:?inner failure}}",
+            r"echo ${MYSH_REQUIRED_OUTER_702:?outer: ${MYSH_REQUIRED_INNER_702:?inner failure}}",
             &mut output,
             &mut errors,
         ));
