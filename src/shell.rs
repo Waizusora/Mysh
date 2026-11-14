@@ -2,7 +2,7 @@
 use crate::builtins::{self, BuiltinOutcome};
 use crate::command::resolve_command;
 use crate::lexer::{self, Word};
-use crate::parser::{is_reserved_word, split_command_list, split_pipeline, ListOperator};
+use crate::parser::{is_reserved_word, split_command_list, ListOperator, Pipeline};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -68,13 +68,13 @@ impl Shell {
             }
         };
 
-        for (pipeline, condition) in commands {
-            let should_run = match condition {
+        for entry in commands {
+            let should_run = match entry.connector {
                 None | Some(ListOperator::Sequence) => true,
                 Some(ListOperator::And) => self.last_status == 0,
                 Some(ListOperator::Or) => self.last_status != 0,
             };
-            if should_run && !self.execute_pipeline(&pipeline, stdout, stderr) {
+            if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
         }
@@ -309,15 +309,8 @@ impl Shell {
         true
     }
 
-    fn execute_pipeline(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        let stages = match split_pipeline(tokens.to_vec()) {
-            Ok(stages) => stages,
-            Err(message) => {
-                let _ = writeln!(stderr, "mysh: syntax error: {message}");
-                self.last_status = 2;
-                return true;
-            }
-        };
+    fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        let stages = &pipeline.stages;
         if stages.len() == 1 {
             return self.execute_stage(&stages[0], stdout, stderr);
         }
