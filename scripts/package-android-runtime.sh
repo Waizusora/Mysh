@@ -37,14 +37,14 @@ for binary in "$mysh_binary" "$mypk_binary" "$coreutils_binary"; do
 done
 
 rm -rf "$staging_directory"
-mkdir -p "$staging_directory/usr/bin"
-install -m 0755 "$mysh_binary" "$staging_directory/usr/bin/mysh"
-install -m 0755 "$coreutils_binary" "$staging_directory/usr/bin/coreutils"
-install -m 0755 "$mypk_binary" "$staging_directory/usr/bin/mypk"
+mkdir -p "$staging_directory/bin"
+install -m 0755 "$mysh_binary" "$staging_directory/bin/mysh"
+install -m 0755 "$coreutils_binary" "$staging_directory/bin/coreutils"
+install -m 0755 "$mypk_binary" "$staging_directory/bin/mypk"
 
 mkdir -p "$output_directory"
 rm -f "$archive"
-tar -C "$staging_directory" -czf "$archive" usr
+tar -C "$staging_directory" -czf "$archive" bin
 
 printf 'Created Android runtime package: %s\n' "$archive"
 tar -tzf "$archive"
