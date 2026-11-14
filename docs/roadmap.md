@@ -35,7 +35,7 @@ Exit criteria:
 
 ## Phase 2 — POSIX grammar and parser
 
-**Status: In progress; brace groups now have recursive AST construction and current-environment execution. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
+**Status: In progress; brace groups and subshells now have recursive AST construction and execution semantics. Lexical operator coverage has been expanded and unsupported descriptor redirections are rejected explicitly. The grammar and compound-command parser remain partial.**
 
 Scope:
 - Implement the complete POSIX shell grammar and reserved-word recognition.
@@ -77,7 +77,7 @@ Exit criteria:
 Scope:
 - Implement concurrent pipelines with operating-system pipes rather than sequential buffering.
 - Implement POSIX redirections, descriptor duplication and closure, and here-documents.
-- Implement subshell environments and compound-command execution semantics.
+- Complete subshell environment semantics and compound-command execution semantics; the initial isolated subshell execution path is implemented.
 - Implement command-prefix and assignment-only command behavior.
 - Implement command search, command classification, and special-builtin precedence according to POSIX.
 - Implement command substitution execution environments and exit-status propagation.
