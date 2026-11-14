@@ -1968,22 +1968,36 @@ impl<'a> ArithmeticParser<'a> {
         }
         Some(left)
     }
+    fn arithmetic_lvalue(&mut self) -> Option<String> {
+        self.whitespace();
+        if self.chars.get(self.index) == Some(&'(') {
+            self.index += 1;
+            let name = self.arithmetic_lvalue()?;
+            self.whitespace();
+            if self.chars.get(self.index) != Some(&')') { return None; }
+            self.index += 1;
+            return Some(name);
+        }
+        let start = self.index;
+        if !self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') { return None; }
+        self.index += 1;
+        while self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { self.index += 1; }
+        Some(self.chars[start..self.index].iter().collect())
+    }
+    fn increment_lvalue(&mut self, name: String, delta: i64, prefix: bool) -> Option<i64> {
+        if !self.evaluating { return Some(0); }
+        let current = parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0"))?;
+        let updated = current.checked_add(delta)?;
+        self.environment.insert(name, updated.to_string());
+        Some(if prefix { updated } else { current })
+    }
     fn unary(&mut self) -> Option<i64> {
         self.whitespace();
         for (operator, delta) in [("++", 1i64), ("--", -1i64)] {
             if self.chars[self.index..].starts_with(&operator.chars().collect::<Vec<_>>()) {
                 self.index += 2;
-                self.whitespace();
-                let start = self.index;
-                if !self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') { return None; }
-                self.index += 1;
-                while self.chars.get(self.index).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { self.index += 1; }
-                let name: String = self.chars[start..self.index].iter().collect();
-                if !self.evaluating { return Some(0); }
-                let current = parse_arithmetic_integer(self.environment.get(&name).map(String::as_str).unwrap_or("0"))?;
-                let updated = current.checked_add(delta)?;
-                self.environment.insert(name, updated.to_string());
-                return Some(updated);
+                let name = self.arithmetic_lvalue()?;
+                return self.increment_lvalue(name, delta, true);
             }
         }
         for operator in ["+", "-", "!", "~"] {
@@ -1998,6 +2012,17 @@ impl<'a> ArithmeticParser<'a> {
     }
     fn primary(&mut self) -> Option<i64> {
         self.whitespace();
+        let saved = self.index;
+        if let Some(name) = self.arithmetic_lvalue() {
+            self.whitespace();
+            for (operator, delta) in [("++", 1i64), ("--", -1i64)] {
+                if self.chars[self.index..].starts_with(&operator.chars().collect::<Vec<_>>()) {
+                    self.index += 2;
+                    return self.increment_lvalue(name, delta, false);
+                }
+            }
+        }
+        self.index = saved;
         if self.chars.get(self.index) == Some(&'(') {
             self.index += 1;
             let value = self.expression(0)?;
@@ -2311,6 +2336,20 @@ mod tests {
         assert!(shell.execute_line(command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "4 5 6 6 6 5 4 4\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn arithmetic_increment_and_decrement_accept_parenthesized_lvalues_and_complex_operands() {
+        let mut environment = BTreeMap::from([
+            ("X".to_owned(), "4".to_owned()),
+            ("Y".to_owned(), "3".to_owned()),
+        ]);
+        assert_eq!(super::evaluate_arithmetic_mut("++(X) + (Y)-- * 2", &mut environment), Some(11));
+        assert_eq!(environment.get("X").map(String::as_str), Some("5"));
+        assert_eq!(environment.get("Y").map(String::as_str), Some("2"));
+        assert_eq!(super::evaluate_arithmetic_mut("((X))++ + --((Y))", &mut environment), Some(7));
+        assert_eq!(environment.get("X").map(String::as_str), Some("6"));
+        assert_eq!(environment.get("Y").map(String::as_str), Some("1"));
     }
 
     #[test]
