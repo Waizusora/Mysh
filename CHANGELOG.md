@@ -107,3 +107,4 @@ The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
 - Added regression tests for mixed quoted/unquoted pathname patterns and quoted versus unquoted variable-produced wildcard patterns.
 
 - Implemented initial default, alternate, assignment, and required-parameter error expansion operators, plus shortest/longest prefix and suffix pattern removal, with focused regression coverage. Nested/quoted `word` parsing and complete POSIX pipeline semantics remain outstanding.
+- Added isolated `$(...)` and backquoted command substitution, nested parameter expansion, braced multi-digit positional parameters, parameter-length expansion, arithmetic evaluation and basic assignment operators, leading tilde expansion, and ASCII POSIX pathname character classes. The Phase 3 core expansion milestone is implemented; full POSIX interaction and locale conformance remain in progress.
