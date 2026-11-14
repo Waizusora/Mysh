@@ -1101,17 +1101,43 @@ fn set_positional_parameters(environment: &mut BTreeMap<String, String>, paramet
     environment.insert("#".to_owned(), parameters.len().to_string());
 }
 
+fn passwd_home(username: &str, passwd: &str) -> Option<String> {
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        let _password = fields.next()?;
+        let _uid = fields.next()?;
+        let _gid = fields.next()?;
+        let _gecos = fields.next()?;
+        let home = fields.next()?;
+        (name == username && !home.is_empty()).then(|| home.to_owned())
+    })
+}
+
+fn tilde_home(name: &str, environment: &BTreeMap<String, String>) -> Option<String> {
+    if name.is_empty() {
+        return environment.get("HOME").cloned();
+    }
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    passwd_home(name, &passwd)
+}
+
+fn tilde_prefix(part: &str, environment: &BTreeMap<String, String>) -> Option<(String, usize)> {
+    if !part.starts_with('~') { return None; }
+    let end = part.find('/').unwrap_or(part.len());
+    let username = &part[1..end];
+    let home = tilde_home(username, environment)?;
+    Some((home, end))
+}
+
 fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut expanded = String::new();
     let mut at_word_start = true;
     for part in word.parts() {
-        if at_word_start && part.expandable && !part.quoted
-            && part.text.starts_with('~')
-            && (part.text.len() == 1 || part.text.as_bytes().get(1) == Some(&b'/'))
-        {
-            if let Some(home) = environment.get("HOME") {
-                expanded.push_str(home);
-                expanded.push_str(&part.text[1..]);
+        if at_word_start && part.expandable && !part.quoted && part.text.starts_with('~') {
+            if let Some((home, end)) = tilde_prefix(&part.text, environment) {
+                expanded.push_str(&home);
+                expanded.push_str(&part.text[end..]);
             } else {
                 expanded.push_str(&part.text);
             }
@@ -1142,12 +1168,14 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
         let tilde = fields.iter().all(Vec::is_empty)
             && !part.quoted
             && part.expandable
-            && part.text.starts_with('~')
-            && (part.text.len() == 1 || part.text.as_bytes().get(1) == Some(&b'/'));
+            && part.text.starts_with('~');
         let text = if tilde {
-            let home = environment.get("HOME").cloned().unwrap_or_else(|| "~".to_owned());
-            fields.last_mut().unwrap().extend(home.chars().map(|character| (character, false, false)));
-            part.text[1..].to_owned()
+            if let Some((home, end)) = tilde_prefix(&part.text, environment) {
+                fields.last_mut().unwrap().extend(home.chars().map(|character| (character, false, false)));
+                part.text[end..].to_owned()
+            } else {
+                part.text.clone()
+            }
         } else {
             part.text.clone()
         };
@@ -2125,6 +2153,14 @@ mod tests {
     }
 
     #[test]
+    fn passwd_home_lookup_matches_exact_user_field() {
+        let passwd = "root:x:0:0:root:/root:/bin/sh\\nalice:x:1000:1000:Alice:/home/alice:/bin/sh";
+        assert_eq!(super::passwd_home("alice", passwd).as_deref(), Some("/home/alice"));
+        assert_eq!(super::passwd_home("ali", passwd), None);
+        assert_eq!(super::passwd_home("missing", passwd), None);
+    }
+
+    #[test]
     fn tilde_expansion_is_unquoted_and_only_at_word_start() {
         let environment = BTreeMap::from([("HOME".to_owned(), "/home/mysh".to_owned())]);
         let unquoted = crate::lexer::lex("~/documents").unwrap();
@@ -2133,6 +2169,11 @@ mod tests {
         assert_eq!(expand_word_fields(&quoted[0], &environment, 0), ["~/documents"]);
         let embedded = crate::lexer::lex("prefix~/documents").unwrap();
         assert_eq!(expand_word_fields(&embedded[0], &environment, 0), ["prefix~/documents"]);
+        let named = BTreeMap::new();
+        let user_home = super::passwd_home("alice", "alice:x:1000:1000:Alice:/home/alice:/bin/sh").unwrap();
+        let word = crate::lexer::lex("~alice/documents").unwrap();
+        assert_eq!(expand_word_fields(&word[0], &BTreeMap::from([("HOME".to_owned(), user_home)]), 0), ["/home/alice/documents"]);
+        let _ = named;
     }
     #[test]
     fn arithmetic_assignment_expansion_updates_shell_variables() {
