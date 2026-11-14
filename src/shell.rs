@@ -13,6 +13,8 @@ pub struct Shell {
     last_status: i32,
     variables: BTreeMap<String, String>,
     exported: BTreeSet<String>,
+    loop_depth: usize,
+    loop_control: Option<LoopControl>,
 }
 
 impl Default for Shell {
@@ -20,7 +22,7 @@ impl Default for Shell {
         let mut variables: BTreeMap<String, String> = std::env::vars().collect();
         let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
         configure_prefix_path(&mut variables, &mut exported);
-        Self { history: Vec::new(), last_status: 0, variables, exported }
+        Self { history: Vec::new(), last_status: 0, variables, exported, loop_depth: 0, loop_control: None }
     }
 }
 
@@ -87,22 +89,41 @@ impl Shell {
     }
 
     fn execute_loop_statement(&mut self, statement: &crate::parser::LoopStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        self.loop_depth += 1;
+        let mut keep_running = true;
         loop {
             if !self.execute_compound_list(&statement.condition, stdout, stderr) {
-                return false;
+                keep_running = false;
+                break;
+            }
+            if let Some(control) = self.loop_control.take() {
+                match control {
+                    LoopControl::Break(1) => break,
+                    LoopControl::Continue(1) => continue,
+                    LoopControl::Break(level) => { self.loop_control = Some(LoopControl::Break(level - 1)); break; }
+                    LoopControl::Continue(level) => { self.loop_control = Some(LoopControl::Continue(level - 1)); break; }
+                }
             }
             let should_enter = match statement.kind {
                 crate::parser::LoopKind::While => self.last_status == 0,
                 crate::parser::LoopKind::Until => self.last_status != 0,
             };
-            if !should_enter {
+            if !should_enter { break; }
+            if !self.execute_compound_list(&statement.body, stdout, stderr) {
+                keep_running = false;
                 break;
             }
-            if !self.execute_compound_list(&statement.body, stdout, stderr) {
-                return false;
+            if let Some(control) = self.loop_control.take() {
+                match control {
+                    LoopControl::Break(1) => break,
+                    LoopControl::Continue(1) => continue,
+                    LoopControl::Break(level) => { self.loop_control = Some(LoopControl::Break(level - 1)); break; }
+                    LoopControl::Continue(level) => { self.loop_control = Some(LoopControl::Continue(level - 1)); break; }
+                }
             }
         }
-        true
+        self.loop_depth -= 1;
+        keep_running
     }
 
     fn execute_if_statement(&mut self, statement: &crate::parser::IfStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
@@ -157,6 +178,9 @@ impl Shell {
             };
             if !keep_running {
                 return false;
+            }
+            if self.loop_control.is_some() {
+                return true;
             }
         }
         true
@@ -312,6 +336,24 @@ impl Shell {
             return match outcome {
                 BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
+                BuiltinOutcome::Break(level) => {
+                    if self.loop_depth == 0 {
+                        let _ = writeln!(err, "mysh: break: not in a loop");
+                        StageOutcome::Continue(1)
+                    } else {
+                        self.loop_control = Some(LoopControl::Break(level));
+                        StageOutcome::Continue(0)
+                    }
+                }
+                BuiltinOutcome::ContinueLoop(level) => {
+                    if self.loop_depth == 0 {
+                        let _ = writeln!(err, "mysh: continue: not in a loop");
+                        StageOutcome::Continue(1)
+                    } else {
+                        self.loop_control = Some(LoopControl::Continue(level));
+                        StageOutcome::Continue(0)
+                    }
+                }
             };
         }
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
@@ -413,6 +455,9 @@ fn requires_more_input(input: &str) -> bool {
 #[derive(Default)]
 struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
 enum StageOutcome { Continue(i32), Exit(i32) }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopControl { Break(usize), Continue(usize) }
 
 fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mut BTreeSet<String>) {
     let Some(prefix) = variables.get("MYSH_PREFIX") else { return; };
