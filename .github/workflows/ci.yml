@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Emulator instances are memory/CPU intensive on hosted Linux runners.
+      # Serialize them to avoid simultaneous boots starving the x86_64 AVD.
+      max-parallel: 1
       matrix:
         include:
           - abi: arm64-v8a
@@ -103,6 +106,9 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
+          cores: 4
+          ram-size: 4096
+          emulator-boot-timeout: 900
           script: |
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
             adb shell chmod 755 /data/local/tmp/mysh
@@ -112,8 +118,18 @@ jobs:
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
             adb shell ls -la /data/local/tmp/mysh-glob
-            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"
-            printf 'Bionic pathname expansion output: <%s>\\n' "$glob"
+            literal="$(adb shell "/data/local/tmp/mysh -c 'echo literal-ok'" | tr -d '\r')"
+            printf 'Bionic literal echo output: <%s>\\n' "$literal"
+            test "$literal" = "literal-ok"
+            exact="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
+            printf 'Bionic exact-path output: <%s>\\n' "$exact"
+            test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
+            if glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
+              glob_status=0
+            else
+              glob_status=$?
+            fi
+            printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
             class_glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
             printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
