@@ -1020,29 +1020,47 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
     let chars: Vec<char> = source.chars().collect();
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] != '
-        let end = if matches!(chars.get(index + 1), Some('?' | '#' | '@' | '*')) || chars.get(index + 1).is_some_and(|c| c.is_ascii_digit()) {
+        if chars[index] != '$' {
+            fields.last_mut().unwrap().push((chars[index], false));
+            index += 1;
+            continue;
+        }
+
+        let end = if matches!(chars.get(index + 1), Some('?' | '#' | '@' | '*'))
+            || chars.get(index + 1).is_some_and(|character| character.is_ascii_digit())
+        {
             index + 2
         } else if chars.get(index + 1) == Some(&'{') {
-            chars[index + 2..].iter().position(|c| *c == '}').map(|offset| index + 3 + offset).unwrap_or(index + 1)
-        } else if chars.get(index + 1).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') {
+            chars[index + 2..]
+                .iter()
+                .position(|character| *character == '}')
+                .map(|offset| index + 3 + offset)
+                .unwrap_or(index + 1)
+        } else if chars.get(index + 1).is_some_and(|character| character.is_ascii_alphabetic() || *character == '_') {
             let mut end = index + 2;
-            while chars.get(end).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { end += 1; }
+            while chars.get(end).is_some_and(|character| character.is_ascii_alphanumeric() || *character == '_') {
+                end += 1;
+            }
             end
-        } else { output.push(('$', false)); index += 1; continue; };
+        } else {
+            fields.last_mut().unwrap().push(('$', false));
+            index += 1;
+            continue;
+        };
+
         let expression: String = chars[index..end].iter().collect();
-        if expression == "$@" || expression == "${@}" {
+        if expression == "$@" || expression == "\${@}" {
             let parameters = positional_parameters(environment);
             if let Some(first) = parameters.first() {
-                fields.last_mut().unwrap().extend(first.chars().map(|c| (c, true)));
+                fields.last_mut().unwrap().extend(first.chars().map(|character| (character, true)));
                 for parameter in parameters.into_iter().skip(1) {
-                    fields.push(parameter.chars().map(|c| (c, true)).collect());
+                    fields.push(parameter.chars().map(|character| (character, true)).collect());
                     keep_empty.push(false);
                 }
             }
         } else {
             let value = expand_variables(&expression, environment, last_status);
-            fields.last_mut().unwrap().extend(value.chars().map(|c| (c, true)));
+            fields.last_mut().unwrap().extend(value.chars().map(|character| (character, true)));
         }
         index = end;
     }
