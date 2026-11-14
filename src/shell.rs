@@ -395,7 +395,7 @@ impl Shell {
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
         let (executable, process_args) = match resolve_command(&command[0], &search_path) {
             Ok(path) => (path, command[1..].to_vec()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error) if error.kind() == io::ErrorKind::NotFound && is_uutils_utility(&command[0]) => {
                 match resolve_command("coreutils", &search_path) {
                     Ok(multicall) => {
                         let arguments = std::iter::once(command[0].clone())
@@ -408,6 +408,10 @@ impl Shell {
                         return StageOutcome::Continue(127);
                     }
                 }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                return StageOutcome::Continue(127);
             }
             Err(error) => {
                 let _ = writeln!(err, "mysh: {}: {error}", command[0]);
@@ -525,7 +529,30 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
 /// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
 /// deliberately dispatched as external commands so uutils can provide them.
 fn is_shell_builtin(name: &str) -> bool {
-    matches!(name, ":" | "cd" | "export" | "unset" | "pwd" | "exit" | "break" | "continue")
+    matches!(name, ":" | "cd" | "export" | "unset" | "pwd" | "true" | "false" | "exit" | "break" | "continue")
+}
+
+/// Utilities compiled into the pinned uutils 0.12.0 Android feature set.
+fn is_uutils_utility(name: &str) -> bool {
+    matches!(
+        name,
+        "arch" | "base32" | "base64" | "basename" | "basenc" | "b2sum" | "cat"
+            | "chgrp" | "chmod" | "chown" | "chroot" | "cksum" | "comm" | "cp"
+            | "csplit" | "cut" | "date" | "dd" | "df" | "dir" | "dircolors"
+            | "dirname" | "du" | "echo" | "env" | "expand" | "expr" | "factor"
+            | "fmt" | "fold" | "groups" | "head" | "hostid" | "hostname" | "id"
+            | "install" | "join" | "kill" | "link" | "ln" | "logname" | "ls"
+            | "md5sum" | "mkdir" | "mkfifo" | "mknod" | "mktemp" | "more" | "mv"
+            | "nice" | "nl" | "nohup" | "nproc" | "numfmt" | "od" | "paste"
+            | "pathchk" | "pr" | "printenv" | "printf" | "ptx" | "readlink"
+            | "realpath" | "rm" | "rmdir" | "seq" | "sha1sum" | "sha224sum"
+            | "sha256sum" | "sha384sum" | "sha512sum" | "shred" | "shuf"
+            | "sleep" | "sort" | "split" | "stat" | "stdbuf" | "stty" | "sum"
+            | "sync" | "tac" | "tail" | "tee" | "test" | "timeout" | "touch"
+            | "tr" | "truncate" | "tsort" | "tty" | "uname" | "unexpand" | "uniq"
+            | "unlink" | "uptime" | "users" | "vdir" | "wc" | "who" | "whoami"
+            | "yes"
+    )
 }
 
 /// POSIX special built-ins execute in the current shell environment.
@@ -1321,7 +1348,7 @@ mod tests {
     fn only_posix_shell_builtins_are_dispatched_in_process() {
         use super::is_shell_builtin;
 
-        for name in [":", "cd", "pwd", "export", "unset", "exit", "break", "continue"] {
+        for name in [":", "cd", "pwd", "export", "unset", "true", "false", "exit", "break", "continue"] {
             assert!(is_shell_builtin(name), "{name}");
         }
         for name in ["ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "echo", "clear", "history", "help"] {
@@ -1347,8 +1374,8 @@ mod tests {
 
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("uutils-test alpha beta", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "uutils-test\nalpha\nbeta\n");
+        assert!(shell.execute_line("cat alpha beta", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "cat\nalpha\nbeta\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
 
