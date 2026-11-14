@@ -1214,6 +1214,17 @@ mod tests {
     }
 
     #[test]
+    fn compound_group_can_run_after_a_simple_pipeline_stage() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo before | { echo after; }", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
     fn pipeline_compound_stage_does_not_leak_shell_state() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
