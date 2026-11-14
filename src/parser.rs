@@ -1494,7 +1494,7 @@ mod compound_boundary_tests {
 
 #[cfg(test)]
 mod for_parser_tests {
-    use super::{parse_for_statement, parse_compound_list, CompoundCommand};
+    use super::{classify_input, parse_for_statement, parse_compound_list, CompoundCommand, InputState};
     use crate::lexer;
 
     #[test]
