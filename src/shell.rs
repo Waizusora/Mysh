@@ -2351,7 +2351,7 @@ mod tests {
         let mut errors = Vec::new();
         let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_OUTER:-${MYSH_NESTED_VALUE}} $((MYSH_NESTED_VALUE++)) $MYSH_NESTED_VALUE";
         assert!(shell.execute_line(command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "2 2 3\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "2 2 3\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
@@ -3822,7 +3822,7 @@ mod tests {
         assert_eq!(expand("$VALUE", &environment), ["", "", "left", "", "right"]);
 
         environment.remove("IFS");
-        environment.insert("VALUE".to_owned(), "  alpha\\tbeta\\ngamma  ".to_owned());
+        environment.insert("VALUE".to_owned(), "  alpha\tbeta\ngamma  ".to_owned());
         assert_eq!(expand("$VALUE", &environment), ["alpha", "beta", "gamma"]);
         environment.insert("VALUE".to_owned(), "middle".to_owned());
         assert_eq!(expand("pre${VALUE}post", &environment), ["premiddlepost"]);
