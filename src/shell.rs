@@ -475,6 +475,53 @@ impl Shell {
         }
     }
 
+    fn dispatch_builtin(
+        &mut self,
+        command: &[String],
+        input: Option<&[u8]>,
+        out: &mut Vec<u8>,
+        err: &mut Vec<u8>,
+    ) -> Option<StageOutcome> {
+        let outcome = builtins::run(
+            &command[0],
+            &command[1..],
+            &self.history,
+            &mut self.variables,
+            &mut self.exported,
+            input,
+            out,
+            err,
+        )?;
+        Some(match outcome {
+            BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
+            BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
+            BuiltinOutcome::Break(level) => {
+                if self.loop_depth == 0 {
+                    let _ = writeln!(err, "mysh: break: not in a loop");
+                    StageOutcome::Continue(1)
+                } else if level > self.loop_depth {
+                    let _ = writeln!(err, "mysh: break: level exceeds active loop depth");
+                    StageOutcome::Continue(1)
+                } else {
+                    self.loop_control = Some(LoopControl::Break(level));
+                    StageOutcome::Continue(0)
+                }
+            }
+            BuiltinOutcome::ContinueLoop(level) => {
+                if self.loop_depth == 0 {
+                    let _ = writeln!(err, "mysh: continue: not in a loop");
+                    StageOutcome::Continue(1)
+                } else if level > self.loop_depth {
+                    let _ = writeln!(err, "mysh: continue: level exceeds active loop depth");
+                    StageOutcome::Continue(0)
+                } else {
+                    self.loop_control = Some(LoopControl::Continue(level));
+                    StageOutcome::Continue(0)
+                }
+            }
+        })
+    }
+
     fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
         if command[0] == "." {
@@ -486,7 +533,12 @@ impl Shell {
                 let _ = writeln!(err, "mysh: .: positional arguments are not implemented yet");
                 return StageOutcome::Continue(2);
             }
-            let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
+            if is_shell_builtin(&command[0]) {
+            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
+                return outcome;
+            }
+        }
+        let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
             let path = match resolve_script(&command[1], &search_path) {
                 Ok(path) => path,
                 Err(error) => {
@@ -544,36 +596,9 @@ impl Shell {
                 StageOutcome::Exit(self.last_status)
             };
         }
-        if is_shell_builtin(&command[0]) {
-            if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.variables, &mut self.exported, input, out, err) {
-                return match outcome {
-                BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
-                BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
-                BuiltinOutcome::Break(level) => {
-                    if self.loop_depth == 0 {
-                        let _ = writeln!(err, "mysh: break: not in a loop");
-                        StageOutcome::Continue(1)
-                    } else if level > self.loop_depth {
-                        let _ = writeln!(err, "mysh: break: level exceeds active loop depth");
-                        StageOutcome::Continue(1)
-                    } else {
-                        self.loop_control = Some(LoopControl::Break(level));
-                        StageOutcome::Continue(0)
-                    }
-                }
-                BuiltinOutcome::ContinueLoop(level) => {
-                    if self.loop_depth == 0 {
-                        let _ = writeln!(err, "mysh: continue: not in a loop");
-                        StageOutcome::Continue(1)
-                    } else if level > self.loop_depth {
-                        let _ = writeln!(err, "mysh: continue: level exceeds active loop depth");
-                        StageOutcome::Continue(1)
-                    } else {
-                        self.loop_control = Some(LoopControl::Continue(level));
-                        StageOutcome::Continue(0)
-                    }
-                }
-                };
+        if is_shell_builtin(&command[0]) && is_special_builtin(&command[0]) {
+            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
+                return outcome;
             }
         }
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
