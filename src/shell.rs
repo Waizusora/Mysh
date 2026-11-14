@@ -104,6 +104,9 @@ impl Shell {
                 keep_running = false;
                 break;
             }
+            if self.function_return.is_some() {
+                break;
+            }
             if let Some(control) = self.loop_control.take() {
                 match control {
                     LoopControl::Break(1) => break,
@@ -119,6 +122,9 @@ impl Shell {
             if !should_enter { break; }
             if !self.execute_compound_list(&statement.body, stdout, stderr) {
                 keep_running = false;
+                break;
+            }
+            if self.function_return.is_some() {
                 break;
             }
             if let Some(control) = self.loop_control.take() {
@@ -141,6 +147,7 @@ impl Shell {
         for value in values {
             self.variables.insert(statement.name.clone(), value);
             if !self.execute_compound_list(&statement.body, stdout, stderr) { keep_running = false; break; }
+            if self.function_return.is_some() { break; }
             if let Some(control) = self.loop_control.take() {
                 match control {
                     LoopControl::Break(1) => break,
@@ -1363,6 +1370,63 @@ mod tests {
         ));
         assert_eq!(String::from_utf8(output).unwrap(), "active\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_exits_a_function_with_the_requested_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { echo before; return 7; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "before\n7\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn return_without_an_operand_uses_the_current_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { false; return; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "1\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_propagates_out_of_nested_loop_bodies() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { while true; do return 9; done; echo unreachable; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "9\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_is_rejected_outside_a_function() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line("return 3", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(String::from_utf8(errors).unwrap().contains("not in a function"));
     }
 
     #[test]
