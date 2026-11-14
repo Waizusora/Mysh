@@ -27,8 +27,8 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 ## Runtime Flow
 
 1. The entry point selects interactive, standard-input, or `-c` command-string mode.
-2. The shell reads input lines and buffers an incomplete `if` compound command until its matching `fi` is received. Interactive continuation input uses a secondary prompt.
-3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input.
+2. The shell reads input lines and classifies buffered input as complete, incomplete, or invalid. Open quotes and unmatched `if` compounds request continuation; invalid input is passed to the parser for an immediate syntax error. Interactive continuation input uses a secondary prompt.
+3. The lexer creates shell words with ordered fragments and retains whether each fragment came from unquoted, single-quoted, double-quoted, or escaped input. The parser helper recognizes reserved words only at command boundaries, so argument text such as `echo if` does not alter compound-command structure.
 4. The parser identifies unquoted pipeline, redirection, and command-list operators. Quoted or escaped operator-looking text remains part of an ordinary word. Sequential command lists and left-associative `&&` / `||` short-circuit lists are supported. The `if` compound-command evaluator supports `if`, `then`, repeated `elif` clauses, optional `else`, and `fi` across multiple input lines. Nested `if` statements can appear alongside sequential commands and conditional command lists in a selected branch.
 5. The expansion phase currently performs only basic environment-variable substitution on expandable fragments. Single-quoted and escaped fragments are preserved literally.
 6. The dispatcher checks whether the command is a built-in.
@@ -45,6 +45,7 @@ The current implementation is not yet POSIX-conformant. Conformance must be esta
 | `main.rs` | Process entry point and command-line options |
 | `lib.rs` | Public library module declarations |
 | `lexer.rs` | Shell-word tokenization and quote/escape metadata |
+| `parser.rs` | Context-sensitive reserved-word recognition and incremental input classification |
 | `shell.rs` | Input loop, preliminary parsing, expansion, command dispatch, history, and status |
 | `builtins/mod.rs` | Built-in command implementations and filesystem safety checks |
 | `command.rs` | Explicit external-command resolution and `PATH` search |
@@ -72,7 +73,7 @@ The lexer currently supports unquoted words, single quotes, double quotes, backs
 
 The shell maintains an environment map initialized from inherited process variables. `export NAME=value` changes the shell environment, and `unset NAME` removes a variable. These changes affect later expansion, `PATH` lookup, and the environment passed to external children. Assignment-only commands persist shell variables without exporting them. Command-prefix assignments are temporary and are exported only for the command invocation. The implementation does not yet cover all POSIX assignment and special-builtin rules. Basic parameter substitution for environment-variable names and the last-exit-status parameter (`$?` and `${?}`) is performed only in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is not expanded. Other POSIX special and positional parameters, parameter operators, field splitting, and pathname expansion remain incomplete.
 
-The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion beyond the initial single-level `if` form, loops, functions, here-documents, and job control are not implemented. The implemented multiline compound-command support currently applies to `if` statements only; other POSIX compound commands and the complete POSIX grammar remain unsupported.
+The current implementation includes sequential, buffered pipelines and basic `<`, `>`, `>>`, and `2>` redirection. These supported operators are tokenized even when adjacent to words (for example, `echo hi|cat` or `echo hi>file`). The lexer does not yet recognize the complete POSIX operator set or shell grammar. Pipelines are not concurrent. POSIX parameter expansion forms, field splitting, pathname expansion, command substitution, arithmetic expansion beyond the initial single-level `if` form, loops, functions, here-documents, and job control are not implemented. The implemented multiline compound-command support currently applies to `if` statements only; other POSIX compound commands and the complete POSIX grammar remain unsupported. Input continuation distinguishes recoverable unterminated quotes and open `if` blocks from unmatched closing `fi` tokens; this is an incremental parser foundation, not a complete POSIX grammar.
 
 ## Process and Filesystem Model
 
