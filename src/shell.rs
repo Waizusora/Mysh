@@ -1391,7 +1391,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("show() { echo $1:$2:$#; shift; echo $1:$2:$#; }; show alpha beta gamma", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "alpha:beta:3\\nbeta:gamma:2\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha:beta:3\nbeta:gamma:2\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
@@ -1402,7 +1402,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("inner() { shift; echo $1:$#; }; outer() { inner x y; echo $1:$2:$#; }; outer a b c", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "y:1\\na:b:3\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "y:1\na:b:3\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
@@ -1413,7 +1413,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("show() { echo $*; echo $@; }; show one two three", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "one two three\\none two three\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "one two three\none two three\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
@@ -1424,7 +1424,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("iterate() { for item; do echo $item; done; }; iterate first second third", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "first\\nsecond\\nthird\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "first\nsecond\nthird\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
     }
