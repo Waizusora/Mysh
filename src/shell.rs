@@ -1096,7 +1096,7 @@ mod tests {
             &mut output,
             &mut errors,
         ));
-        assert_eq!(String::from_utf8(output).unwrap(), "alpha\\nbeta\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "alpha\nbeta\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
 
         let marker = std::env::temp_dir().join(format!("mysh-mixed-loop-{}", std::process::id()));
@@ -1108,7 +1108,7 @@ mod tests {
         );
         let mut output = Vec::new();
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "one\\ntwo\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "one\ntwo\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         let _ = std::fs::remove_file(marker);
     }
