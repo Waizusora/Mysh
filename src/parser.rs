@@ -146,7 +146,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
 
     // Compound-list introducers establish a command position only when the
     // introducer itself was recognized as a reserved word in its own context.
-    ["if", "then", "elif", "else", "do"]
+    ["if", "then", "elif", "else", "do", "while", "until"]
         .iter()
         .any(|introducer| {
             previous.is_unquoted_literal(introducer)
@@ -264,46 +264,63 @@ pub fn classify_input(input: &str) -> InputState {
     };
 
     #[derive(Clone, Copy, PartialEq, Eq)]
-    enum IfPhase {
-        AwaitThen,
-        InThen,
-        InElse,
+    enum CompoundPhase {
+        IfAwaitThen,
+        IfInThen,
+        IfInElse,
+        LoopAwaitDo,
+        LoopInBody,
     }
 
     let mut stack = Vec::new();
     for index in 0..tokens.len() {
         if is_reserved_word(&tokens, index, "if") {
-            stack.push(IfPhase::AwaitThen);
+            stack.push(CompoundPhase::IfAwaitThen);
+        } else if is_reserved_word(&tokens, index, "while")
+            || is_reserved_word(&tokens, index, "until")
+        {
+            stack.push(CompoundPhase::LoopAwaitDo);
         } else if is_reserved_word(&tokens, index, "then") {
             let Some(phase) = stack.last_mut() else {
                 return InputState::Invalid;
             };
-            if *phase != IfPhase::AwaitThen {
+            if *phase != CompoundPhase::IfAwaitThen {
                 return InputState::Invalid;
             }
-            *phase = IfPhase::InThen;
+            *phase = CompoundPhase::IfInThen;
         } else if is_reserved_word(&tokens, index, "elif") {
             let Some(phase) = stack.last_mut() else {
                 return InputState::Invalid;
             };
-            if *phase != IfPhase::InThen {
+            if *phase != CompoundPhase::IfInThen {
                 return InputState::Invalid;
             }
-            *phase = IfPhase::AwaitThen;
+            *phase = CompoundPhase::IfAwaitThen;
         } else if is_reserved_word(&tokens, index, "else") {
             let Some(phase) = stack.last_mut() else {
                 return InputState::Invalid;
             };
-            if *phase != IfPhase::InThen {
+            if *phase != CompoundPhase::IfInThen {
                 return InputState::Invalid;
             }
-            *phase = IfPhase::InElse;
-        } else if is_reserved_word(&tokens, index, "fi") {
-            let Some(phase) = stack.pop() else {
+            *phase = CompoundPhase::IfInElse;
+        } else if is_reserved_word(&tokens, index, "do") {
+            let Some(phase) = stack.last_mut() else {
                 return InputState::Invalid;
             };
-            if phase == IfPhase::AwaitThen {
+            if *phase != CompoundPhase::LoopAwaitDo {
                 return InputState::Invalid;
+            }
+            *phase = CompoundPhase::LoopInBody;
+        } else if is_reserved_word(&tokens, index, "done") {
+            match stack.pop() {
+                Some(CompoundPhase::LoopInBody) => {}
+                _ => return InputState::Invalid,
+            }
+        } else if is_reserved_word(&tokens, index, "fi") {
+            match stack.pop() {
+                Some(CompoundPhase::IfInThen | CompoundPhase::IfInElse) => {}
+                _ => return InputState::Invalid,
             }
         }
     }
