@@ -48,6 +48,7 @@ External command availability also depends on ABI compatibility, dynamic linker 
 - A backslash-newline pair is treated as a line continuation.
 - An unquoted \`#\` at the beginning of a token starts a comment.
 - Empty quoted strings produce empty arguments.
+- The lexer recognizes additional POSIX operator tokens, including parentheses, `;;`, descriptor redirections, and here-document operators. Recognition is lexical only; operators without execution support are rejected by the parser rather than treated as ordinary arguments.
 
 These rules are partial and do not yet implement the complete POSIX token-recognition and expansion model.
 
@@ -69,7 +70,7 @@ Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-
 
 ## Limitations
 
-Mysh is not yet POSIX-conformant. Remaining work includes complete token recognition and grammar, POSIX expansion order, positional parameters, functions, \`case\`, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
+Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, positional parameters, functions, \`case\`, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
 
 ## Command Ownership and Migration Status
 
