@@ -205,8 +205,7 @@ impl Shell {
             }
 
             let start = index;
-            let end;
-            if branch[index].is_unquoted_literal("if") {
+            let end = if branch[index].is_unquoted_literal("if") {
                 let mut depth = 0usize;
                 let mut matching_fi = None;
                 for (offset, token) in branch.iter().enumerate().skip(index + 1) {
@@ -225,7 +224,7 @@ impl Shell {
                     self.last_status = 2;
                     return true;
                 };
-                end = fi_index + 1;
+                fi_index + 1
             } else {
                 let mut cursor = index;
                 while cursor < branch.len()
@@ -235,8 +234,8 @@ impl Shell {
                 {
                     cursor += 1;
                 }
-                end = cursor;
-            }
+                cursor
+            };
 
             let should_run = match next_operator {
                 None | Some(ListOperator::Sequence) => true,
