@@ -2,7 +2,7 @@
 use crate::builtins::{self, BuiltinOutcome};
 use crate::command::{resolve_command, resolve_script};
 use crate::lexer::{self, Word};
-use crate::parser::{is_reserved_word, split_command_list, CompoundCommand, CompoundListEntry, ListOperator, Pipeline, PipelineStage};
+use crate::parser::{is_reserved_word, split_command_list, CompoundListEntry, ListOperator, Pipeline, PipelineStage};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
