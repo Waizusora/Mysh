@@ -607,11 +607,7 @@ fn is_uutils_utility(name: &str) -> bool {
 
 /// POSIX special built-ins execute in the current shell environment.
 fn is_special_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        ":" | "." | "break" | "continue" | "eval" | "exec" | "exit" | "export"
-            | "readonly" | "return" | "set" | "shift" | "times" | "trap" | "unset"
-    )
+    matches!(name, ":" | "." | "break" | "continue" | "eval" | "exit" | "export" | "unset")
 }
 
 fn assignment(value: &str) -> Option<(&str, &str)> {
