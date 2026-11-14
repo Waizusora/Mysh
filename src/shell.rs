@@ -92,6 +92,9 @@ impl Shell {
             if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
+            if self.function_return.is_some() {
+                return true;
+            }
         }
         true
     }
@@ -319,7 +322,9 @@ impl Shell {
             if should_run && !self.execute_pipeline(&entry.pipeline, stdout, stderr) {
                 return false;
             }
-            if self.loop_control.is_some() { return true; }
+            if self.function_return.is_some() || self.loop_control.is_some() {
+                return true;
+            }
         }
         true
     }
@@ -1417,6 +1422,21 @@ mod tests {
             &mut errors,
         ));
         assert_eq!(String::from_utf8(output).unwrap(), "9\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn return_stops_commands_evaluated_by_eval() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        assert!(shell.execute_line(
+            "finish() { eval 'return 6; echo unreachable'; echo after; }; finish; echo $?",
+            &mut output,
+            &mut errors,
+        ));
+        assert_eq!(String::from_utf8(output).unwrap(), "6\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
