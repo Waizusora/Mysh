@@ -28,11 +28,11 @@ jobs:
       - name: Run tests with the C locale
         env:
           LC_ALL: C
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets -- --test-threads=1
       - name: Run tests with the UTF-8 locale
         env:
           LC_ALL: C.UTF-8
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets -- --test-threads=1
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Build MYPK for host
@@ -140,6 +140,6 @@ jobs:
       - name: Build Mysh for musl
         run: cargo build -p mysh --target x86_64-unknown-linux-musl --release
       - name: Run Mysh tests on musl
-        run: cargo test -p mysh --target x86_64-unknown-linux-musl --release
+        run: cargo test -p mysh --target x86_64-unknown-linux-musl --release -- --test-threads=1
       - name: Build MYPK for musl
         run: cargo build -p my-pkg-keeper --target x86_64-unknown-linux-musl --release
