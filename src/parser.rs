@@ -1537,7 +1537,7 @@ mod for_parser_tests {
 
 #[cfg(test)]
 mod brace_group_tests {
-    use super::{parse_compound_list, CompoundCommand, InputState, classify_input};
+    use super::{parse_compound_list, CompoundCommand};
     use crate::lexer;
 
     #[test]
