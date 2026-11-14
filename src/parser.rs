@@ -686,18 +686,19 @@ mod tests {
         let parsed = parse_loop_statement(&tokens).unwrap();
         assert_eq!(parsed.kind, LoopKind::While);
         assert_eq!(parsed.condition.len(), 1);
-        assert_eq!(parsed.body.len(), 2);
+        assert_eq!(parsed.body.len(), 1);
+        assert!(matches!(parsed.body[0].command, super::CompoundCommand::Simple(_)));
         let tokens = lexer::lex("until false; do echo body; done").unwrap();
         assert_eq!(parse_loop_statement(&tokens).unwrap().kind, LoopKind::Until);
     }
 
     #[test]
-    fn loop_parser_preserves_nested_loop_as_body_tokens() {
-        use super::parse_loop_statement;
+    fn loop_parser_builds_nested_loop_nodes_in_body() {
+        use super::{parse_loop_statement, CompoundCommand};
         let tokens = lexer::lex("while true; do until false; do echo nested; done; echo outer; done").unwrap();
         let parsed = parse_loop_statement(&tokens).unwrap();
-        assert!(parsed.body.iter().any(|word| word.is_unquoted_literal("until")));
-        assert!(parsed.body.iter().any(|word| word.is_unquoted_literal("done")));
+        assert!(matches!(parsed.body[0].command, CompoundCommand::Loop(_)));
+        assert!(matches!(parsed.body[1].command, CompoundCommand::Simple(_)));
     }
 
     #[test]
@@ -806,8 +807,10 @@ mod tests {
         let tokens = lexer::lex("if true; then echo one; elif false; then echo two; else echo three; fi").unwrap();
         let parsed = parse_if_statement(&tokens).unwrap();
         assert_eq!(parsed.clauses.len(), 2);
-        assert_eq!(parsed.clauses[0].condition[0].literal_value(), "true");
-        assert_eq!(parsed.clauses[1].condition[0].literal_value(), "false");
+        let super::CompoundCommand::Simple(first_condition) = &parsed.clauses[0].condition[0].command else { panic!("expected simple condition"); };
+        let super::CompoundCommand::Simple(second_condition) = &parsed.clauses[1].condition[0].command else { panic!("expected simple condition"); };
+        assert_eq!(first_condition[0].literal_value(), "true");
+        assert_eq!(second_condition[0].literal_value(), "false");
         assert!(parsed.else_body.is_some());
     }
 
@@ -817,7 +820,8 @@ mod tests {
         let tokens = lexer::lex("if true; then if false; then echo inner; else echo nested; fi; echo outer; fi").unwrap();
         let parsed = parse_if_statement(&tokens).unwrap();
         assert_eq!(parsed.clauses.len(), 1);
-        assert!(parsed.clauses[0].body.iter().any(|word| word.is_unquoted_literal("fi")));
+        assert!(matches!(parsed.clauses[0].body[0].command, super::CompoundCommand::If(_)));
+        assert!(matches!(parsed.clauses[0].body[1].command, super::CompoundCommand::Simple(_)));
         assert!(parsed.else_body.is_none());
     }
 
