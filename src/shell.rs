@@ -558,6 +558,7 @@ impl Shell {
             return true;
         }
         apply_assignment_parameter_expansions(tokens, &mut self.variables, self.last_status);
+        apply_arithmetic_assignments(tokens, &mut self.variables);
         let (mut command, redirections) = match self.parse_redirections_runtime(tokens, stderr) {
             Ok(value) => value,
             Err(message) => {
@@ -1795,7 +1796,84 @@ fn parse_arithmetic_integer(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
+fn arithmetic_assignment_parts(expression: &str) -> Option<(&str, &str, &str)> {
+    let chars: Vec<char> = expression.chars().collect();
+    let mut depth = 0usize;
+    let operators = ["<<=", ">>=", "+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "="];
+    let mut index = 0usize;
+    while index < chars.len() {
+        match chars[index] {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if depth == 0 {
+            let rest: String = chars[index..].iter().collect();
+            if let Some(operator) = operators.iter().find(|operator| rest.starts_with(**operator)) {
+                if *operator == "=" && (
+                    chars.get(index + 1) == Some(&'=')
+                    || index > 0 && matches!(chars[index - 1], '=' | '!' | '<' | '>')
+                ) {
+                    index += 1;
+                    continue;
+                }
+                let left: String = chars[..index].iter().collect();
+                let name = left.trim();
+                if valid_parameter_name(name) {
+                    let right_start = index + operator.chars().count();
+                    let right: String = chars[right_start..].iter().collect();
+                    return Some((name, *operator, Box::leak(right.into_boxed_str())));
+                }
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<String, String>) {
+    for token in tokens {
+        for part in token.parts() {
+            if !part.expandable { continue; }
+            let chars: Vec<char> = part.text.chars().collect();
+            let mut index = 0usize;
+            while index + 3 < chars.len() {
+                if chars[index] as u32 != 36 || chars.get(index + 1) != Some(&'(') || chars.get(index + 2) != Some(&'(') {
+                    index += 1;
+                    continue;
+                }
+                let Some(end) = matching_arithmetic_end(&chars, index) else { break; };
+                let expression: String = chars[index + 3..end - 1].iter().collect();
+                if let Some((name, operator, right)) = arithmetic_assignment_parts(&expression) {
+                    if let Some(rhs) = evaluate_arithmetic(right.trim(), environment) {
+                        let current = environment.get(name).and_then(|value| parse_arithmetic_integer(value)).unwrap_or(0);
+                        let assigned = match operator {
+                            "=" => Some(rhs),
+                            "+=" => current.checked_add(rhs),
+                            "-=" => current.checked_sub(rhs),
+                            "*=" => current.checked_mul(rhs),
+                            "/=" => current.checked_div(rhs),
+                            "%=" => current.checked_rem(rhs),
+                            "&=" => Some(current & rhs),
+                            "^=" => Some(current ^ rhs),
+                            "|=" => Some(current | rhs),
+                            "<<=" => current.checked_shl(rhs as u32),
+                            ">>=" => current.checked_shr(rhs as u32),
+                            _ => None,
+                        };
+                        if let Some(value) = assigned { environment.insert(name.to_owned(), value.to_string()); }
+                    }
+                }
+                index = end + 1;
+            }
+        }
+    }
+}
+
 fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>) -> Option<i64> {
+    if let Some((name, _, _)) = arithmetic_assignment_parts(expression) {
+        return environment.get(name).and_then(|value| parse_arithmetic_integer(value));
+    }
     let mut parser = ArithmeticParser::new(expression, environment);
     let value = parser.expression(1)?;
     parser.whitespace();
@@ -1928,6 +2006,15 @@ mod tests {
         assert_eq!(expand_variables("$0", &environment, 0), "mysh");
     }
 
+    #[test]
+    fn arithmetic_assignment_expansion_updates_shell_variables() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("MYSH_ARITH_VALUE=2; echo $((MYSH_ARITH_VALUE += 5)); echo $((MYSH_ARITH_VALUE = 3 * 4)); echo $MYSH_ARITH_VALUE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "7\n12\n12\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
     #[test]
     fn arithmetic_expansion_obeys_precedence_and_parentheses() {
         let environment = BTreeMap::from([
