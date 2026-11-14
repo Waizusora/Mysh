@@ -925,6 +925,25 @@ mod compound_boundary_tests {
     }
 
     #[test]
+    fn compound_boundary_matches_mixed_for_and_while_nesting() {
+        let cases = [
+            "for item in a; do while false; do echo inner; done; done; echo after",
+            "while false; do for item in a; do echo inner; done; done; echo after",
+            "for item in a; do until true; do echo inner; done; done; echo after",
+        ];
+        for input in cases {
+            let tokens = lexer::lex(input).unwrap();
+            let start = tokens.iter().position(|word| {
+                word.is_unquoted_literal("for") || word.is_unquoted_literal("while")
+            }).unwrap();
+            let end = compound_command_end(&tokens, start).unwrap();
+            assert!(tokens[end - 1].is_unquoted_literal("done"), "{input}");
+            assert!(tokens[end].is_unquoted_literal(";"), "{input}");
+            assert!(tokens[end + 1].is_unquoted_literal("echo"), "{input}");
+        }
+    }
+
+    #[test]
     fn compound_boundary_rejects_missing_closers_and_non_compounds() {
         for input in ["if true; then echo yes", "while true; do echo yes", "echo ordinary"] {
             let tokens = lexer::lex(input).unwrap();
