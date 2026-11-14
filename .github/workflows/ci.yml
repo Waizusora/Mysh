@@ -85,7 +85,7 @@ jobs:
               (
                   Path(".build/uutils-coreutils/src/uu/uptime/src/platform/unix.rs"),
                   "print_uptime(Some(upsecs))?;",
-                  "print_uptime(Some(upsecs as libc::time_t))?;",
+                  "print_uptime(Some(upsecs as uucore::libc::time_t))?;",
               ),
           ]
           for path, old, new in patches:
