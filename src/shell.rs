@@ -1751,11 +1751,6 @@ fn expand_parameter_word_mut(word: &str, environment: &mut BTreeMap<String, Stri
     if !expandable.is_empty() { result.push_str(&expand_variables(&expandable, environment, last_status)); }
     result
 }
-fn expand_braced_parameter(expression: &str, environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
-    let mut environment = environment.clone();
-    expand_braced_parameter_mut(expression, &mut environment, last_status)
-}
-
 fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> Option<String> {
     for (operator, colon, mode) in [
         (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
@@ -2068,100 +2063,11 @@ fn parse_arithmetic_integer(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
-fn contains_arithmetic_assignment(expression: &str) -> bool {
-    let chars: Vec<char> = expression.chars().collect();
-    chars.iter().enumerate().any(|(index, character)| {
-        if *character != '=' { return false; }
-        if chars.get(index + 1) == Some(&'=')
-            || index > 0 && matches!(chars[index - 1], '=' | '!' | '<' | '>')
-        {
-            return false;
-        }
-        true
-    }) || ["+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "<<=", ">>="]
-        .iter().any(|operator| expression.contains(operator))
-}
-
-fn arithmetic_assignment_parts(expression: &str) -> Option<(String, String, String)> {
-    let chars: Vec<char> = expression.chars().collect();
-    let mut depth = 0usize;
-    let operators = ["<<=", ">>=", "+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "="];
-    let mut index = 0usize;
-    while index < chars.len() {
-        match chars[index] {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-        if depth == 0 {
-            let rest: String = chars[index..].iter().collect();
-            if let Some(operator) = operators.iter().find(|operator| rest.starts_with(*operator)) {
-                if *operator == "=" && (
-                    chars.get(index + 1) == Some(&'=')
-                    || index > 0 && matches!(chars[index - 1], '=' | '!' | '<' | '>')
-                ) {
-                    index += 1;
-                    continue;
-                }
-                let left: String = chars[..index].iter().collect();
-                let name = left.trim();
-                if valid_parameter_name(name) {
-                    let right_start = index + operator.chars().count();
-                    let right: String = chars[right_start..].iter().collect();
-                    return Some((name.to_owned(), (*operator).to_owned(), right.trim().to_owned()));
-                }
-            }
-        }
-        index += 1;
-    }
-    None
-}
-
-fn apply_arithmetic_assignments(tokens: &[Word], environment: &mut BTreeMap<String, String>) {
-    for token in tokens {
-        for part in token.parts() {
-            if !part.expandable { continue; }
-            let chars: Vec<char> = part.text.chars().collect();
-            let mut index = 0usize;
-            while index + 3 < chars.len() {
-                if chars[index] as u32 != 36 || chars.get(index + 1) != Some(&'(') || chars.get(index + 2) != Some(&'(') {
-                    index += 1;
-                    continue;
-                }
-                let Some(end) = matching_arithmetic_end(&chars, index) else { break; };
-                let expression: String = chars[index + 3..end - 1].iter().collect();
-                if contains_arithmetic_assignment(&expression) {
-                    let _ = evaluate_arithmetic_mut(&expression, environment);
-                }
-                index = end + 1;
-            }
-        }
-    }
-}
-
 fn evaluate_arithmetic_mut(expression: &str, environment: &mut BTreeMap<String, String>) -> Option<i64> {
     let mut parser = ArithmeticParser::new(expression, environment);
     let value = parser.expression(0)?;
     parser.whitespace();
     (parser.index == parser.chars.len()).then_some(value)
-}
-
-fn evaluate_arithmetic(expression: &str, environment: &BTreeMap<String, String>) -> Option<i64> {
-    let mut depth = 0usize;
-    let mut last_sequence_part = expression;
-    for (index, character) in expression.char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => last_sequence_part = &expression[index + character.len_utf8()..],
-            _ => {}
-        }
-    }
-    if let Some((name, _, _)) = arithmetic_assignment_parts(last_sequence_part) {
-        return environment.get(&name).and_then(|value| parse_arithmetic_integer(value));
-    }
-    let mut environment = environment.clone();
-    evaluate_arithmetic_mut(expression, &mut environment)
 }
 
 fn valid_parameter_name(name: &str) -> bool {
