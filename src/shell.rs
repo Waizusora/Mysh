@@ -393,29 +393,37 @@ impl Shell {
             }
         }
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
-        let (executable, process_args) = match resolve_command(&command[0], &search_path) {
-            Ok(path) => (path, command[1..].to_vec()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound && is_uutils_utility(&command[0]) => {
-                match resolve_command("coreutils", &search_path) {
-                    Ok(multicall) => {
-                        let arguments = std::iter::once(command[0].clone())
-                            .chain(command[1..].iter().cloned())
-                            .collect();
-                        (multicall, arguments)
-                    }
-                    Err(_) => {
-                        let _ = writeln!(err, "mysh: {}: {error}", command[0]);
-                        return StageOutcome::Continue(127);
-                    }
+        let (executable, process_args) = if is_uutils_utility(&command[0]) {
+            match resolve_command("coreutils", &search_path) {
+                Ok(multicall) => {
+                    let arguments = std::iter::once(command[0].clone())
+                        .chain(command[1..].iter().cloned())
+                        .collect();
+                    (multicall, arguments)
                 }
+                Err(_) => match resolve_command(&command[0], &search_path) {
+                    Ok(path) => (path, command[1..].to_vec()),
+                    Err(error) => {
+                        let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                        return StageOutcome::Continue(if error.kind() == io::ErrorKind::NotFound {
+                            127
+                        } else {
+                            126
+                        });
+                    }
+                },
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let _ = writeln!(err, "mysh: {}: {error}", command[0]);
-                return StageOutcome::Continue(127);
-            }
-            Err(error) => {
-                let _ = writeln!(err, "mysh: {}: {error}", command[0]);
-                return StageOutcome::Continue(126);
+        } else {
+            match resolve_command(&command[0], &search_path) {
+                Ok(path) => (path, command[1..].to_vec()),
+                Err(error) => {
+                    let _ = writeln!(err, "mysh: {}: {error}", command[0]);
+                    return StageOutcome::Continue(if error.kind() == io::ErrorKind::NotFound {
+                        127
+                    } else {
+                        126
+                    });
+                }
             }
         };
         let mut process = Command::new(executable);
@@ -1365,8 +1373,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         let multicall = directory.join("coreutils");
-        std::fs::write(&multicall, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
+        std::fs::write(&multicall, "#!/bin/sh\nprintf 'uutils:%s\\n' \"$@\"\n").unwrap();
         std::fs::set_permissions(&multicall, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let standalone = directory.join("cat");
+        std::fs::write(&standalone, "#!/bin/sh\nprintf 'standalone\\n'\n").unwrap();
+        std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let mut shell = Shell::new();
         shell.variables.insert("PATH".to_owned(), directory.to_string_lossy().into_owned());
@@ -1375,7 +1386,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("cat alpha beta", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "cat\nalpha\nbeta\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "uutils:cat\nuutils:alpha\nuutils:beta\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
 
