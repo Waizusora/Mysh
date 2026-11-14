@@ -25,7 +25,13 @@ jobs:
         run: cargo fmt --all
       - name: Verify formatting
         run: cargo fmt --all -- --check
-      - name: Run tests
+      - name: Run tests with the C locale
+        env:
+          LC_ALL: C
+        run: cargo test --workspace --all-targets
+      - name: Run tests with the UTF-8 locale
+        env:
+          LC_ALL: C.UTF-8
         run: cargo test --workspace --all-targets
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
