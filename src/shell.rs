@@ -925,38 +925,63 @@ enum LoopControl { Break(usize), Continue(usize) }
 
 fn shell_pattern_matches(pattern: &str, value: &str) -> bool {
     fn bracket_matches(expression: &[char], candidate: char) -> Option<(bool, usize)> {
+        #[derive(Clone)]
+        enum Member { Character(char), Class(String) }
         if expression.first() != Some(&'[') { return None; }
-        let mut index = 1;
-        let negate = expression.get(index) == Some(&'!');
+        let mut index = 1usize;
+        let negate = expression.get(index).is_some_and(|character| *character == '!' || *character == '^');
         if negate { index += 1; }
         let mut members = Vec::new();
         if expression.get(index) == Some(&']') {
-            members.push(']');
+            members.push(Member::Character(']'));
             index += 1;
         }
         let mut close = None;
         while index < expression.len() {
-            if expression[index] == ']' {
-                close = Some(index);
-                break;
+            if expression[index] == ']' { close = Some(index); break; }
+            if expression[index] == '[' && expression.get(index + 1) == Some(&':') {
+                if let Some(offset) = expression[index + 2..].windows(2).position(|pair| pair == [':', ']']) {
+                    let name: String = expression[index + 2..index + 2 + offset].iter().collect();
+                    members.push(Member::Class(name));
+                    index += offset + 4;
+                    continue;
+                }
             }
-            members.push(expression[index]);
+            members.push(Member::Character(expression[index]));
             index += 1;
         }
         let close = close?;
+        let class_matches = |name: &str| match name {
+            "alnum" => candidate.is_ascii_alphanumeric(),
+            "alpha" => candidate.is_ascii_alphabetic(),
+            "blank" => candidate == ' ' || candidate == '\t',
+            "cntrl" => candidate.is_ascii_control(),
+            "digit" => candidate.is_ascii_digit(),
+            "graph" => candidate.is_ascii_graphic(),
+            "lower" => candidate.is_ascii_lowercase(),
+            "print" => candidate.is_ascii_graphic() || candidate == ' ',
+            "punct" => candidate.is_ascii_punctuation(),
+            "space" => candidate.is_ascii_whitespace(),
+            "upper" => candidate.is_ascii_uppercase(),
+            "xdigit" => candidate.is_ascii_hexdigit(),
+            "word" => candidate.is_ascii_alphanumeric() || candidate == '_',
+            _ => false,
+        };
         let mut matched = false;
-        let mut member = 0;
+        let mut member = 0usize;
         while member < members.len() {
-            if member + 2 < members.len() && members[member + 1] == '-' {
-                let first = members[member];
-                let last = members[member + 2];
-                if first <= last && (first..=last).contains(&candidate) {
-                    matched = true;
+            match &members[member] {
+                Member::Character(first)
+                    if member + 2 < members.len()
+                        && matches!(&members[member + 1], Member::Character('-'))
+                        && matches!(&members[member + 2], Member::Character(_)) =>
+                {
+                    let Member::Character(last) = &members[member + 2] else { unreachable!() };
+                    if first <= last && (*first..=*last).contains(&candidate) { matched = true; }
+                    member += 3;
                 }
-                member += 3;
-            } else {
-                matched |= members[member] == candidate;
-                member += 1;
+                Member::Character(character) => { matched |= *character == candidate; member += 1; }
+                Member::Class(name) => { matched |= class_matches(name); member += 1; }
             }
         }
         Some((if negate { !matched } else { matched }, close + 1))
@@ -1904,6 +1929,13 @@ mod tests {
         assert_eq!(expand_variables("$((VALUE * OTHER + 1))", &environment, 0), "22");
         assert_eq!(expand_variables("$((8 / 2 + 5 % 3))", &environment, 0), "6");
         assert_eq!(expand_variables("$((1 < 2 && 4 != 5))", &environment, 0), "1");
+    }
+    #[test]
+    fn pathname_patterns_support_posix_ascii_character_classes() {
+        assert!(shell_pattern_matches("[[:digit:]]", "7"));
+        assert!(!shell_pattern_matches("[[:digit:]]", "x"));
+        assert!(shell_pattern_matches("[[:alpha:]][[:digit:]]", "A4"));
+        assert!(shell_pattern_matches("[![:digit:]]", "x"));
     }
     #[test]
     fn variable_expansion_supports_braced_and_unbraced_names() {
