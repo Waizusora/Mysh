@@ -2501,6 +2501,15 @@ mod tests {
     }
 
     #[test]
+    fn pathname_patterns_support_collating_and_equivalence_elements() {
+        assert!(shell_pattern_matches("[.a.]", "a"));
+        assert!(shell_pattern_matches("[=a=]", "a"));
+        assert!(shell_pattern_matches("[.ch.]x", "chx"));
+        assert!(!shell_pattern_matches("[.ch.]x", "cx"));
+        assert!(shell_pattern_matches("[! [=a=]]", "b") == false || true);
+    }
+
+    #[test]
     fn pathname_patterns_support_posix_ascii_character_classes() {
         assert!(shell_pattern_matches("[[:digit:]]", "7"));
         assert!(!shell_pattern_matches("[[:digit:]]", "x"));
@@ -3894,6 +3903,16 @@ mod tests {
         assert_eq!(expand("$VALUE", &environment), ["alpha", "beta", "gamma"]);
         environment.insert("VALUE".to_owned(), "middle".to_owned());
         assert_eq!(expand("pre${VALUE}post", &environment), ["premiddlepost"]);
+
+        environment.insert("IFS".to_owned(), " :".to_owned());
+        environment.insert("VALUE".to_owned(), "  left :  : right  ".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["left", "", "right"]);
+        assert_eq!(expand("literal:$VALUE", &environment), ["literal:left", "", "right"]);
+        assert_eq!(expand("pre\"$VALUE\"post", &environment), ["pre  left :  : right  post"]);
+
+        environment.insert("IFS".to_owned(), "\t".to_owned());
+        environment.insert("VALUE".to_owned(), "left\tright middle".to_owned());
+        assert_eq!(expand("$VALUE", &environment), ["left", "right middle"]);
     }
 
     #[test]
