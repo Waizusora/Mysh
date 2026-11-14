@@ -1216,6 +1216,8 @@ fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTre
         }
     }
 }
+
+fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
     let mut index = 0;
