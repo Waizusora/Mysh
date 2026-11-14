@@ -2477,7 +2477,7 @@ mod tests {
 
         environment.remove("IFS");
         environment.insert("VALUE".to_owned(), "middle".to_owned());
-        assert_eq!(expand("pre\${VALUE}post", &environment), ["premiddlepost"]);
+        assert_eq!(expand("pre${VALUE}post", &environment), ["premiddlepost"]);
     }
 
     #[test]
