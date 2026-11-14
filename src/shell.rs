@@ -196,6 +196,9 @@ impl Shell {
                 crate::parser::CompoundCommand::Loop(statement) => {
                     self.execute_loop_statement(statement, stdout, stderr)
                 }
+                crate::parser::CompoundCommand::For(statement) => {
+                    self.execute_for_statement(statement, stdout, stderr)
+                }
             };
             if !keep_running {
                 return false;
