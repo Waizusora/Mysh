@@ -1014,7 +1014,7 @@ fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_
         return vec![String::new()];
     }
     let expanded = split_expansion_fields(fields, keep_empty, environment);
-    pathname_expand_fields(word, expanded, environment)
+    pathname_expand_fields(word, expanded)
 }
 
 fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &mut Vec<bool>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
@@ -1068,7 +1068,7 @@ fn append_unquoted_expansion(fields: &mut Vec<Vec<(char, bool)>>, keep_empty: &m
 }
 
 /// Apply pathname expansion after field splitting. Unmatched patterns remain literal.
-fn pathname_expand_fields(word: &Word, fields: Vec<String>, environment: &BTreeMap<String, String>) -> Vec<String> {
+fn pathname_expand_fields(word: &Word, fields: Vec<String>) -> Vec<String> {
     let has_unquoted_pattern = word.parts().iter().any(|part| !part.quoted && part.expandable);
     let quoted_pattern = word.parts().iter().any(|part| part.quoted && part.text.chars().any(|c| matches!(c, '*' | '?' | '[')));
     if !has_unquoted_pattern || quoted_pattern {
@@ -2565,6 +2565,30 @@ mod tests {
         assert_eq!(expand_word_fields(&word, &environment, 0), ["left", "right"]);
         let word = crate::lexer::lex("$*").unwrap().remove(0);
         assert_eq!(expand_word_fields(&word, &environment, 0), ["leftright"]);
+    }
+
+    #[test]
+    fn pathname_expansion_matches_wildcards_and_keeps_unmatched_patterns() {
+        let directory = std::env::temp_dir().join(format!("mysh-glob-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in ["alpha.txt", "alpine.txt", "beta.log", ".hidden.txt"] {
+            std::fs::write(directory.join(name), "").unwrap();
+        }
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&directory).unwrap();
+        let environment = BTreeMap::new();
+        let expand = |source: &str| {
+            let word = crate::lexer::lex(source).unwrap().remove(0);
+            expand_word_fields(&word, &environment, 0)
+        };
+        assert_eq!(expand("al*.txt"), ["alpha.txt", "alpine.txt"]);
+        assert_eq!(expand("a?pha.txt"), ["alpha.txt"]);
+        assert_eq!(expand("[ab]eta.log"), ["beta.log"]);
+        assert_eq!(expand("missing-*.txt"), ["missing-*.txt"]);
+        assert_eq!(expand(r#""*.txt""#), ["*.txt"]);
+        std::env::set_current_dir(original).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
 }
