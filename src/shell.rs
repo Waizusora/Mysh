@@ -1503,6 +1503,39 @@ mod tests {
     }
 
     #[test]
+    fn required_parameter_expansion_reports_unset_and_null_values() {
+        let environment = BTreeMap::from([
+            ("SET".to_owned(), "value".to_owned()),
+            ("EMPTY".to_owned(), String::new()),
+        ]);
+        let tokens = crate::lexer::lex("echo ${MISSING:?custom failure}").unwrap();
+        assert_eq!(
+            required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
+            Some("custom failure")
+        );
+        let tokens = crate::lexer::lex("echo ${EMPTY:?}").unwrap();
+        assert_eq!(
+            required_parameter_expansion_error(&tokens, &environment, 0).as_deref(),
+            Some("EMPTY: parameter null or not set")
+        );
+        let tokens = crate::lexer::lex("echo ${EMPTY?unset only}").unwrap();
+        assert_eq!(required_parameter_expansion_error(&tokens, &environment, 0), None);
+        let tokens = crate::lexer::lex("echo ${SET:?failure}").unwrap();
+        assert_eq!(required_parameter_expansion_error(&tokens, &environment, 0), None);
+    }
+
+    #[test]
+    fn required_parameter_expansion_fails_command_with_status_one() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo ${MYSH_REQUIRED_MISSING:?required value}", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(output.is_empty());
+        assert_eq!(String::from_utf8_lossy(&errors).trim(), "mysh: required value");
+    }
+
+    #[test]
     fn parameter_expansion_supports_default_and_alternate_operators() {
         let environment = BTreeMap::from([
             ("SET".to_owned(), "value".to_owned()),
