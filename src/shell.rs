@@ -749,7 +749,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("export MYSH_BRACE_VALUE=before; { export MYSH_BRACE_VALUE=after; }; echo $MYSH_BRACE_VALUE", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "after\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "after\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
     }
