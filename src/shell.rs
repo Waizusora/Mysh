@@ -2361,7 +2361,7 @@ mod tests {
         let mut errors = Vec::new();
         let command = "MYSH_NESTED_VALUE=2; echo ${MYSH_NESTED_OUTER:-$((MYSH_NESTED_VALUE++))} $MYSH_NESTED_VALUE";
         assert!(shell.execute_line(command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "2 3\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "2 3\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
