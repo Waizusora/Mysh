@@ -2181,6 +2181,16 @@ mod tests {
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
     #[test]
+    fn arithmetic_assignments_follow_word_expansion_order() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo $((MYSH_ORDER_VALUE = 1)) $((MYSH_ORDER_VALUE += 1)) $MYSH_ORDER_VALUE", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "1 2 2\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
     fn arithmetic_expansion_obeys_precedence_and_parentheses() {
         let environment = BTreeMap::from([
             ("VALUE".to_owned(), "7".to_owned()),
