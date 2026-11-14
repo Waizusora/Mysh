@@ -961,79 +961,117 @@ fn ifs_join_separator(environment: &BTreeMap<String, String>) -> String {
 }
 
 fn expand_word_fields(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> Vec<String> {
-    let mut fields = vec![String::new()];
+    let mut fields: Vec<Vec<(char, bool)>> = vec![Vec::new()];
+    let mut keep_empty = vec![false];
     let mut expanded_at = false;
     for part in word.parts() {
+        if part.quoted { *keep_empty.last_mut().unwrap() = true; }
         if part.expandable && part.quoted {
-            let characters: Vec<char> = part.text.chars().collect();
+            let chars: Vec<char> = part.text.chars().collect();
             let mut index = 0;
             let mut literal_start = 0;
-            while index < characters.len() {
-                let short_parameter = characters.get(index) == Some(&'$')
-                    && characters.get(index + 1).is_some_and(|character| matches!(character, '@' | '*'));
-                let braced_parameter = characters.get(index) == Some(&'$')
-                    && characters.get(index + 1) == Some(&'{')
-                    && characters.get(index + 2).is_some_and(|character| matches!(character, '@' | '*'))
-                    && characters.get(index + 3) == Some(&'}');
-                let parameter = if short_parameter {
-                    characters.get(index + 1).copied()
-                } else if braced_parameter {
-                    characters.get(index + 2).copied()
-                } else {
-                    None
-                };
-                let marker_len = if short_parameter { 2 } else if braced_parameter { 4 } else { 0 };
-                if marker_len == 0 {
-                    index += 1;
-                    continue;
-                }
-                if literal_start < index {
-                    let literal: String = characters[literal_start..index].iter().collect();
-                    fields.last_mut().expect("an expansion field exists").push_str(
-                        &expand_variables(&literal, environment, last_status),
-                    );
-                }
-                let parameters = positional_parameters(environment);
+            while index < chars.len() {
+                let short = chars.get(index) == Some(&'$') && chars.get(index + 1).is_some_and(|c| matches!(c, '@' | '*'));
+                let braced = chars.get(index) == Some(&'$') && chars.get(index + 1) == Some(&'{')
+                    && chars.get(index + 2).is_some_and(|c| matches!(c, '@' | '*')) && chars.get(index + 3) == Some(&'}');
+                let parameter = if short { chars.get(index + 1).copied() } else if braced { chars.get(index + 2).copied() } else { None };
+                let length = if short { 2 } else if braced { 4 } else { 0 };
+                if length == 0 { index += 1; continue; }
+                let literal: String = chars[literal_start..index].iter().collect();
+                let value = expand_variables(&literal, environment, last_status);
+                fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
+                let params = positional_parameters(environment);
                 if parameter == Some('@') {
                     expanded_at = true;
-                    if let Some(first) = parameters.first() {
-                        fields.last_mut().expect("an expansion field exists").push_str(first);
-                        fields.extend(parameters.into_iter().skip(1));
+                    if let Some(first) = params.first() {
+                        fields.last_mut().unwrap().extend(first.chars().map(|c| (c, false)));
+                        for value in params.into_iter().skip(1) {
+                            fields.push(value.chars().map(|c| (c, false)).collect());
+                            keep_empty.push(true);
+                        }
                     }
                 } else {
-                    let joined = parameters.join(&ifs_join_separator(environment));
-                    fields.last_mut().expect("an expansion field exists").push_str(&joined);
+                    let value = params.join(&ifs_join_separator(environment));
+                    fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
                 }
-                index += marker_len;
+                index += length;
                 literal_start = index;
             }
-            if literal_start < characters.len() {
-                let literal: String = characters[literal_start..].iter().collect();
-                fields.last_mut().expect("an expansion field exists").push_str(
-                    &expand_variables(&literal, environment, last_status),
-                );
-            }
+            let literal: String = chars[literal_start..].iter().collect();
+            let value = expand_variables(&literal, environment, last_status);
+            fields.last_mut().unwrap().extend(value.chars().map(|c| (c, false)));
+        } else if part.expandable {
+            append_unquoted_expansion(fields.last_mut().unwrap(), &part.text, environment, last_status);
         } else {
-            let value = if part.expandable {
-                expand_variables(&part.text, environment, last_status)
-            } else {
-                part.text.clone()
-            };
-            fields.last_mut().expect("an expansion field exists").push_str(&value);
+            fields.last_mut().unwrap().extend(part.text.chars().map(|c| (c, false)));
         }
     }
-    if expanded_at
-        && positional_count(environment) == 0
-        && word.parts().len() == 1
-        && word.parts()[0].quoted
-        && (word.parts()[0].text == "$@" || word.parts()[0].text == "${@}")
-    {
+    if expanded_at && positional_count(environment) == 0 && word.parts().len() == 1
+        && word.parts()[0].quoted && (word.parts()[0].text == "$@" || word.parts()[0].text == ("$".to_owned() + "{@}")) {
         return Vec::new();
     }
-    if word.parts().is_empty() && word.is_quoted() {
-        return vec![String::new()];
+    split_expansion_fields(fields, keep_empty, environment)
+}
+
+fn append_unquoted_expansion(output: &mut Vec<(char, bool)>, source: &str, environment: &BTreeMap<String, String>, last_status: i32) {
+    let chars: Vec<char> = source.chars().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '$' { output.push((chars[index], false)); index += 1; continue; }
+        let end = if matches!(chars.get(index + 1), Some('?' | '#' | '@' | '*')) || chars.get(index + 1).is_some_and(|c| c.is_ascii_digit()) {
+            index + 2
+        } else if chars.get(index + 1) == Some(&'{') {
+            chars[index + 2..].iter().position(|c| *c == '}').map(|offset| index + 3 + offset).unwrap_or(index + 1)
+        } else if chars.get(index + 1).is_some_and(|c| c.is_ascii_alphabetic() || *c == '_') {
+            let mut end = index + 2;
+            while chars.get(end).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') { end += 1; }
+            end
+        } else { output.push(('$', false)); index += 1; continue; };
+        let expression: String = chars[index..end].iter().collect();
+        let value = expand_variables(&expression, environment, last_status);
+        output.extend(value.chars().map(|c| (c, true)));
+        index = end;
     }
-    fields
+}
+
+fn split_expansion_fields(fields: Vec<Vec<(char, bool)>>, keep: Vec<bool>, environment: &BTreeMap<String, String>) -> Vec<String> {
+    let ifs = environment.get("IFS").map(String::as_str).unwrap_or(" \t\n");
+    if ifs.is_empty() {
+        return fields.into_iter().zip(keep).filter_map(|(field, preserve)| {
+            let value: String = field.into_iter().map(|(c, _)| c).collect();
+            (!value.is_empty() || preserve).then_some(value)
+        }).collect();
+    }
+    let delimiters: std::collections::BTreeSet<char> = ifs.chars().collect();
+    let white: std::collections::BTreeSet<char> = ifs.chars().filter(|c| matches!(c, ' ' | '\t' | '\n')).collect();
+    let mut result = Vec::new();
+    for (field, preserve) in fields.into_iter().zip(keep) {
+        let mut current = String::new();
+        let mut preserve_current = preserve;
+        let mut index = 0;
+        let mut delimiter_seen = false;
+        while index < field.len() {
+            let (c, eligible) = field[index];
+            if !eligible || !delimiters.contains(&c) { current.push(c); index += 1; continue; }
+            delimiter_seen = true;
+            if white.contains(&c) {
+                while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
+                if index < field.len() && field[index].1 && delimiters.contains(&field[index].0) && !white.contains(&field[index].0) {
+                    index += 1;
+                    while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
+                }
+                if !current.is_empty() || preserve_current { result.push(std::mem::take(&mut current)); }
+                preserve_current = false;
+            } else {
+                result.push(std::mem::take(&mut current));
+                preserve_current = false;
+                index += 1;
+                while index < field.len() && field[index].1 && white.contains(&field[index].0) { index += 1; }
+            }
+        }
+        if !current.is_empty() || preserve_current || !delimiter_seen { result.push(current); }
+    }
+    result
 }
 
 fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
