@@ -96,15 +96,14 @@ jobs:
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Smoke-test Mysh against Android Bionic
-        if: matrix.abi == 'x86_64'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          arch: x86_64
+          arch: ${{ matrix.abi == 'arm64-v8a' && 'arm64-v8a' || 'x86_64' }}
           profile: pixel_2
           disable-animations: true
           script: |
-            adb push target/x86_64-linux-android/release/mysh /data/local/tmp/mysh
+            adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
             adb shell chmod 755 /data/local/tmp/mysh
             adb shell mkdir -p /data/local/tmp/mysh-glob
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
@@ -176,6 +175,12 @@ jobs:
           else
             cargo build -p mysh --target "${{ matrix.rust_target }}" --release
           fi
+      - name: Register ARM64 binfmt handler for nested test processes
+        if: matrix.arch == 'aarch64'
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          test -r /proc/sys/fs/binfmt_misc/qemu-aarch64
+          grep -q enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
       - name: Run Mysh tests on musl
         run: |
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
