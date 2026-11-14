@@ -176,6 +176,137 @@ pub fn parse_loop_statement(tokens: &[Word]) -> Result<LoopStatement, &'static s
     })
 }
 
+/// One condition/body pair in an if compound command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfClause {
+    pub condition: Vec<Word>,
+    pub body: Vec<Word>,
+}
+
+/// Parsed if/elif/else compound command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfStatement {
+    pub clauses: Vec<IfClause>,
+    pub else_body: Option<Vec<Word>>,
+}
+
+/// Parse a complete if compound command while respecting nested if/fi pairs.
+pub fn parse_if_statement(tokens: &[Word]) -> Result<IfStatement, &'static str> {
+    let tokens = if tokens.last().is_some_and(|word| word.is_unquoted_literal(";")) {
+        &tokens[..tokens.len() - 1]
+    } else {
+        tokens
+    };
+    if !tokens.first().is_some_and(|word| word.is_unquoted_literal("if")) {
+        return Err("expected if");
+    }
+
+    let mut nested = 0usize;
+    let mut fi_index = None;
+    for index in 1..tokens.len() {
+        if is_reserved_word(tokens, index, "if") {
+            nested += 1;
+        } else if is_reserved_word(tokens, index, "fi") {
+            if nested == 0 {
+                fi_index = Some(index);
+                break;
+            }
+            nested -= 1;
+        }
+    }
+    let Some(fi_index) = fi_index else {
+        return Err("if requires a closing fi");
+    };
+    if fi_index + 1 != tokens.len() {
+        return Err("unexpected tokens after fi");
+    }
+
+    let mut clauses = Vec::new();
+    let mut cursor = 1usize;
+    let mut else_body = None;
+    loop {
+        let mut depth = 0usize;
+        let mut then_index = None;
+        for index in cursor..fi_index {
+            if is_reserved_word(tokens, index, "if") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "fi") {
+                depth = depth.saturating_sub(1);
+            } else if depth == 0 && is_reserved_word(tokens, index, "then") {
+                then_index = Some(index);
+                break;
+            }
+        }
+        let Some(then_index) = then_index else {
+            return Err("if clause requires then");
+        };
+        let mut condition_end = then_index;
+        if condition_end > cursor && tokens[condition_end - 1].is_unquoted_literal(";") {
+            condition_end -= 1;
+        }
+        if condition_end == cursor {
+            return Err("if condition cannot be empty");
+        }
+
+        let body_start = then_index + 1;
+        depth = 0;
+        let mut delimiter = fi_index;
+        for index in body_start..fi_index {
+            if is_reserved_word(tokens, index, "if") {
+                depth += 1;
+            } else if is_reserved_word(tokens, index, "fi") {
+                depth = depth.saturating_sub(1);
+            } else if depth == 0
+                && (is_reserved_word(tokens, index, "elif") || is_reserved_word(tokens, index, "else"))
+            {
+                delimiter = index;
+                break;
+            }
+        }
+        if body_start == delimiter {
+            return Err("if branch cannot be empty");
+        }
+        clauses.push(IfClause {
+            condition: tokens[cursor..condition_end].to_vec(),
+            body: tokens[body_start..delimiter].to_vec(),
+        });
+
+        if delimiter == fi_index {
+            break;
+        }
+        if is_reserved_word(tokens, delimiter, "elif") {
+            cursor = delimiter + 1;
+            if cursor >= fi_index {
+                return Err("elif clause cannot be empty");
+            }
+        } else {
+            let start = delimiter + 1;
+            if start >= fi_index {
+                return Err("else branch cannot be empty");
+            }
+            depth = 0;
+            for index in start..fi_index {
+                if is_reserved_word(tokens, index, "if") {
+                    depth += 1;
+                } else if is_reserved_word(tokens, index, "fi") {
+                    depth = depth.saturating_sub(1);
+                } else if depth == 0
+                    && (is_reserved_word(tokens, index, "elif") || is_reserved_word(tokens, index, "else"))
+                {
+                    return Err("elif or else cannot follow else");
+                }
+            }
+            else_body = Some(tokens[start..fi_index].to_vec());
+            break;
+        }
+    }
+
+    if clauses.is_empty() {
+        return Err("incomplete if statement");
+    }
+    Ok(IfStatement { clauses, else_body })
+}
+
 /// State of a physical input buffer before command execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputState {
