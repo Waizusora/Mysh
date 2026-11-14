@@ -138,6 +138,7 @@ impl Shell {
     }
 
     fn execute_for_statement(&mut self, statement: &crate::parser::ForStatement, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        apply_arithmetic_assignments(&statement.words, &mut self.variables);
         let values: Vec<String> = if statement.words.is_empty() {
             positional_parameters(&self.variables)
         } else {
@@ -191,9 +192,11 @@ impl Shell {
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> bool {
+        apply_arithmetic_assignments(std::slice::from_ref(&statement.word), &mut self.variables);
         let value = self.expand_word_scalar_runtime(&statement.word, stderr);
         for arm in &statement.arms {
             let matched = arm.patterns.iter().any(|pattern| {
+                apply_arithmetic_assignments(std::slice::from_ref(pattern), &mut self.variables);
                 let pattern = self.expand_word_scalar_runtime(pattern, stderr);
                 shell_pattern_matches(&pattern, &value)
             });
