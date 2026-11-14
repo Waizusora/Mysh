@@ -323,13 +323,17 @@ impl Shell {
     fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         let stages = &pipeline.stages;
         if stages.len() == 1 {
-            return match &stages[0] {
+            let keep_running = match &stages[0] {
                 PipelineStage::Simple(words) => self.execute_stage(words, stdout, stderr),
                 PipelineStage::Compound(command) => {
                     let entries = vec![CompoundListEntry { command: command.clone(), connector: None, asynchronous: false }];
                     self.execute_compound_list(&entries, stdout, stderr)
                 }
             };
+            if pipeline.negated {
+                self.last_status = if self.last_status == 0 { 1 } else { 0 };
+            }
+            return keep_running;
         }
 
         let mut input: Option<Vec<u8>> = None;
@@ -416,7 +420,11 @@ impl Shell {
                 input = Some(stage_output);
             }
         }
-        self.last_status = final_status;
+        self.last_status = if pipeline.negated {
+            if final_status == 0 { 1 } else { 0 }
+        } else {
+            final_status
+        };
         true
     }
 
@@ -2438,6 +2446,17 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), "pipeline\n");
         assert!(errors.is_empty());
         assert_eq!(shell.last_status(), 0);
+    }
+
+    #[test]
+    fn pipeline_negation_inverts_the_pipeline_status() {
+        let mut shell = Shell::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("! false", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 0);
+        assert!(shell.execute_line("! true", &mut Vec::new(), &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
     #[test]
