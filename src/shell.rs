@@ -1460,7 +1460,7 @@ mod tests {
         let environment = BTreeMap::from([("VALUE".to_owned(), "abcabc".to_owned())]);
         assert_eq!(expand_variables("${VALUE#a*c}", &environment, 0), "abc");
         assert_eq!(expand_variables("${VALUE##a*c}", &environment, 0), "");
-        assert_eq!(expand_variables("${VALUE%c*}", &environment, 0), "abc");
+        assert_eq!(expand_variables("${VALUE%c*}", &environment, 0), "abcab");
         assert_eq!(expand_variables("${VALUE%%c*}", &environment, 0), "ab");
     }
 
