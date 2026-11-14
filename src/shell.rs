@@ -452,6 +452,77 @@ impl Shell {
         String::from_utf8_lossy(&output).into_owned()
     }
 
+    fn required_parameter_expansion_error(&self, tokens: &[Word], stderr: &mut dyn Write) -> Option<String> {
+        fn scan(
+            shell: &Shell,
+            source: &str,
+            environment: &mut BTreeMap<String, String>,
+            last_status: i32,
+            next_id: &mut usize,
+            stderr: &mut dyn Write,
+        ) -> Option<String> {
+            let chars: Vec<char> = source.chars().collect();
+            let mut index = 0usize;
+            while index + 2 < chars.len() {
+                if chars[index] != '$' || chars[index + 1] != '{' {
+                    index += 1;
+                    continue;
+                }
+                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
+                let expression: String = chars[index + 2..end].iter().collect();
+                let operator = if let Some(position) = expression.find(":?") {
+                    Some((position, 2usize, true))
+                } else {
+                    expression.find('?').map(|position| (position, 1usize, false))
+                };
+                if let Some((position, operator_len, colon)) = operator {
+                    let name = &expression[..position];
+                    if valid_parameter_reference(name) {
+                        let is_set = parameter_is_set(name, environment);
+                        let value = parameter_value(name, environment, last_status);
+                        if !is_set || (colon && value.is_empty()) {
+                            let supplied = &expression[position + operator_len..];
+                            let message = if supplied.is_empty() {
+                                format!("parameter {} or not set", if colon { "null" } else { "unset" })
+                            } else {
+                                let expanded = shell.substitute_command_text(
+                                    supplied, environment, next_id, stderr,
+                                );
+                                expand_parameter_word_mut(&expanded, environment, last_status)
+                            };
+                            return Some(format!("{name}: {message}"));
+                        }
+                    }
+                }
+                if let Some((word_start, word_end)) = parameter_expansion_word_range(&expression, environment) {
+                    if let Some(message) = scan(
+                        shell, &expression[word_start..word_end], environment,
+                        last_status, next_id, stderr,
+                    ) {
+                        return Some(message);
+                    }
+                }
+                index = end + 1;
+            }
+            None
+        }
+
+        let mut environment = self.variables.clone();
+        let mut next_id = 0usize;
+        for token in tokens {
+            for part in token.parts() {
+                if part.expandable {
+                    if let Some(message) = scan(
+                        self, &part.text, &mut environment, self.last_status, &mut next_id, stderr,
+                    ) {
+                        return Some(message);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn substitute_command_words(&self, word: &Word, stderr: &mut dyn Write) -> (Word, BTreeMap<String, String>) {
         let mut environment = self.variables.clone();
         let mut next_id = 0usize;
@@ -613,7 +684,7 @@ impl Shell {
     }
 
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
-        if let Some(message) = required_parameter_expansion_error(tokens, &self.variables, self.last_status) {
+        if let Some(message) = self.required_parameter_expansion_error(tokens, stderr) {
             let _ = writeln!(stderr, "mysh: {message}");
             self.last_status = 1;
             return true;
@@ -1648,44 +1719,6 @@ fn split_expansion_fields(fields: Vec<Vec<(char, bool, bool)>>, keep: Vec<bool>,
 }
 
 /// Detect required-parameter expansion failures before ordinary word expansion.
-fn required_parameter_expansion_error(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Option<String> {
-    for token in tokens {
-        for part in token.parts() {
-            if !part.expandable { continue; }
-            let chars: Vec<char> = part.text.chars().collect();
-            let mut index = 0;
-            while index + 2 < chars.len() {
-                if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
-                let expression: String = chars[index + 2..end].iter().collect();
-                let operator = if let Some(position) = expression.find(":?") {
-                    Some((position, 2, true))
-                } else {
-                    expression.find('?').map(|position| (position, 1, false))
-                };
-                if let Some((position, operator_len, colon)) = operator {
-                    let name = &expression[..position];
-                    if valid_parameter_reference(name) {
-                        let is_set = parameter_is_set(name, environment);
-                        let value = parameter_value(name, environment, last_status);
-                        if !is_set || (colon && value.is_empty()) {
-                            let supplied = &expression[position + operator_len..];
-                            let message = if supplied.is_empty() {
-                                format!("parameter {} or not set", if colon { "null" } else { "unset" })
-                            } else {
-                                expand_parameter_word(supplied, environment, last_status)
-                            };
-                            return Some(format!("{name}: {message}"));
-                        }
-                    }
-                }
-                index = end + 1;
-            }
-        }
-    }
-    None
-}
-
 /// Apply assignment-form parameter expansions before the regular word-expansion pass.
 fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTreeMap<String, String>, last_status: i32) {
     for token in tokens {
@@ -2516,6 +2549,20 @@ mod tests {
         assert!(shell.execute_line(command, &mut output, &mut errors));
         assert_eq!(String::from_utf8(output).unwrap(), "2 2 3\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[test]
+    fn required_parameter_words_expand_lazily_and_evaluate_diagnostics() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(r"SET=kept; echo ${SET:-${MISSING:?must-not-run}}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output.clone()).unwrap(), "kept\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        assert!(shell.execute_line(r"echo ${MISSING:?$(printf required)}", &mut output, &mut errors));
+        assert_eq!(String::from_utf8(output).unwrap(), "kept\n");
+        assert!(String::from_utf8(errors).unwrap().contains("MISSING: required"));
     }
 
     #[test]
