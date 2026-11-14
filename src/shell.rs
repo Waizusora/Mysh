@@ -2186,7 +2186,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line("echo $((MYSH_ORDER_VALUE = 1)) $((MYSH_ORDER_VALUE += 1)) $MYSH_ORDER_VALUE", &mut output, &mut errors));
-        assert_eq!(String::from_utf8(output).unwrap(), "1 2 2\\n");
+        assert_eq!(String::from_utf8(output).unwrap(), "1 2 2\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
 
