@@ -294,13 +294,13 @@ mod command_structure_tests {
     fn quoted_pipe_remains_a_word() {
         let stages = split_pipeline(lexer::lex("echo '|'").unwrap()).unwrap();
         assert_eq!(stages.stages.len(), 1);
-        assert_eq!(stages.stages[0].len(), 2);
+        assert!(matches!(&stages.stages[0], super::PipelineStage::Simple(words) if words.len() == 2));
     }
 
     #[test]
     fn quoted_redirection_looking_words_remain_arguments() {
         let stages = split_pipeline(lexer::lex("echo '10>>' '3<&'").unwrap()).unwrap();
-        assert_eq!(stages.stages[0].len(), 3);
+        assert!(matches!(&stages.stages[0], super::PipelineStage::Simple(words) if words.len() == 3));
     }
 }
 
