@@ -360,8 +360,9 @@ impl Shell {
 
     fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
-        if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.variables, &mut self.exported, input, out, err) {
-            return match outcome {
+        if is_shell_builtin(&command[0]) {
+            if let Some(outcome) = builtins::run(&command[0], &command[1..], &self.history, &mut self.variables, &mut self.exported, input, out, err) {
+                return match outcome {
                 BuiltinOutcome::Continue(status) => StageOutcome::Continue(status),
                 BuiltinOutcome::Exit(status) => StageOutcome::Exit(status),
                 BuiltinOutcome::Break(level) => {
@@ -388,7 +389,8 @@ impl Shell {
                         StageOutcome::Continue(0)
                     }
                 }
-            };
+                };
+            }
         }
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
         let executable = match resolve_command(&command[0], &search_path) {
@@ -508,9 +510,21 @@ fn configure_prefix_path(variables: &mut BTreeMap<String, String>, exported: &mu
     }
 }
 
+/// Return true only for commands currently implemented as POSIX shell built-ins.
+///
+/// Utilities such as ls, cat, cp, mv, rm, mkdir, rmdir, touch, and echo are
+/// deliberately dispatched as external commands so uutils can provide them.
+fn is_shell_builtin(name: &str) -> bool {
+    matches!(name, "cd" | "export" | "unset" | "pwd" | "exit" | "break" | "continue")
+}
+
 /// POSIX special built-ins execute in the current shell environment.
 fn is_special_builtin(name: &str) -> bool {
-    matches!(name, "export" | "unset" | "exit")
+    matches!(
+        name,
+        ":" | "." | "break" | "continue" | "eval" | "exec" | "exit" | "export"
+            | "readonly" | "return" | "set" | "shift" | "times" | "trap" | "unset"
+    )
 }
 
 fn assignment(value: &str) -> Option<(&str, &str)> {
