@@ -58,7 +58,7 @@ The command-list parser supports sequential commands separated by \`;\`, plus le
 
 The current implementation supports sequential, buffered pipelines. Pipeline output is collected between stages rather than streamed through concurrently connected operating-system pipes. External utilities such as \`cat\` receive pipeline input through standard input.
 
-Basic redirection operators \`<\`, \`>\`, \`>>\`, and \`2>\` are recognized. Redirection behavior inside multi-stage pipelines is not yet complete. POSIX here-documents are not implemented.
+Basic redirection operators \`<\`, \`>\`, \`>>\`, and \`2>\` are recognized. Other descriptor forms, descriptor duplication/closure, \`>|\`, \`<>\`, and here-document operators are not implemented and are rejected during parsing. Redirection behavior inside multi-stage pipelines is not yet complete.
 
 ## Variables and environment
 
