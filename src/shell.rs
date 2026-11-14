@@ -428,6 +428,108 @@ impl Shell {
         true
     }
 
+    fn run_command_substitution(&self, command: &str, stderr: &mut dyn Write) -> String {
+        let mut child = Shell {
+            history: self.history.clone(),
+            last_status: self.last_status,
+            variables: self.variables.clone(),
+            exported: self.exported.clone(),
+            functions: self.functions.clone(),
+            function_depth: 0,
+            function_return: None,
+            loop_depth: 0,
+            loop_control: None,
+        };
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let _ = child.execute_line(command, &mut output, &mut errors);
+        if !errors.is_empty() { let _ = stderr.write_all(&errors); }
+        while output.last() == Some(&b'\n') { output.pop(); }
+        String::from_utf8_lossy(&output).into_owned()
+    }
+
+    fn substitute_command_words(&self, word: &Word, stderr: &mut dyn Write) -> (Word, BTreeMap<String, String>) {
+        let mut environment = self.variables.clone();
+        let mut next_id = 0usize;
+        let mut parts = Vec::with_capacity(word.parts().len());
+        for part in word.parts() {
+            if !part.expandable {
+                parts.push(part.clone());
+                continue;
+            }
+            let chars: Vec<char> = part.text.chars().collect();
+            let mut rewritten = String::new();
+            let mut index = 0usize;
+            while index < chars.len() {
+                if chars[index] as u32 == 36 && chars.get(index + 1) == Some(&'(')
+                    && chars.get(index + 2) != Some(&'(')
+                {
+                    if let Some(end) = matching_command_substitution_end(&chars, index + 1) {
+                        let command: String = chars[index + 2..end].iter().collect();
+                        let value = self.run_command_substitution(&command, stderr);
+                        let name = format!("__MYSH_COMMAND_SUBSTITUTION_{next_id}");
+                        next_id += 1;
+                        environment.insert(name.clone(), value);
+                        rewritten.push(char::from(36));
+                        rewritten.push_str(&name);
+                        index = end + 1;
+                        continue;
+                    }
+                }
+                rewritten.push(chars[index]);
+                index += 1;
+            }
+            parts.push(crate::lexer::WordPart {
+                text: rewritten,
+                expandable: part.expandable,
+                quoted: part.quoted,
+            });
+        }
+        (Word::from_parts(parts, word.is_quoted()), environment)
+    }
+
+    fn expand_word_fields_runtime(&self, word: &Word, stderr: &mut dyn Write) -> Vec<String> {
+        let (substituted, environment) = self.substitute_command_words(word, stderr);
+        expand_word_fields(&substituted, &environment, self.last_status)
+    }
+
+    fn expand_word_scalar_runtime(&self, word: &Word, stderr: &mut dyn Write) -> String {
+        let (substituted, environment) = self.substitute_command_words(word, stderr);
+        expand_word(&substituted, &environment, self.last_status)
+    }
+
+    fn parse_redirections_runtime(
+        &self,
+        tokens: &[Word],
+        stderr: &mut dyn Write,
+    ) -> Result<(Vec<String>, Redirections), &'static str> {
+        let mut command = Vec::new();
+        let mut redirects = Redirections::default();
+        let mut index = 0usize;
+        while index < tokens.len() {
+            let token = &tokens[index];
+            let operator = ["<", ">", ">>", "2>"]
+                .into_iter()
+                .find(|operator| token.is_unquoted_literal(operator));
+            if let Some(operator) = operator {
+                let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
+                let target = self.expand_word_scalar_runtime(target, stderr);
+                match operator {
+                    "<" => redirects.input = Some(target),
+                    ">" => { redirects.output = Some(target); redirects.append = false; }
+                    ">>" => { redirects.output = Some(target); redirects.append = true; }
+                    "2>" => redirects.error = Some(target),
+                    _ => unreachable!(),
+                }
+                index += 2;
+            } else {
+                command.extend(self.expand_word_fields_runtime(token, stderr));
+                index += 1;
+            }
+        }
+        Ok((command, redirects))
+    }
+
     fn execute_stage(&mut self, tokens: &[Word], stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         if let Some(message) = required_parameter_expansion_error(tokens, &self.variables, self.last_status) {
             let _ = writeln!(stderr, "mysh: {message}");
@@ -435,7 +537,7 @@ impl Shell {
             return true;
         }
         apply_assignment_parameter_expansions(tokens, &mut self.variables, self.last_status);
-        let (mut command, redirections) = match parse_redirections(tokens, &self.variables, self.last_status) {
+        let (mut command, redirections) = match self.parse_redirections_runtime(tokens, stderr) {
             Ok(value) => value,
             Err(message) => {
                 let _ = writeln!(stderr, "mysh: syntax error: {message}");
@@ -1305,6 +1407,36 @@ fn matching_brace_end(chars: &[char], opening: usize) -> Option<usize> {
             '\'' | '"' => quote = Some(character),
             value if value as u32 == 36 && chars.get(index + 1) == Some(&'{') => { depth += 1; index += 1; }
             '}' => { depth -= 1; if depth == 0 { return Some(index); } }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+fn matching_command_substitution_end(chars: &[char], opening: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut index = opening + 1;
+    let mut quote = None;
+    let mut escaped = false;
+    while index < chars.len() {
+        let character = chars[index];
+        if escaped { escaped = false; index += 1; continue; }
+        if quote == Some('"') && character == '\\' { escaped = true; index += 1; continue; }
+        if let Some(active) = quote {
+            if character == active { quote = None; }
+            else if active == '"' && character as u32 == 36 && chars.get(index + 1) == Some(&'(') {
+                depth += 1;
+                index += 1;
+            }
+            index += 1;
+            continue;
+        }
+        match character {
+            '\'' | '"' => quote = Some(character),
+            '\\' => escaped = true,
+            '(' => depth += 1,
+            ')' => { depth -= 1; if depth == 0 { return Some(index); } }
             _ => {}
         }
         index += 1;
