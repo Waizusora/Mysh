@@ -1767,20 +1767,94 @@ fn matching_brace_end(chars: &[char], opening: usize) -> Option<usize> {
     let mut escaped = false;
     while index < chars.len() {
         let character = chars[index];
-        if escaped { escaped = false; index += 1; continue; }
-        if quote == Some('"') && character == '\\' { escaped = true; index += 1; continue; }
-        if let Some(active) = quote { if character == active { quote = None; } index += 1; continue; }
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if quote.is_none() && character == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if quote == Some('"') && character == '\\' {
+            if chars.get(index + 1).is_some_and(|next| matches!(next, '$' | '`' | '"' | '\\' | '\n')) {
+                escaped = true;
+            }
+            index += 1;
+            continue;
+        }
+        if quote == Some('\'') {
+            if character == '\'' { quote = None; }
+            index += 1;
+            continue;
+        }
+        if quote == Some('"') {
+            if character == '"' {
+                quote = None;
+                index += 1;
+                continue;
+            }
+            if character == '$' {
+                if chars.get(index + 1) == Some(&'{') {
+                    depth += 1;
+                    index += 2;
+                    continue;
+                }
+                if chars.get(index + 1) == Some(&'(') {
+                    if chars.get(index + 2) == Some(&'(') {
+                        if let Some(end) = matching_arithmetic_end(chars, index) {
+                            index = end + 1;
+                            continue;
+                        }
+                    } else if let Some(end) = matching_command_substitution_end(chars, index + 1) {
+                        index = end + 1;
+                        continue;
+                    }
+                }
+            }
+            if character == '`' {
+                if let Some(end) = matching_backquote_end(chars, index) {
+                    index = end + 1;
+                    continue;
+                }
+            }
+            index += 1;
+            continue;
+        }
         match character {
             '\'' | '"' => quote = Some(character),
-            value if value as u32 == 36 && chars.get(index + 1) == Some(&'{') => { depth += 1; index += 1; }
-            '}' => { depth -= 1; if depth == 0 { return Some(index); } }
+            '$' if chars.get(index + 1) == Some(&'{') => {
+                depth += 1;
+                index += 1;
+            }
+            '$' if chars.get(index + 1) == Some(&'(') => {
+                if chars.get(index + 2) == Some(&'(') {
+                    if let Some(end) = matching_arithmetic_end(chars, index) {
+                        index = end + 1;
+                        continue;
+                    }
+                } else if let Some(end) = matching_command_substitution_end(chars, index + 1) {
+                    index = end + 1;
+                    continue;
+                }
+            }
+            '`' => {
+                if let Some(end) = matching_backquote_end(chars, index) {
+                    index = end + 1;
+                    continue;
+                }
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 { return Some(index); }
+            }
             _ => {}
         }
         index += 1;
     }
     None
 }
-
 fn matching_command_substitution_end(chars: &[char], opening: usize) -> Option<usize> {
     let mut depth = 1usize;
     let mut index = opening + 1;
