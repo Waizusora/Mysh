@@ -82,6 +82,18 @@ Exit criteria:
 - Tests cover quoted and unquoted contexts, empty values, unset values, IFS behavior, special parameters, and expansion interactions.
 - Expansion order and resulting argument vectors match POSIX expectations.
 
+Current expansion regression map:
+| Expansion area | Representative automated coverage |
+| --- | --- |
+| Parameter references and operators | `nested_parameter_expansions_and_parameter_lengths_are_supported`, `special_parameter_expansion_includes_shell_pid_and_option_flags`, `parameter_expansion_supports_default_and_alternate_operators`, `assignment_parameter_expansion_persists_unset_and_null_values`, `required_parameter_expansion_reports_unset_and_null_values`, `parameter_expansion_removes_shortest_and_longest_patterns` |
+| Positional parameters and IFS | `positional_star_and_at_expand_using_ifs_separator`, `quoted_star_joins_positional_parameters_into_one_field`, `quoted_at_with_no_positional_parameters_expands_to_no_fields`, `ifs_field_splitting_tracks_expansion_origin_and_empty_fields` |
+| Command substitution | `command_substitution_expands_fields_and_removes_trailing_newlines`, `command_substitution_uses_an_isolated_shell_environment`, `backquoted_command_substitution_executes`, `nested_command_substitution_is_evaluated_recursively` |
+| Arithmetic and tilde | `arithmetic_expansion_obeys_precedence_and_parentheses`, `arithmetic_assignment_expansion_updates_shell_variables`, `tilde_expansion_is_unquoted_and_only_at_word_start` |
+| Pathname expansion | `pathname_patterns_support_posix_ascii_character_classes`, `pathname_expansion_combines_quoted_literals_with_unquoted_patterns`, `pathname_expansion_tracks_quoted_and_unquoted_variable_results`, `pathname_expansion_matches_wildcards_and_keeps_unmatched_patterns` |
+| Lexer substitution boundaries | `command_and_arithmetic_substitutions_remain_single_words`, `backquoted_command_substitution_remains_a_single_word` |
+
+The regression map documents the implemented core. It does not replace POSIX conformance testing for expansion interactions, locale behavior, or the remaining arithmetic and parameter-word grammar.
+
 ## Phase 4 — POSIX execution semantics
 
 **Status: Partial; buffered pipelines now accept brace-group and subshell stages, but compound-stage input delivery and concurrent pipe execution remain incomplete. Redirection semantics are also limited.**
