@@ -54,13 +54,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install Rust Android target
         run: rustup target add "${{ matrix.rust_target }}"
-      - name: Set up Android command-line tools
+      - name: Install Android NDK
         uses: android-actions/setup-android@v4
         with:
-          accept-android-sdk-licenses: false
-          packages: ''
-      - name: Install Android NDK
-        run: android sdk install ndk@27.2.12479018
+          cmdline-tools-version: 14742923
+          packages: ndk;27.2.12479018
       - name: Configure Android linker
         run: |
           NDK_TOOLCHAIN="${ANDROID_HOME}/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
