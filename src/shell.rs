@@ -1103,12 +1103,24 @@ fn set_positional_parameters(environment: &mut BTreeMap<String, String>, paramet
 
 fn expand_word(word: &Word, environment: &BTreeMap<String, String>, last_status: i32) -> String {
     let mut expanded = String::new();
+    let mut at_word_start = true;
     for part in word.parts() {
-        if part.expandable {
+        if at_word_start && part.expandable && !part.quoted
+            && part.text.starts_with('~')
+            && (part.text.len() == 1 || part.text.as_bytes().get(1) == Some(&b'/'))
+        {
+            if let Some(home) = environment.get("HOME") {
+                expanded.push_str(home);
+                expanded.push_str(&part.text[1..]);
+            } else {
+                expanded.push_str(&part.text);
+            }
+        } else if part.expandable {
             expanded.push_str(&expand_variables(&part.text, environment, last_status));
         } else {
             expanded.push_str(&part.text);
         }
+        if !part.text.is_empty() { at_word_start = false; }
     }
     expanded
 }
