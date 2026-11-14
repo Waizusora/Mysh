@@ -2,6 +2,7 @@
 use crate::builtins::{self, BuiltinOutcome};
 use crate::command::resolve_command;
 use crate::lexer::{self, Word};
+use crate::parser::is_reserved_word;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -82,9 +83,9 @@ impl Shell {
         let mut depth = 0usize;
         let mut matching_fi = None;
         for (index, token) in tokens.iter().enumerate().skip(1) {
-            if token.is_unquoted_literal("if") {
+            if is_reserved_word(tokens, index, "if") {
                 depth += 1;
-            } else if token.is_unquoted_literal("fi") {
+            } else if is_reserved_word(tokens, index, "fi") {
                 if depth == 0 {
                     matching_fi = Some(index);
                     break;
@@ -111,18 +112,18 @@ impl Shell {
         let mut has_else = false;
         while index < fi_index {
             let token = &tokens[index];
-            if token.is_unquoted_literal("if") {
+            if is_reserved_word(tokens, index, "if") {
                 depth += 1;
-            } else if token.is_unquoted_literal("fi") {
+            } else if is_reserved_word(tokens, index, "fi") {
                 depth = depth.saturating_sub(1);
-            } else if depth == 0 && token.is_unquoted_literal("then") {
+            } else if depth == 0 && is_reserved_word(tokens, index, "then") {
                 if clause_body_start.is_some() || index == clause_start {
                     let _ = writeln!(stderr, "mysh: syntax error: malformed if condition");
                     self.last_status = 2;
                     return true;
                 }
                 clause_body_start = Some(index + 1);
-            } else if depth == 0 && (token.is_unquoted_literal("elif") || token.is_unquoted_literal("else")) {
+            } else if depth == 0 && (is_reserved_word(tokens, index, "elif") || is_reserved_word(tokens, index, "else")) {
                 let Some(body_start) = clause_body_start.take() else {
                     let _ = writeln!(stderr, "mysh: syntax error: expected then before elif or else");
                     self.last_status = 2;
@@ -134,7 +135,7 @@ impl Shell {
                     return true;
                 }
                 clauses.push((&tokens[clause_start..body_start - 1], &tokens[body_start..index]));
-                if token.is_unquoted_literal("else") {
+                if is_reserved_word(tokens, index, "else") {
                     if has_else {
                         let _ = writeln!(stderr, "mysh: syntax error: duplicate else clause");
                         self.last_status = 2;
@@ -209,9 +210,9 @@ impl Shell {
                 let mut depth = 0usize;
                 let mut matching_fi = None;
                 for (offset, token) in branch.iter().enumerate().skip(index + 1) {
-                    if token.is_unquoted_literal("if") {
+                    if is_reserved_word(branch, offset, "if") {
                         depth += 1;
-                    } else if token.is_unquoted_literal("fi") {
+                    } else if is_reserved_word(branch, offset, "fi") {
                         if depth == 0 {
                             matching_fi = Some(offset);
                             break;
@@ -525,19 +526,7 @@ impl Shell {
 }
 
 fn requires_more_input(input: &str) -> bool {
-    let tokens = match lexer::lex(input) {
-        Ok(tokens) => tokens,
-        Err(_) => return true,
-    };
-    let mut depth = 0usize;
-    for token in tokens {
-        if token.is_unquoted_literal("if") {
-            depth += 1;
-        } else if token.is_unquoted_literal("fi") {
-            depth = depth.saturating_sub(1);
-        }
-    }
-    depth > 0
+    matches!(crate::parser::classify_input(input), crate::parser::InputState::Incomplete)
 }
 
 #[derive(Default)]
