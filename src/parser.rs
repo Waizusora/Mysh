@@ -872,6 +872,7 @@ pub fn is_reserved_word(tokens: &[Word], index: usize, keyword: &str) -> bool {
         || previous.is_unquoted_literal("&&")
         || previous.is_unquoted_literal("||")
         || previous.is_unquoted_literal("|")
+        || previous.is_unquoted_literal(")")
         || previous.is_unquoted_literal("{")
         || previous.is_unquoted_literal("(")
     {
