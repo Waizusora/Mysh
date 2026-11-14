@@ -561,7 +561,6 @@ impl Shell {
             self.last_status = 1;
             return true;
         }
-        apply_assignment_parameter_expansions(tokens, &mut self.variables, self.last_status);
         let (mut command, redirections) = match self.parse_redirections_runtime(tokens, stderr) {
             Ok(value) => value,
             Err(message) => {
@@ -1558,35 +1557,6 @@ fn required_parameter_expansion_error(tokens: &[Word], environment: &BTreeMap<St
     None
 }
 
-/// Apply assignment-form parameter expansions before the regular word-expansion pass.
-fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTreeMap<String, String>, last_status: i32) {
-    for token in tokens {
-        for part in token.parts() {
-            if !part.expandable { continue; }
-            let chars: Vec<char> = part.text.chars().collect();
-            let mut index = 0;
-            while index + 2 < chars.len() {
-                if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
-                let Some(end) = matching_brace_end(&chars, index + 1) else { break; };
-                let expression: String = chars[index + 2..end].iter().collect();
-                if let Some(operator_index) = expression.find(":=") {
-                    let name = &expression[..operator_index];
-                    if valid_parameter_reference(name) && !name.chars().all(|character| character.is_ascii_digit()) {
-                        let is_set = parameter_is_set(name, environment);
-                        let value = parameter_value(name, environment, last_status);
-                        if !is_set || value.is_empty() {
-                            let word = &expression[operator_index + 2..];
-                            let expanded = expand_parameter_word_mut(word, environment, last_status);
-                            environment.insert(name.to_owned(), expanded);
-                        }
-                    }
-                }
-                index = end + 1;
-            }
-        }
-    }
-}
-
 fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, last_status: i32) -> Result<(Vec<String>, Redirections), &'static str> {
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
@@ -1854,7 +1824,7 @@ fn parameter_expansion_word_range(
     environment: &BTreeMap<String, String>,
 ) -> Option<(usize, usize)> {
     for (operator, colon, mode) in [
-        (":=", true, "assign"), (":-", true, "default"), ("-", false, "default"),
+        (":=", true, "assign"), ("=", false, "assign"), (":-", true, "default"), ("-", false, "default"),
         (":+", true, "alternate"), ("+", false, "alternate"),
         (":?", true, "required"), ("?", false, "required"),
     ] {
@@ -1888,7 +1858,7 @@ fn parameter_expansion_word_range(
 
 fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<String, String>, last_status: i32) -> Option<String> {
     for (operator, colon, mode) in [
-        (":=", true, "default"), (":-", true, "default"), ("-", false, "default"),
+        (":=", true, "assign"), ("=", false, "assign"), (":-", true, "default"), ("-", false, "default"),
         (":+", true, "alternate"), ("+", false, "alternate"),
         (":?", true, "required"), ("?", false, "required"),
     ] {
@@ -1899,14 +1869,17 @@ fn expand_braced_parameter_mut(expression: &str, environment: &mut BTreeMap<Stri
             let value = parameter_value(name, environment, last_status);
             let is_set = parameter_is_set(name, environment);
             let use_word = match mode {
-                "default" => !is_set || (colon && value.is_empty()),
-                _ => is_set && (!colon || !value.is_empty()),
+                "assign" | "default" => !is_set || (colon && value.is_empty()),
+                "alternate" => is_set && (!colon || !value.is_empty()),
+                _ => false,
             };
-            return Some(if mode == "required" {
-                value
-            } else if use_word {
-                expand_parameter_word(word, environment, last_status)
-            } else if mode == "default" { value } else { String::new() });
+            if mode == "required" { return Some(value); }
+            if use_word {
+                let expanded = expand_parameter_word_mut(word, environment, last_status);
+                if mode == "assign" { environment.insert(name.to_owned(), expanded.clone()); }
+                return Some(expanded);
+            }
+            return Some(if mode == "default" || mode == "assign" { value } else { String::new() });
         }
     }
 
