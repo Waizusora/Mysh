@@ -555,7 +555,7 @@ fn is_uutils_utility(name: &str) -> bool {
             | "pathchk" | "pr" | "printenv" | "printf" | "ptx" | "readlink"
             | "realpath" | "rm" | "rmdir" | "seq" | "sha1sum" | "sha224sum"
             | "sha256sum" | "sha384sum" | "sha512sum" | "shred" | "shuf"
-            | "sleep" | "sort" | "split" | "stat" | "stdbuf" | "stty" | "sum"
+            | "sleep" | "sort" | "split" | "stat" | "stty" | "sum"
             | "sync" | "tac" | "tail" | "tee" | "test" | "timeout" | "touch"
             | "tr" | "truncate" | "tsort" | "tty" | "uname" | "unexpand" | "uniq"
             | "unlink" | "uptime" | "vdir" | "wc" | "whoami"
