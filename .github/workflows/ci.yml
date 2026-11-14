@@ -139,5 +139,7 @@ jobs:
         run: echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
       - name: Build Mysh for musl
         run: cargo build -p mysh --target x86_64-unknown-linux-musl --release
+      - name: Run Mysh tests on musl
+        run: cargo test -p mysh --target x86_64-unknown-linux-musl --release
       - name: Build MYPK for musl
         run: cargo build -p my-pkg-keeper --target x86_64-unknown-linux-musl --release
