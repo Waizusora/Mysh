@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,7 +49,7 @@ jobs:
             linker: x86_64-linux-android21-clang
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install Rust Android target
@@ -67,7 +67,7 @@ jobs:
           echo "CXX_${TARGET_UNDERSCORE}=${NDK_TOOLCHAIN}/${{ matrix.linker }}++" >> "$GITHUB_ENV"
           echo "AR_${TARGET_UNDERSCORE}=${NDK_TOOLCHAIN}/llvm-ar" >> "$GITHUB_ENV"
       - name: Check out uutils Coreutils
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: uutils/coreutils
           ref: dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69
@@ -91,19 +91,19 @@ jobs:
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Upload Mysh executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mysh-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mysh
           if-no-files-found: error
       - name: Upload uutils Coreutils executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: uutils-coreutils-${{ matrix.abi }}
           path: .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils
           if-no-files-found: error
       - name: Upload MYPK executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mypk-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mypk
