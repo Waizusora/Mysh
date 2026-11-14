@@ -1563,6 +1563,25 @@ mod for_parser_tests {
     }
 
     #[test]
+    fn parses_function_definitions_with_compound_bodies() {
+        let tokens = lexer::lex("greet() { echo hello; }").unwrap();
+        let parsed = parse_compound_list(&tokens).unwrap();
+        let CompoundCommand::FunctionDefinition(definition) = &parsed[0].command else {
+            panic!("expected function definition");
+        };
+        assert_eq!(definition.name, "greet");
+        assert!(matches!(*definition.body, CompoundCommand::BraceGroup(_)));
+    }
+
+    #[test]
+    fn rejects_function_definitions_without_compound_bodies() {
+        for input in ["greet() echo hello", "greet() { echo hello;"] {
+            let tokens = lexer::lex(input).unwrap();
+            assert!(parse_compound_list(&tokens).is_err(), "{input}");
+        }
+    }
+
+    #[test]
     fn classifies_open_and_closed_for_compounds() {
         assert_eq!(classify_input("for item in a b; do echo $item"), InputState::Incomplete);
         assert_eq!(classify_input("for item in a b; do echo $item; done"), InputState::Complete);
