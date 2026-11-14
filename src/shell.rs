@@ -1195,7 +1195,27 @@ fn apply_assignment_parameter_expansions(tokens: &[Word], environment: &mut BTre
             let chars: Vec<char> = part.text.chars().collect();
             let mut index = 0;
             while index + 2 < chars.len() {
-                if chars[index] != '
+                if chars[index] as u32 != 36 || chars[index + 1] != '{' { index += 1; continue; }
+                let Some(relative_end) = chars[index + 2..].iter().position(|character| *character == '}') else { break; };
+                let end = index + 2 + relative_end;
+                let expression: String = chars[index + 2..end].iter().collect();
+                if let Some(operator_index) = expression.find(":=") {
+                    let name = &expression[..operator_index];
+                    if valid_parameter_reference(name) && !name.chars().all(|character| character.is_ascii_digit()) {
+                        let is_set = parameter_is_set(name, environment);
+                        let value = parameter_value(name, environment, last_status);
+                        if !is_set || value.is_empty() {
+                            let word = &expression[operator_index + 2..];
+                            let expanded = expand_variables(word, environment, last_status);
+                            environment.insert(name.to_owned(), expanded);
+                        }
+                    }
+                }
+                index = end + 1;
+            }
+        }
+    }
+}
     let mut command = Vec::new();
     let mut redirects = Redirections::default();
     let mut index = 0;
