@@ -229,19 +229,30 @@ mod command_structure_tests {
     #[test]
     fn case_parser_builds_pattern_arms_and_nested_bodies() {
         use super::{parse_compound_list, CompoundCommand};
-        let tokens = lexer::lex("case $value in one|two) echo first ;; *) if true; then echo fallback; fi ;; esac").unwrap();
+
+        let tokens = lexer::lex(
+            "case $value in one|two) echo first ;; *) if true; then echo fallback; fi ;; esac",
+        )
+        .unwrap();
         let parsed = parse_compound_list(&tokens).unwrap();
-        let CompoundCommand::Case(statement) = &parsed[0].command else { panic!("expected case node"); };
+        let CompoundCommand::Case(statement) = &parsed[0].command else {
+            panic!("expected case node");
+        };
         assert_eq!(statement.arms.len(), 2);
         assert_eq!(statement.arms[0].patterns.len(), 2);
-        assert!(matches!(&statement.arms[1].body[0].command, CompoundCommand::If(_)));
+        assert!(matches!(
+            &statement.arms[1].body[0].command,
+            CompoundCommand::If(_)
+        ));
     }
 
     #[test]
     fn case_keyword_can_be_used_as_subject_and_pattern_text() {
         let tokens = lexer::lex("case case in case) echo matched ;; esac").unwrap();
         let parsed = super::parse_compound_list(&tokens).unwrap();
-        let super::CompoundCommand::Case(statement) = &parsed[0].command else { panic!("expected case node"); };
+        let super::CompoundCommand::Case(statement) = &parsed[0].command else {
+            panic!("expected case node");
+        };
         assert_eq!(statement.word.literal_value(), "case");
         assert_eq!(statement.arms[0].patterns[0].literal_value(), "case");
     }
@@ -250,12 +261,19 @@ mod command_structure_tests {
     fn case_parser_accepts_optional_parentheses_before_patterns() {
         let tokens = lexer::lex("case value in (value) echo matched ;; esac").unwrap();
         let parsed = super::parse_compound_list(&tokens).unwrap();
-        assert!(matches!(&parsed[0].command, super::CompoundCommand::Case(_)));
+        assert!(matches!(
+            &parsed[0].command,
+            super::CompoundCommand::Case(_)
+        ));
     }
 
     #[test]
     fn case_parser_rejects_missing_patterns_and_closers() {
-        for input in ["case value in ) echo bad ;; esac", "case value in value) echo missing", "case value value) echo bad ;; esac"] {
+        for input in [
+            "case value in ) echo bad ;; esac",
+            "case value in value) echo missing",
+            "case value value) echo bad ;; esac",
+        ] {
             let tokens = lexer::lex(input).unwrap();
             assert!(super::parse_compound_list(&tokens).is_err(), "{input}");
         }
@@ -1285,20 +1303,35 @@ mod tests {
 
     #[test]
     fn optional_case_pattern_parentheses_are_not_subshells() {
-        assert_eq!(classify_input("case value in (value) echo ok ;; esac\\n"), InputState::Complete);
+        assert_eq!(
+            classify_input("case value in (value) echo ok ;; esac\n"),
+            InputState::Complete,
+        );
     }
 
     #[test]
     fn unmatched_esac_is_invalid_input() {
-        assert_eq!(classify_input("esac\\n"), InputState::Invalid);
-        assert_eq!(classify_input("case value in value) echo ok ;; esac\\n"), InputState::Complete);
+        assert_eq!(classify_input("esac\n"), InputState::Invalid);
+        assert_eq!(
+            classify_input("case value in value) echo ok ;; esac\n"),
+            InputState::Complete,
+        );
     }
 
     #[test]
     fn case_patterns_do_not_conflict_with_subshell_delimiters() {
-        assert_eq!(classify_input("case value in value) echo matched ;; esac\n"), InputState::Complete);
-        assert_eq!(classify_input("case value in value) echo matched ;;\n"), InputState::Incomplete);
-        assert_eq!(classify_input("case value in value) ( echo nested ) ;; esac\n"), InputState::Complete);
+        assert_eq!(
+            classify_input("case value in value) echo matched ;; esac\n"),
+            InputState::Complete,
+        );
+        assert_eq!(
+            classify_input("case value in value) echo matched ;;\n"),
+            InputState::Incomplete,
+        );
+        assert_eq!(
+            classify_input("case value in value) ( echo nested ) ;; esac\n"),
+            InputState::Complete,
+        );
     }
 
     #[test]
