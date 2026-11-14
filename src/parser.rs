@@ -664,12 +664,16 @@ pub fn classify_input(input: &str) -> InputState {
         IfInElse,
         LoopAwaitDo,
         LoopInBody,
+        ForAwaitDo,
+        ForInBody,
     }
 
     let mut stack = Vec::new();
     for index in 0..tokens.len() {
         if is_reserved_word(&tokens, index, "if") {
             stack.push(CompoundPhase::IfAwaitThen);
+        } else if is_reserved_word(&tokens, index, "for") {
+            stack.push(CompoundPhase::ForAwaitDo);
         } else if is_reserved_word(&tokens, index, "while")
             || is_reserved_word(&tokens, index, "until")
         {
@@ -702,10 +706,13 @@ pub fn classify_input(input: &str) -> InputState {
             let Some(phase) = stack.last_mut() else {
                 return InputState::Invalid;
             };
-            if *phase != CompoundPhase::LoopAwaitDo {
+            if *phase == CompoundPhase::ForAwaitDo {
+                *phase = CompoundPhase::ForInBody;
+            } else if *phase == CompoundPhase::LoopAwaitDo {
+                *phase = CompoundPhase::LoopInBody;
+            } else {
                 return InputState::Invalid;
             }
-            *phase = CompoundPhase::LoopInBody;
         } else if is_reserved_word(&tokens, index, "done") {
             match stack.pop() {
                 Some(CompoundPhase::LoopInBody | CompoundPhase::ForInBody) => {}
