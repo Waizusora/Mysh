@@ -149,7 +149,11 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
         } else if is_reserved_word(&tokens, index, "case") {
             case_depth += 1;
             case_pattern.push(false);
-        } else if token.is_unquoted_literal("in") && case_pattern.last() == Some(&false) {
+        } else if token.is_unquoted_literal("in")
+            && index >= 2
+            && tokens[index - 2].is_unquoted_literal("case")
+            && case_pattern.last() == Some(&false)
+        {
             if let Some(active) = case_pattern.last_mut() { *active = true; }
         } else if token.is_unquoted_literal(";;") && case_depth > 0 {
             if let Some(active) = case_pattern.last_mut() { *active = true; }
@@ -339,6 +343,17 @@ mod command_structure_tests {
         assert!(matches!(&left_subshell.stages[0], PipelineStage::Compound(CompoundCommand::Subshell(_))));
         let right_group = split_pipeline(lexer::lex("echo before | { cat; }").unwrap()).unwrap();
         assert!(matches!(&right_group.stages[1], PipelineStage::Compound(CompoundCommand::BraceGroup(_))));
+    }
+
+    #[test]
+    fn case_pattern_alternation_and_keyword_subjects_stay_inside_the_case_stage() {
+        let tokens = lexer::lex("case in in one|two) : ;; esac | cat").unwrap();
+        let parsed = split_pipeline(tokens).unwrap();
+        assert_eq!(parsed.stages.len(), 2);
+        assert!(matches!(
+            &parsed.stages[0],
+            super::PipelineStage::Compound(super::CompoundCommand::Case(_))
+        ));
     }
 
     #[test]
