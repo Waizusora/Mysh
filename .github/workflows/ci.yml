@@ -40,17 +40,26 @@ jobs:
 
   android:
     name: Build Android (${{ matrix.abi }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      # Build both Android ABIs on x86_64 so the Linux x86_64 NDK host tools
+      # are executable. API 35 x86_64 Google APIs images provide ARM ABI
+      # translation for the arm64-v8a runtime smoke test.
+      # Serialize emulator boots to avoid resource contention.
+      max-parallel: 1
       matrix:
         include:
           - abi: arm64-v8a
+            runner: ubuntu-24.04
             rust_target: aarch64-linux-android
+            emulator_arch: x86_64
             linker_env: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
             linker: aarch64-linux-android21-clang
           - abi: x86_64
+            runner: ubuntu-24.04
             rust_target: x86_64-linux-android
+            emulator_arch: x86_64
             linker_env: CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
             linker: x86_64-linux-android21-clang
     steps:
@@ -95,25 +104,141 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      - name: Install Android emulator system image
+        run: |
+          sdkmanager --install \
+            "emulator" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "system-images;android-35;google_apis;x86_64"
+      - name: Enable KVM acceleration for Android emulator
+        run: |
+          set -euo pipefail
+          if [ ! -e /dev/kvm ]; then
+            echo "KVM device /dev/kvm is unavailable on this runner."
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          ls -l /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Create and boot Android emulator
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="${HOME}/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "no" | avdmanager create avd --force \
+            --name mysh-ci-api35 \
+            --package "system-images;android-35;google_apis;x86_64" \
+            --device "pixel_5"
+          echo "ANDROID_AVD_HOME=${ANDROID_AVD_HOME}" >> "$GITHUB_ENV"
+          echo "Created AVD files:"
+          ls -la "$ANDROID_AVD_HOME"
+          test -s "${ANDROID_AVD_HOME}/mysh-ci-api35.ini"
+          EMULATOR_BIN="${ANDROID_HOME}/emulator/emulator"
+          if [ ! -x "$EMULATOR_BIN" ]; then
+            echo "Android emulator binary is missing: $EMULATOR_BIN"
+            find "$ANDROID_HOME" -maxdepth 3 -type f -name emulator -print || true
+            exit 1
+          fi
+          "$EMULATOR_BIN" -avd mysh-ci-api35 \
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim \
+            -no-snapshot -no-metrics -camera-back none -camera-front none \
+            -cores 4 -memory 4096 \
+            > "$RUNNER_TEMP/mysh-emulator.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/mysh-emulator.pid"
+          adb start-server
+          # Do not use adb wait-for-device here: it has no timeout and can
+          # leave the Actions job hanging forever when the emulator never
+          # registers with the ADB server.
+          device_deadline=$((SECONDS + 180))
+          until adb devices | awk '$1 == "emulator-5554" && $2 == "device" { found=1 } END { exit !found }'; do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" 2>/dev/null; then
+              echo "Android emulator process exited before becoming available to ADB."
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              adb devices -l || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$device_deadline" ]; then
+              echo "Android emulator did not register with ADB within 180 seconds."
+              adb devices -l || true
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          boot_deadline=$((SECONDS + 900))
+          until [ "$(timeout 15s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" 2>/dev/null; then
+              echo "Android emulator process exited during boot."
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$boot_deadline" ]; then
+              echo "Android emulator did not finish booting within 900 seconds."
+              adb -s emulator-5554 get-state || true
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Confirm the framework services are responding before running tests.
+          adb -s emulator-5554 shell id
+          adb -s emulator-5554 shell pm path android
+          adb -s emulator-5554 shell getprop ro.product.cpu.abilist
       - name: Smoke-test Mysh against Android Bionic
-        if: matrix.abi == 'x86_64'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: |
-            adb push target/x86_64-linux-android/release/mysh /data/local/tmp/mysh
-            adb shell chmod 755 /data/local/tmp/mysh
-            adb shell mkdir -p /data/local/tmp/mysh-glob
+        run: |
+          set -euo pipefail
+          cleanup() {
+            adb emu kill >/dev/null 2>&1 || true
+            if [ -f "$RUNNER_TEMP/mysh-emulator.pid" ]; then
+              kill "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+          trap 'status=$?; echo "Smoke test failed with status $status; collecting Android crash diagnostics."; adb logcat -d -b crash -t 300 || true; adb logcat -d -t 1500 | grep -E -i "mysh|tombstone|signal 11|SIGSEGV|fatal signal|libc.*crash" | tail -n 200 || true; adb shell ls -lt /data/tombstones 2>&1 || true; exit "$status"' ERR
+          adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
+          adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
+          # The x86_64 emulator's ARM64 translation layer currently crashes
+          # when executing the ARM64 uutils binary (SIGSEGV in the translated
+          # coreutils process). Keep ARM64 artifact build/package checks, but
+          # use the emulator's native Toybox utilities for this smoke test.
+          if [ "${{ matrix.abi }}" = "x86_64" ]; then
+            adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
+            adb shell chmod 755 /data/local/tmp/mysh-prefix/bin/coreutils
+          fi
+          adb shell chmod 755 /data/local/tmp/mysh
+          if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
+            # The x86_64 Android image executes ARM64 guests through
+            # ndk_translation. uutils/coreutils currently SIGSEGVs in that
+            # translation layer, independently of Mysh. Validate that the
+            # ARM64 Mysh binary starts on Bionic and executes shell builtins
+            # without depending on translated external ARM64 programs.
+            adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'cd /data/local/tmp; X=4; X=5; exit 0'"
+          else
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
-            output="$(adb shell "/data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
+            output="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
-            glob="$(adb shell "/data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
-            printf 'Bionic pathname expansion output: <%s>\\n' "$glob"
+            adb shell ls -la /data/local/tmp/mysh-glob
+            literal_status=0
+            literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" 2>&1 | tr -d '\r')" || literal_status=$?
+            printf 'Bionic literal echo status=%s output: <%s>\\n' "$literal_status" "$literal"
+            test "$literal_status" -eq 0
+            test "$literal" = "literal-ok"
+            exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
+            printf 'Bionic exact-path output: <%s>\\n' "$exact"
+            test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
+            if glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
+              glob_status=0
+            else
+              glob_status=$?
+            fi
+            printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
+            class_glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
+            printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
+            test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
+          fi
       - name: Build MYPK executable
         run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Package Android runtime
@@ -176,6 +301,12 @@ jobs:
           else
             cargo build -p mysh --target "${{ matrix.rust_target }}" --release
           fi
+      - name: Register ARM64 binfmt handler for nested test processes
+        if: matrix.arch == 'aarch64'
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          test -r /proc/sys/fs/binfmt_misc/qemu-aarch64
+          grep -q enabled /proc/sys/fs/binfmt_misc/qemu-aarch64
       - name: Run Mysh tests on musl
         run: |
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
