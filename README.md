@@ -43,6 +43,7 @@ The Android NDK is required to produce Android executables. Host builds are supp
 
 ## Current features
 
+- Runtime platform identification via `mysh --platform`, formatted as `{hostname}-{c-library}-{arch}`; hostname is read from `/proc/sys/kernel/hostname`.
 - Interactive and non-interactive command input.
 - Quoted arguments and backslash escaping.
 - Implemented shell built-ins include `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, and `continue`.
