@@ -198,8 +198,15 @@ jobs:
           trap 'status=$?; echo "Smoke test failed with status $status; collecting Android crash diagnostics."; adb logcat -d -b crash -t 300 || true; adb logcat -d -t 1500 | grep -E -i "mysh|tombstone|signal 11|SIGSEGV|fatal signal|libc.*crash" | tail -n 200 || true; adb shell ls -lt /data/tombstones 2>&1 || true; exit "$status"' ERR
           adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
           adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
-          adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
-          adb shell chmod 755 /data/local/tmp/mysh /data/local/tmp/mysh-prefix/bin/coreutils
+          # The x86_64 emulator's ARM64 translation layer currently crashes
+          # when executing the ARM64 uutils binary (SIGSEGV in the translated
+          # coreutils process). Keep ARM64 artifact build/package checks, but
+          # use the emulator's native Toybox utilities for this smoke test.
+          if [ "${{ matrix.abi }}" = "x86_64" ]; then
+            adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
+            adb shell chmod 755 /data/local/tmp/mysh-prefix/bin/coreutils
+          fi
+          adb shell chmod 755 /data/local/tmp/mysh
           if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
             # The x86_64 Android image executes ARM64 guests through
             # ndk_translation. uutils/coreutils currently SIGSEGVs in that
