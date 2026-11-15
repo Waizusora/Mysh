@@ -118,7 +118,13 @@ jobs:
             --name mysh-ci-api35 \
             --package "system-images;android-35;google_apis;x86_64" \
             --device "pixel_5"
-          emulator -avd mysh-ci-api35 \
+          EMULATOR_BIN="${ANDROID_HOME}/emulator/emulator"
+          if [ ! -x "$EMULATOR_BIN" ]; then
+            echo "Android emulator binary is missing: $EMULATOR_BIN"
+            find "$ANDROID_HOME" -maxdepth 3 -type f -name emulator -print || true
+            exit 1
+          fi
+          "$EMULATOR_BIN" -avd mysh-ci-api35 \
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim \
             -no-snapshot -no-metrics -camera-back none -camera-front none \
             -cores 4 -memory 4096 \
