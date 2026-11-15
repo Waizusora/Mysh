@@ -230,6 +230,16 @@ jobs:
             adb shell chmod 755 /data/local/tmp/mysh-prefix/bin/coreutils
           fi
           adb shell chmod 755 /data/local/tmp/mysh
+          platform="$(adb shell /data/local/tmp/mysh --platform | tr -d '\r')"
+          hostname="$(adb shell hostname | tr -d '\r')"
+          if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
+            expected_arch="aarch64"
+          else
+            expected_arch="x86_64"
+          fi
+          expected_platform="${hostname}-bionic-${expected_arch}"
+          printf 'Android runtime platform: <%s>\n' "$platform"
+          test "$platform" = "$expected_platform"
           if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
             # The x86_64 Android image executes ARM64 guests through
             # ndk_translation. uutils/coreutils currently SIGSEGVs in that

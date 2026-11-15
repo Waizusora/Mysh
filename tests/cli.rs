@@ -69,3 +69,33 @@ fn standard_input_mode_runs_multiple_commands() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "first\nsecond\n");
 }
+
+#[test]
+fn platform_option_reports_kernel_hostname_library_and_architecture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_mysh"))
+        .arg("--platform")
+        .output()
+        .expect("Mysh process should start");
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let actual = String::from_utf8(output.stdout)
+        .expect("platform identifier should be UTF-8")
+        .trim()
+        .to_owned();
+    let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .expect("kernel hostname should be available")
+        .trim()
+        .to_owned();
+    let library = if cfg!(target_os = "android") {
+        "bionic"
+    } else if cfg!(target_env = "musl") {
+        "musl"
+    } else if cfg!(target_env = "gnu") {
+        "glibc"
+    } else {
+        "unknown-libc"
+    };
+    let expected = format!("{hostname}-{library}-{}", std::env::consts::ARCH);
+    assert_eq!(actual, expected);
+}
