@@ -100,6 +100,28 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      - name: Restore Android emulator AVD snapshot
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ runner.os }}-avd-api35-google_apis-${{ matrix.emulator_arch }}-pixel5-v1
+      - name: Create Android emulator and save initial snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: ${{ matrix.emulator_arch }}
+          profile: pixel_5
+          force-avd-creation: false
+          cores: 4
+          ram-size: 4096
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: echo "Initial Android emulator snapshot generated."
       - name: Smoke-test Mysh against Android Bionic
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -107,9 +129,11 @@ jobs:
           target: google_apis
           arch: ${{ matrix.emulator_arch }}
           profile: pixel_5
+          force-avd-creation: false
           cores: 4
           ram-size: 4096
           emulator-boot-timeout: 900
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
