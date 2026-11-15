@@ -125,20 +125,44 @@ jobs:
             > "$RUNNER_TEMP/mysh-emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/mysh-emulator.pid"
           adb start-server
-          adb wait-for-device
-          deadline=$((SECONDS + 900))
-          until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
-            if [ "$SECONDS" -ge "$deadline" ]; then
+          # Do not use adb wait-for-device here: it has no timeout and can
+          # leave the Actions job hanging forever when the emulator never
+          # registers with the ADB server.
+          device_deadline=$((SECONDS + 180))
+          until adb devices | awk '$1 == "emulator-5554" && $2 == "device" { found=1 } END { exit !found }'; do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" 2>/dev/null; then
+              echo "Android emulator process exited before becoming available to ADB."
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              adb devices -l || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$device_deadline" ]; then
+              echo "Android emulator did not register with ADB within 180 seconds."
+              adb devices -l || true
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          boot_deadline=$((SECONDS + 900))
+          until [ "$(timeout 15s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+            if ! kill -0 "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" 2>/dev/null; then
+              echo "Android emulator process exited during boot."
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$boot_deadline" ]; then
               echo "Android emulator did not finish booting within 900 seconds."
-              tail -n 160 "$RUNNER_TEMP/mysh-emulator.log" || true
+              adb -s emulator-5554 get-state || true
+              tail -n 200 "$RUNNER_TEMP/mysh-emulator.log" || true
               exit 1
             fi
             sleep 5
           done
           # Confirm the framework services are responding before running tests.
-          adb shell id
-          adb shell pm path android
-          adb shell getprop ro.product.cpu.abilist
+          adb -s emulator-5554 shell id
+          adb -s emulator-5554 shell pm path android
+          adb -s emulator-5554 shell getprop ro.product.cpu.abilist
       - name: Smoke-test Mysh against Android Bionic
         run: |
           set -euo pipefail
