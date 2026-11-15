@@ -11,7 +11,7 @@ on:
         options:
           - all
           - x86_64
-          - arm64
+          - arm64-v8a
 
 jobs:
   run-emulator:
@@ -21,11 +21,11 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-latest
-            api: 30
+            api: 34
             target: google_apis
           - arch: arm64-v8a
-            runner: ubuntu-24.04-arm
-            api: 30
+            runner: ubuntu-latest
+            api: 34
             target: google_apis
 
     runs-on: ${{ matrix.runner }}
