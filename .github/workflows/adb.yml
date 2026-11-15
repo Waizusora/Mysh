@@ -28,16 +28,17 @@ jobs:
             api: 30
             target: google_apis
 
-    if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
     runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
 
       - name: Restore AVD Snapshot Cache (${{ matrix.arch }})
         id: avd-cache
         uses: actions/cache@v4
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
         with:
           path: ~/.android/avd
           key: avd-snapshot-${{ matrix.arch }}-${{ github.run_id }}
@@ -46,6 +47,7 @@ jobs:
 
       - name: Run Android Emulator (${{ matrix.arch }})
         uses: reactivecircus/android-emulator-runner@v2
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
