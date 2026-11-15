@@ -149,8 +149,16 @@ jobs:
             expected="$(printf '4 5\nleft middle value right')"
             test "$output" = "$expected"
             adb shell ls -la /data/local/tmp/mysh-glob
-            literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" | tr -d '\r')"
-            printf 'Bionic literal echo output: <%s>\\n' "$literal"
+            literal_status=0
+            literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" 2>&1 | tr -d '\r')" || literal_status=$?
+            printf 'Bionic literal echo status=%s output: <%s>\\n' "$literal_status" "$literal"
+            if [ "$literal" != "literal-ok" ]; then
+              echo "Diagnostic: direct uutils echo:"
+              adb shell /data/local/tmp/mysh-prefix/bin/coreutils echo literal-ok || true
+              echo "Diagnostic: Mysh PATH and echo:"
+              adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo PATH=\$PATH; echo literal-ok; printf \"%s\\n\" printf-ok'" || true
+            fi
+            test "$literal_status" -eq 0
             test "$literal" = "literal-ok"
             exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
             printf 'Bionic exact-path output: <%s>\\n' "$exact"
