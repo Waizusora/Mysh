@@ -106,7 +106,6 @@ jobs:
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
       - name: Install Android emulator system image
         run: |
-          yes | sdkmanager --licenses >/dev/null
           sdkmanager --install \
             "emulator" \
             "platform-tools" \
