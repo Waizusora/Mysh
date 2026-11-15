@@ -195,6 +195,7 @@ jobs:
             fi
           }
           trap cleanup EXIT
+          trap 'status=$?; echo "Smoke test failed with status $status; collecting Android crash diagnostics."; adb logcat -d -b crash -t 300 || true; adb logcat -d -t 1500 | grep -E -i 'mysh|tombstone|signal 11|SIGSEGV|fatal signal|libc.*crash' | tail -n 200 || true; adb shell ls -lt /data/tombstones 2>&1 || true; exit "$status"' ERR
           adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
             adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
