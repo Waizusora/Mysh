@@ -43,20 +43,21 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      # Use a native ARM64 runner for the ARM64 system image; QEMU2 cannot
-      # boot an ARM64 AVD on an x86_64 host.
-      # Serialize them to avoid simultaneous boots starving the x86_64 AVD.
+      # Build both Android ABIs on x86_64 so the Linux x86_64 NDK host tools
+      # are executable. API 35 x86_64 Google APIs images provide ARM ABI
+      # translation for the arm64-v8a runtime smoke test.
+      # Serialize emulator boots to avoid resource contention.
       max-parallel: 1
       matrix:
         include:
           - abi: arm64-v8a
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-24.04
             rust_target: aarch64-linux-android
-            emulator_arch: arm64-v8a
+            emulator_arch: x86_64
             linker_env: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
             linker: aarch64-linux-android21-clang
           - abi: x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             rust_target: x86_64-linux-android
             emulator_arch: x86_64
             linker_env: CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
@@ -103,44 +104,53 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
-      - name: Restore Android emulator AVD snapshot
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: ${{ runner.os }}-${{ runner.arch }}-avd-api35-google_apis-${{ matrix.emulator_arch }}-pixel5-v2
-      - name: Create Android emulator and save initial snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: ${{ matrix.emulator_arch }}
-          profile: pixel_5
-          force-avd-creation: false
-          cores: 4
-          ram-size: 4096
-          emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "Initial Android emulator snapshot generated."
+      - name: Install Android emulator system image
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install \
+            "emulator" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "system-images;android-35;google_apis;x86_64"
+      - name: Create and boot Android emulator
+        run: |
+          set -euo pipefail
+          echo "no" | avdmanager create avd --force \
+            --name mysh-ci-api35 \
+            --package "system-images;android-35;google_apis;x86_64" \
+            --device "pixel_5"
+          emulator -avd mysh-ci-api35 \
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim \
+            -no-snapshot -no-metrics -camera-back none -camera-front none \
+            -cores 4 -memory 4096 \
+            > "$RUNNER_TEMP/mysh-emulator.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/mysh-emulator.pid"
+          adb start-server
+          adb wait-for-device
+          deadline=$((SECONDS + 900))
+          until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Android emulator did not finish booting within 900 seconds."
+              tail -n 160 "$RUNNER_TEMP/mysh-emulator.log" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          # Confirm the framework services are responding before running tests.
+          adb shell id
+          adb shell pm path android
+          adb shell getprop ro.product.cpu.abilist
       - name: Smoke-test Mysh against Android Bionic
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: ${{ matrix.emulator_arch }}
-          profile: pixel_5
-          force-avd-creation: false
-          cores: 4
-          ram-size: 4096
-          emulator-boot-timeout: 900
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: |
-            adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
+        run: |
+          set -euo pipefail
+          cleanup() {
+            adb emu kill >/dev/null 2>&1 || true
+            if [ -f "$RUNNER_TEMP/mysh-emulator.pid" ]; then
+              kill "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+          adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
             adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
             adb shell chmod 755 /data/local/tmp/mysh /data/local/tmp/mysh-prefix/bin/coreutils
