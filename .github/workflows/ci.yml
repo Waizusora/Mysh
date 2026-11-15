@@ -231,7 +231,7 @@ jobs:
           fi
           adb shell chmod 755 /data/local/tmp/mysh
           platform="$(adb shell /data/local/tmp/mysh --platform | tr -d '\r')"
-          hostname="$(adb shell cat /proc/sys/kernel/hostname | tr -d '\r')"
+          hostname="$(adb shell hostname | tr -d '\r')"
           if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
             expected_arch="aarch64"
           else
