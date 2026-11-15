@@ -50,10 +50,12 @@ jobs:
         include:
           - abi: arm64-v8a
             rust_target: aarch64-linux-android
+            emulator_arch: arm64-v8a
             linker_env: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
             linker: aarch64-linux-android21-clang
           - abi: x86_64
             rust_target: x86_64-linux-android
+            emulator_arch: x86_64
             linker_env: CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
             linker: x86_64-linux-android21-clang
     steps:
@@ -103,17 +105,16 @@ jobs:
         with:
           api-level: 35
           target: google_apis
-          arch: x86_64
+          arch: ${{ matrix.emulator_arch }}
           profile: pixel_5
-          disable-animations: true
           cores: 4
           ram-size: 4096
           emulator-boot-timeout: 900
           script: |
+            adb shell mkdir -p /data/local/tmp/mysh-prefix/bin /data/local/tmp/mysh-glob
             adb push target/${{ matrix.rust_target }}/release/mysh /data/local/tmp/mysh
             adb push .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils /data/local/tmp/mysh-prefix/bin/coreutils
             adb shell chmod 755 /data/local/tmp/mysh /data/local/tmp/mysh-prefix/bin/coreutils
-            adb shell mkdir -p /data/local/tmp/mysh-glob
             adb shell touch /data/local/tmp/mysh-glob/alpha.txt
             output="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'X=4; echo \$((X++)) \$X; echo \${MYSH_EMULATOR_MISSING:-left \${MYSH_EMULATOR_INNER:-middle value} right}'" | tr -d '\r')"
             expected="$(printf '4 5\nleft middle value right')"
