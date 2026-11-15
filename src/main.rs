@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
 fn print_usage() {
-    println!("Mysh {}\nUsage: mysh [--version] [--platform] [--help] [-c command]\n\n  --version   Print the Mysh version\n  --platform  Print {hostname}-{c-library}-{arch} for the current runtime\n  --help      Show this help\n  -c command Execute one command string\n\nWithout options, Mysh reads commands from standard input.\n", env!("CARGO_PKG_VERSION"));
+    println!("Mysh {}\nUsage: mysh [--version] [--platform] [--help] [-c command]\n\n  --version   Print the Mysh version\n  --platform  Print {{hostname}}-{{c-library}}-{{arch}} for the current runtime\n  --help      Show this help\n  -c command Execute one command string\n\nWithout options, Mysh reads commands from standard input.\n", env!("CARGO_PKG_VERSION"));
 }
 
 fn main() -> ExitCode {
