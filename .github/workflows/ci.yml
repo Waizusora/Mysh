@@ -104,6 +104,16 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      # Cache both the AVD state and its system image. The cache is immutable;
+      # bump the key suffix when the emulator configuration changes.
+      - name: Restore Android emulator AVD and system image cache
+        id: android-avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd
+            /usr/local/lib/android/sdk/system-images/android-35/google_apis/x86_64
+          key: android-avd-ubuntu-24.04-api35-google-apis-x86_64-pixel5-v1
       - name: Install Android emulator system image
         run: |
           sdkmanager --install \
@@ -126,13 +136,17 @@ jobs:
           set -euo pipefail
           export ANDROID_AVD_HOME="${HOME}/.android/avd"
           mkdir -p "$ANDROID_AVD_HOME"
-          echo "no" | avdmanager create avd --force \
-            --name mysh-ci-api35 \
-            --package "system-images;android-35;google_apis;x86_64" \
-            --device "pixel_5"
+          if [ ! -s "${ANDROID_AVD_HOME}/mysh-ci-api35.ini" ]; then
+            echo "AVD cache miss; creating mysh-ci-api35."
+            echo "no" | avdmanager create avd --force \
+              --name mysh-ci-api35 \
+              --package "system-images;android-35;google_apis;x86_64" \
+              --device "pixel_5"
+          else
+            echo "Restored cached AVD configuration:"
+            ls -la "$ANDROID_AVD_HOME"
+          fi
           echo "ANDROID_AVD_HOME=${ANDROID_AVD_HOME}" >> "$GITHUB_ENV"
-          echo "Created AVD files:"
-          ls -la "$ANDROID_AVD_HOME"
           test -s "${ANDROID_AVD_HOME}/mysh-ci-api35.ini"
           EMULATOR_BIN="${ANDROID_HOME}/emulator/emulator"
           if [ ! -x "$EMULATOR_BIN" ]; then
@@ -142,7 +156,7 @@ jobs:
           fi
           "$EMULATOR_BIN" -avd mysh-ci-api35 \
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim \
-            -no-snapshot -no-metrics -camera-back none -camera-front none \
+            -no-metrics -camera-back none -camera-front none \
             -cores 4 -memory 4096 \
             > "$RUNNER_TEMP/mysh-emulator.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/mysh-emulator.pid"
@@ -189,9 +203,18 @@ jobs:
         run: |
           set -euo pipefail
           cleanup() {
-            adb emu kill >/dev/null 2>&1 || true
+            # A graceful emulator shutdown writes the Quick Boot snapshot.
+            adb -s emulator-5554 emu kill >/dev/null 2>&1 || true
             if [ -f "$RUNNER_TEMP/mysh-emulator.pid" ]; then
-              kill "$(cat "$RUNNER_TEMP/mysh-emulator.pid")" >/dev/null 2>&1 || true
+              emulator_pid="$(cat "$RUNNER_TEMP/mysh-emulator.pid")"
+              shutdown_deadline=$((SECONDS + 60))
+              while kill -0 "$emulator_pid" 2>/dev/null && [ "$SECONDS" -lt "$shutdown_deadline" ]; do
+                sleep 2
+              done
+              if kill -0 "$emulator_pid" 2>/dev/null; then
+                echo "Emulator did not stop gracefully; terminating it."
+                kill "$emulator_pid" >/dev/null 2>&1 || true
+              fi
             fi
           }
           trap cleanup EXIT
@@ -232,21 +255,21 @@ jobs:
             adb shell ls -la /data/local/tmp/mysh-glob
             literal_status=0
             literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" 2>&1 | tr -d '\r')" || literal_status=$?
-            printf 'Bionic literal echo status=%s output: <%s>\n' "$literal_status" "$literal"
+            printf 'Bionic literal echo status=%s output: <%s>\\n' "$literal_status" "$literal"
             test "$literal_status" -eq 0
             test "$literal" = "literal-ok"
             exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
-            printf 'Bionic exact-path output: <%s>\n' "$exact"
+            printf 'Bionic exact-path output: <%s>\\n' "$exact"
             test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
             if glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
               glob_status=0
             else
               glob_status=$?
             fi
-            printf 'Bionic pathname expansion status=%s output: <%s>\n' "$glob_status" "$glob"
+            printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
             class_glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
-            printf 'Bionic locale-class pathname expansion output: <%s>\n' "$class_glob"
+            printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
             test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
           fi
       - name: Build MYPK executable
