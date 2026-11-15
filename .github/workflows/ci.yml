@@ -207,15 +207,15 @@ jobs:
             adb shell chmod 755 /data/local/tmp/mysh-prefix/bin/coreutils
           fi
           adb shell chmod 755 /data/local/tmp/mysh
-          platform="$(adb shell /data/local/tmp/mysh --platform | tr -d '\\r')"
-          hostname="$(adb shell cat /proc/sys/kernel/hostname | tr -d '\\r')"
+          platform="$(adb shell /data/local/tmp/mysh --platform | tr -d '\r')"
+          hostname="$(adb shell cat /proc/sys/kernel/hostname | tr -d '\r')"
           if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
             expected_arch="aarch64"
           else
             expected_arch="x86_64"
           fi
           expected_platform="${hostname}-bionic-${expected_arch}"
-          printf 'Android runtime platform: <%s>\\n' "$platform"
+          printf 'Android runtime platform: <%s>\n' "$platform"
           test "$platform" = "$expected_platform"
           if [ "${{ matrix.abi }}" = "arm64-v8a" ]; then
             # The x86_64 Android image executes ARM64 guests through
@@ -232,21 +232,21 @@ jobs:
             adb shell ls -la /data/local/tmp/mysh-glob
             literal_status=0
             literal="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo literal-ok'" 2>&1 | tr -d '\r')" || literal_status=$?
-            printf 'Bionic literal echo status=%s output: <%s>\\n' "$literal_status" "$literal"
+            printf 'Bionic literal echo status=%s output: <%s>\n' "$literal_status" "$literal"
             test "$literal_status" -eq 0
             test "$literal" = "literal-ok"
             exact="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/alpha.txt'" | tr -d '\r')"
-            printf 'Bionic exact-path output: <%s>\\n' "$exact"
+            printf 'Bionic exact-path output: <%s>\n' "$exact"
             test "$exact" = "/data/local/tmp/mysh-glob/alpha.txt"
             if glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/*.txt'" | tr -d '\r')"; then
               glob_status=0
             else
               glob_status=$?
             fi
-            printf 'Bionic pathname expansion status=%s output: <%s>\\n' "$glob_status" "$glob"
+            printf 'Bionic pathname expansion status=%s output: <%s>\n' "$glob_status" "$glob"
             test "$glob" = "/data/local/tmp/mysh-glob/alpha.txt"
             class_glob="$(adb shell "MYSH_PREFIX=/data/local/tmp/mysh-prefix /data/local/tmp/mysh -c 'echo /data/local/tmp/mysh-glob/[[:alpha:]]*.txt'" | tr -d '\r')"
-            printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
+            printf 'Bionic locale-class pathname expansion output: <%s>\n' "$class_glob"
             test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
           fi
       - name: Build MYPK executable
