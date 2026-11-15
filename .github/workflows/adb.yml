@@ -1,0 +1,75 @@
+name: Android Emulator Snapshot (x86_64 & ARM64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: 'Select target architecture to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - x86_64
+          - arm64-v8a
+
+jobs:
+  run-emulator:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            api: 34
+            target: google_apis
+          - arch: arm64-v8a
+            runner: ubuntu-latest
+            api: 34
+            target: google_apis
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
+
+      - name: Restore AVD Snapshot Cache (${{ matrix.arch }})
+        id: avd-cache
+        uses: actions/cache@v4
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
+        with:
+          path: ~/.android/avd
+          key: avd-snapshot-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: |
+            avd-snapshot-${{ matrix.arch }}-
+
+      - name: Run Android Emulator (${{ matrix.arch }})
+        uses: reactivecircus/android-emulator-runner@v2
+        if: ${{ github.event.inputs.architecture == 'all' || github.event.inputs.architecture == '' || contains(matrix.arch, github.event.inputs.architecture) }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          avd-name: avd_${{ matrix.arch }}
+          force-avd-creation: false
+          emulator-port: 5554
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -snapshot default-boot
+          script: |
+            echo "Checking connected ADB devices..."
+            adb devices
+
+            echo "Verifying emulator architecture..."
+            adb -s emulator-5554 shell getprop ro.product.cpu.abi
+
+            # --- ADD YOUR CUSTOM ADB COMMANDS BELOW ---
+            sleep 10
+            # ------------------------------------------
+
+            echo "Saving AVD snapshot for ${{ matrix.arch }}..."
+            adb -s emulator-5554 emu avd snapshot save default-boot
+
+            echo "Shutting down emulator cleanly..."
+            adb -s emulator-5554 emu kill
+            sleep 5
