@@ -14,7 +14,7 @@ Mysh is under active development and is **not yet POSIX-conformant**. The curren
 - Parameter expansion, command substitution (`$(...)` and backticks), arithmetic expansion, tilde expansion, IFS field splitting, and pathname expansion within a partial implementation.
 - Compound commands: `if/elif/else`, `case`, `for`, `while`, `until`, brace groups, and subshells.
 - Shell functions, `return`, and `shift`.
-- Command lists `;`, `&&`, `||`; sequential buffered pipelines; basic redirection `<`, `>`, `>>`, and `2>`.
+- Command lists `;`, `&&`, `||`; concurrent kernel-pipe execution for pipelines made entirely of simple external commands; sequential buffered fallback for pipelines involving built-ins, functions, compound commands, or unresolved external commands; basic redirection `<`, `>`, `>>`, and `2>`.
 - Built-ins: `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, `continue`, `return`, and `shift`.
 - Executable lookup through `PATH`, child-process exit status, and Unix signal-status mapping.
 - External utility integration through uutils Coreutils in the Android runtime.
@@ -24,7 +24,7 @@ See the [Command Reference](docs/command-reference.md) for supported behavior an
 ## Important limitations
 
 - POSIX grammar, expansions, built-ins, and interactive-shell behavior are incomplete.
-- Pipelines are sequential and buffered, not concurrent OS pipes.
+- Only all-external simple-command pipelines use concurrent OS pipes. Pipelines requiring in-process built-ins, functions, compound commands, or unresolved external commands use sequential buffered fallback; compound stages do not yet receive input from the previous stage.
 - Background execution and job control are not implemented.
 - Here-documents, descriptor duplication/closure, and advanced redirections are not supported.
 - Pattern matching and locale behavior are partial.
