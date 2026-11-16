@@ -480,40 +480,87 @@ impl Shell {
             }
         }
 
-        let mut statuses = Vec::with_capacity(children.len());
-        std::thread::scope(|scope| {
-            let output_thread = final_stdout.map(|mut reader| {
-                scope.spawn(move || {
-                    let mut bytes = Vec::new();
-                    reader.read_to_end(&mut bytes).map(|_| bytes)
-                })
-            });
-            let error_threads: Vec<_> = error_readers.into_iter().map(|mut reader| {
-                scope.spawn(move || {
-                    let mut bytes = Vec::new();
-                    reader.read_to_end(&mut bytes).map(|_| bytes)
-                })
-            }).collect();
+        enum PipelineOutput {
+            Stdout(Vec<u8>),
+            Stderr(Vec<u8>),
+            ReadError(&'static str, io::Error),
+        }
 
+        let mut statuses = Vec::with_capacity(children.len());
+        let mut output_error = None;
+        std::thread::scope(|scope| {
+            let (sender, receiver) = std::sync::mpsc::sync_channel(8);
+            let mut readers = Vec::with_capacity(error_readers.len() + usize::from(final_stdout.is_some()));
+
+            if let Some(reader) = final_stdout {
+                let sender = sender.clone();
+                readers.push(scope.spawn(move || {
+                    let mut reader = reader;
+                    let mut buffer = [0u8; 8192];
+                    loop {
+                        match reader.read(&mut buffer) {
+                            Ok(0) => break,
+                            Ok(count) => {
+                                if sender.send(PipelineOutput::Stdout(buffer[..count].to_vec())).is_err() { break; }
+                            }
+                            Err(error) => {
+                                let _ = sender.send(PipelineOutput::ReadError("stdout", error));
+                                break;
+                            }
+                        }
+                    }
+                }));
+            }
+
+            for reader in error_readers {
+                let sender = sender.clone();
+                readers.push(scope.spawn(move || {
+                    let mut reader = reader;
+                    let mut buffer = [0u8; 8192];
+                    loop {
+                        match reader.read(&mut buffer) {
+                            Ok(0) => break,
+                            Ok(count) => {
+                                if sender.send(PipelineOutput::Stderr(buffer[..count].to_vec())).is_err() { break; }
+                            }
+                            Err(error) => {
+                                let _ = sender.send(PipelineOutput::ReadError("stderr", error));
+                                break;
+                            }
+                        }
+                    }
+                }));
+            }
+            drop(sender);
+
+            // Drain every output stream while children are running. The bounded
+            // channel limits memory use without requiring caller writers to be Send.
+            while let Ok(output) = receiver.recv() {
+                let result = match output {
+                    PipelineOutput::Stdout(bytes) => stdout.write_all(&bytes),
+                    PipelineOutput::Stderr(bytes) => stderr.write_all(&bytes),
+                    PipelineOutput::ReadError(stream, error) => {
+                        let _ = writeln!(stderr, "mysh: pipeline {stream}: {error}");
+                        continue;
+                    }
+                };
+                if output_error.is_none() {
+                    output_error = result.err();
+                }
+            }
+
+            for reader in readers {
+                if reader.join().is_err() && output_error.is_none() {
+                    output_error = Some(io::Error::other("pipeline output reader panicked"));
+                }
+            }
             for child in &mut children {
                 statuses.push(child.wait().map(external_status_code).unwrap_or(126));
             }
-            if let Some(handle) = output_thread {
-                match handle.join() {
-                    Ok(Ok(bytes)) => { let _ = stdout.write_all(&bytes); }
-                    Ok(Err(error)) => { let _ = writeln!(stderr, "mysh: pipeline stdout: {error}"); }
-                    Err(_) => { let _ = writeln!(stderr, "mysh: pipeline stdout reader panicked"); }
-                }
-            }
-            for handle in error_threads {
-                match handle.join() {
-                    Ok(Ok(bytes)) if !bytes.is_empty() => { let _ = stderr.write_all(&bytes); }
-                    Ok(Ok(_)) => {}
-                    Ok(Err(error)) => { let _ = writeln!(stderr, "mysh: pipeline stderr: {error}"); }
-                    Err(_) => { let _ = writeln!(stderr, "mysh: pipeline stderr reader panicked"); }
-                }
-            }
         });
+        if let Some(error) = output_error {
+            let _ = writeln!(stderr, "mysh: pipeline output: {error}");
+        }
 
         let status = statuses.last().copied().unwrap_or(0);
         self.last_status = if pipeline.negated { if status == 0 { 1 } else { 0 } } else { status };
