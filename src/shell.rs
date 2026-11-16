@@ -324,7 +324,204 @@ impl Shell {
         true
     }
 
+    /// Execute a pipeline made entirely of external commands using kernel pipes.
+    /// Returns None when a stage requires the in-process shell executor.
+    fn execute_external_pipeline(
+        &mut self,
+        pipeline: &Pipeline,
+        stdout: &mut dyn Write,
+        stderr: &mut dyn Write,
+    ) -> Option<bool> {
+        if pipeline.stages.len() < 2 { return None; }
+
+        struct PreparedStage {
+            executable: std::path::PathBuf,
+            arguments: Vec<String>,
+            environment: BTreeMap<String, String>,
+            input: Option<String>,
+            output: Option<(String, bool)>,
+            error: Option<String>,
+        }
+
+        let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
+        let mut prepared = Vec::with_capacity(pipeline.stages.len());
+        for stage in &pipeline.stages {
+            let PipelineStage::Simple(words) = stage else { return None; };
+            let (mut command, redirects) = match parse_redirections(words, &self.variables, self.last_status) {
+                Ok(value) => value,
+                Err(message) => {
+                    let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                    self.last_status = 2;
+                    return Some(true);
+                }
+            };
+            let mut environment = self.variables.clone();
+            while command.first().is_some_and(|word| assignment(word).is_some()) {
+                let word = command.remove(0);
+                let (name, value) = assignment(&word).expect("assignment was checked");
+                environment.insert(name.to_owned(), value.to_owned());
+            }
+            if command.is_empty() || is_shell_builtin(&command[0]) || self.functions.contains_key(&command[0])
+                || matches!(command[0].as_str(), "." | "eval" | "shift" | "return")
+            {
+                return None;
+            }
+
+            let (executable, arguments) = if is_uutils_utility(&command[0]) {
+                match resolve_command("coreutils", &search_path) {
+                    Ok(multicall) => (
+                        multicall,
+                        std::iter::once(command[0].clone()).chain(command[1..].iter().cloned()).collect(),
+                    ),
+                    Err(_) => match resolve_command(&command[0], &search_path) {
+                        Ok(path) => (path, command[1..].to_vec()),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {}: {error}", command[0]);
+                            self.last_status = if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 };
+                            return Some(true);
+                        }
+                    },
+                }
+            } else {
+                match resolve_command(&command[0], &search_path) {
+                    Ok(path) => (path, command[1..].to_vec()),
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: {}: {error}", command[0]);
+                        self.last_status = if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 };
+                        return Some(true);
+                    }
+                }
+            };
+            prepared.push(PreparedStage {
+                executable,
+                arguments,
+                environment,
+                input: redirects.input,
+                output: redirects.output.map(|path| (path, redirects.append)),
+                error: redirects.error,
+            });
+        }
+
+        let mut children: Vec<std::process::Child> = Vec::with_capacity(prepared.len());
+        let mut error_readers = Vec::with_capacity(prepared.len());
+        let mut previous_stdout: Option<std::process::ChildStdout> = None;
+        let mut final_stdout: Option<std::process::ChildStdout> = None;
+
+        for (index, stage) in prepared.iter().enumerate() {
+            let is_last = index + 1 == prepared.len();
+            let mut process = Command::new(&stage.executable);
+            process.args(&stage.arguments).env_clear()
+                .envs(self.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
+            if let Some(path) = stage.input.as_deref() {
+                match File::open(path) {
+                    Ok(file) => { process.stdin(Stdio::from(file)); }
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: {path}: {error}");
+                        for child in &mut children { let _ = child.kill(); }
+                        for mut child in children { let _ = child.wait(); }
+                        self.last_status = 1;
+                        return Some(true);
+                    }
+                }
+            } else if let Some(pipe) = previous_stdout.take() {
+                process.stdin(Stdio::from(pipe));
+            } else if index > 0 {
+                // An upstream explicit stdout redirection disconnects this stage.
+                process.stdin(Stdio::null());
+            }
+
+            if let Some((path, append)) = stage.output.as_ref() {
+                match open_output(path, *append) {
+                    Ok(file) => { process.stdout(Stdio::from(file)); }
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: {path}: {error}");
+                        for child in &mut children { let _ = child.kill(); }
+                        for mut child in children { let _ = child.wait(); }
+                        self.last_status = 1;
+                        return Some(true);
+                    }
+                }
+            } else if !is_last {
+                process.stdout(Stdio::piped());
+            } else {
+                process.stdout(Stdio::piped());
+            }
+
+            if let Some(path) = stage.error.as_deref() {
+                match open_output(path, false) {
+                    Ok(file) => { process.stderr(Stdio::from(file)); }
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: {path}: {error}");
+                        for child in &mut children { let _ = child.kill(); }
+                        for mut child in children { let _ = child.wait(); }
+                        self.last_status = 1;
+                        return Some(true);
+                    }
+                }
+            } else {
+                process.stderr(Stdio::piped());
+            }
+
+            match process.spawn() {
+                Ok(mut child) => {
+                    if let Some(reader) = child.stderr.take() { error_readers.push(reader); }
+                    let child_stdout = child.stdout.take();
+                    children.push(child);
+                    if !is_last && stage.output.is_none() {
+                        previous_stdout = child_stdout;
+                    } else if is_last && stage.output.is_none() {
+                        final_stdout = child_stdout;
+                    }
+                }
+                Err(error) => {
+                    let _ = writeln!(stderr, "mysh: {}: {error}", stage.executable.display());
+                    for child in &mut children { let _ = child.kill(); }
+                    for mut child in children { let _ = child.wait(); }
+                    self.last_status = if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 };
+                    return Some(true);
+                }
+            }
+        }
+
+        let mut statuses = Vec::with_capacity(children.len());
+        std::thread::scope(|scope| {
+            let output_thread = final_stdout.map(|mut reader| {
+                scope.spawn(move || io::copy(&mut reader, stdout))
+            });
+            let error_threads: Vec<_> = error_readers.into_iter().map(|mut reader| {
+                scope.spawn(move || {
+                    let mut bytes = Vec::new();
+                    reader.read_to_end(&mut bytes).map(|_| bytes)
+                })
+            }).collect();
+
+            for child in &mut children {
+                statuses.push(child.wait().map(external_status_code).unwrap_or(126));
+            }
+            if let Some(handle) = output_thread {
+                if let Err(error) = handle.join().unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::Other, "pipeline stdout reader panicked"))) {
+                    let _ = writeln!(stderr, "mysh: pipeline stdout: {error}");
+                }
+            }
+            for handle in error_threads {
+                match handle.join() {
+                    Ok(Ok(bytes)) if !bytes.is_empty() => { let _ = stderr.write_all(&bytes); }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => { let _ = writeln!(stderr, "mysh: pipeline stderr: {error}"); }
+                    Err(_) => { let _ = writeln!(stderr, "mysh: pipeline stderr reader panicked"); }
+                }
+            }
+        });
+
+        let status = statuses.last().copied().unwrap_or(0);
+        self.last_status = if pipeline.negated { if status == 0 { 1 } else { 0 } } else { status };
+        Some(true)
+    }
+
     fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
+        if let Some(result) = self.execute_external_pipeline(pipeline, stdout, stderr) {
+            return result;
+        }
         let stages = &pipeline.stages;
         if stages.len() == 1 {
             let keep_running = match &stages[0] {
