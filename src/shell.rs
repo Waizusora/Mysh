@@ -405,6 +405,7 @@ impl Shell {
         let mut final_stdout: Option<std::process::ChildStdout> = None;
 
         for (index, stage) in prepared.iter().enumerate() {
+            let is_last = index + 1 == prepared.len();
             let mut process = Command::new(&stage.executable);
             process.args(&stage.arguments).env_clear()
                 .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
