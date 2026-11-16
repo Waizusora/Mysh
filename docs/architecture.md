@@ -47,7 +47,7 @@ The language target is the POSIX Shell Command Language. The current implementat
 The parser and executor currently provide initial support for:
 
 - Command lists ;, &&, and ||, and pipeline negation with !.
-- Sequential buffered pipelines with simple-command, brace-group, and subshell stages.
+- Concurrent kernel-pipe execution for pipelines made entirely of simple external commands, with concurrent draining of each child stderr and the final stdout stream. Pipelines requiring in-process built-ins, functions, compound commands, or unresolved external commands use a sequential buffered fallback.
 - if/elif/else, case, for, while, until, brace groups, and subshells.
 - Function definitions using name() compound-command syntax.
 - Basic input, output, append, and standard-error redirection: <, >, >>, and 2>.
@@ -60,7 +60,7 @@ See the [Command Reference](command-reference.md) for the supported behavior and
 
 ## Known execution limitations
 
-- Pipelines exchange byte buffers sequentially; they do not use concurrent connected OS pipes. Compound stages do not yet receive input from the preceding stage.
+- Concurrent OS pipes are currently limited to pipelines made entirely of simple external commands. Mixed/builtin/function/compound pipelines use the buffered fallback; compound stages do not yet receive input from the preceding stage. Full POSIX pipeline process, signal, and job-control semantics remain incomplete.
 - Background execution and job control are not implemented. The parser retains the & separator, but the executor rejects it.
 - Here-documents, descriptor duplication/closure, >|, <>, and advanced redirections are not supported.
 - Compound-command grammar is not accepted in every position permitted by POSIX.
