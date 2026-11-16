@@ -707,7 +707,7 @@ impl Shell {
                     final_status = if stage_command.is_empty() {
                         0
                     } else {
-                        match self.run_stage(&stage_command, &redirections, stage_input.as_deref(), output_writer, error_writer) {
+                        match self.run_stage(&stage_command, &redirections, stage_input, output_writer, error_writer) {
                             StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
                         }
                     };
@@ -716,7 +716,7 @@ impl Shell {
                 final_status = if stage_command.is_empty() {
                     0
                 } else {
-                    match self.run_stage(&stage_command, &redirections, stage_input.as_deref(), &mut stage_output, &mut stage_error) {
+                    match self.run_stage(&stage_command, &redirections, stage_input, &mut stage_output, &mut stage_error) {
                         StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
                     }
                 };
@@ -1069,7 +1069,7 @@ impl Shell {
         }
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let outcome = self.run_stage(&command, &redirections, input.as_deref(), &mut output, &mut errors);
+        let outcome = self.run_stage(&command, &redirections, input, &mut output, &mut errors);
         if !assignments.is_empty() && !persist_assignments {
             self.variables = saved_variables;
             self.exported = saved_exported;
@@ -1140,7 +1140,7 @@ impl Shell {
         })
     }
 
-    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
+    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<Vec<u8>>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
         if command[0] == "." {
             if command.len() < 2 {
@@ -1239,7 +1239,7 @@ impl Shell {
             return StageOutcome::Continue(status);
         }
         if is_shell_builtin(&command[0]) && is_special_builtin(&command[0]) {
-            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
+            if let Some(outcome) = self.dispatch_builtin(command, input.as_deref(), out, err) {
                 return outcome;
             }
         }
@@ -1310,7 +1310,7 @@ impl Shell {
                 // channel prevents an in-process pipeline stage from accumulating
                 // an unbounded child output buffer.
                 let stdin_writer = child.stdin.take().map(|mut stdin| {
-                    let input = input.map(<[u8]>::to_vec);
+                    let input = input;
                     std::thread::spawn(move || {
                         if let Some(input) = input {
                             stdin.write_all(&input)
