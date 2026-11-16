@@ -1363,8 +1363,12 @@ impl Shell {
                 while let Ok((is_stderr, chunk)) = receiver.recv() {
                     match chunk {
                         Ok(bytes) => {
-                            let writer = if is_stderr { &mut *err } else { &mut *out };
-                            if let Err(error) = writer.write_all(&bytes) {
+                            let result = if is_stderr {
+                                err.write_all(&bytes)
+                            } else {
+                                out.write_all(&bytes)
+                            };
+                            if let Err(error) = result {
                                 if output_error.is_none() { output_error = Some(error); }
                             }
                         }
