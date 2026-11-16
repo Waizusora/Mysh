@@ -24,7 +24,7 @@ Some built-ins are dispatched in shell.rs rather than all being implemented in b
 ## Supported shell grammar
 
 - Command lists: ;, &&, ||.
-- Pipelines: | and pipeline negation with !.
+- Pipelines: `|` and pipeline negation with `!`. All-external simple-command pipelines use connected OS pipes and drain each child stderr concurrently with the final stdout stream. Pipelines containing shell built-ins, functions, compound stages, or unresolved commands use a sequential buffered fallback.
 - Compound commands: { list; }, ( list ), if/then/elif/else/fi, case/in/esac, for, while, and until.
 - Function definitions: name() compound-command.
 - Basic redirection: <, >, >>, 2>.
@@ -95,7 +95,7 @@ Commands containing / are treated as explicit paths. Other command names are sea
 
 ## Pipeline and redirection limitations
 
-Pipelines are sequential and buffered, not concurrent OS pipes. Input/output is passed between stages through buffers; compound stages do not yet receive input from the previous stage. Background execution with & is not implemented and is rejected by the executor.
+Only pipelines consisting entirely of simple external commands use concurrent OS pipes. In this path, all stages are spawned with connected stdin/stdout and each stderr stream is drained concurrently with the final stdout stream. This avoids blocking when an intermediate stage writes substantial stderr while downstream stages are still consuming data. Pipelines that require in-process shell execution (built-ins, functions, compound commands, or unresolved external commands) use the sequential buffered fallback. Compound stages in that fallback do not yet receive input from the previous stage. Background execution with & is not implemented and is rejected by the executor.
 
 Only <, >, >>, and 2> are included in the basic redirection implementation. Here-documents, descriptor duplication/closure, >|, <>, and advanced redirections are unsupported.
 
@@ -103,7 +103,7 @@ Only <, >, >>, and 2> are included in the basic redirection implementation. Here
 
 - Overall POSIX.1-2024 shell conformance.
 - Background jobs, job control, process groups, traps, and interactive signal semantics.
-- Concurrent pipelines and complete redirection semantics.
+- Concurrent OS-pipe execution for mixed pipelines involving built-ins/functions/compound stages, and complete redirection semantics.
 - Here-documents and descriptor duplication/closure.
 - The full set of POSIX built-ins and complete special-builtin error behavior.
 - Complete parameter/field/pathname expansion semantics, locale-sensitive pattern matching, and all compound-grammar positions.
