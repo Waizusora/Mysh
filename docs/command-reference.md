@@ -1,95 +1,110 @@
 # Command Reference
 
-This document describes the current implementation and distinguishes shell built-ins from external utilities.
+Dokumen ini membedakan shell built-ins dari utility eksternal dan mencatat perilaku source saat ini. Daftar ini bukan klaim konformansi POSIX.
 
-## POSIX Shell Built-ins
+## Built-ins dan special commands
 
-| Command | Syntax | Current behavior |
+| Command | Syntax | Perilaku saat ini |
 | --- | --- | --- |
-| \`:\` | \`:\` | No-op special built-in; returns status 0. |
-| \`.\` | \`. file\` | Reads and executes a readable shell file in the current shell environment; sourced-file positional arguments are not implemented yet. |
-| \`cd\` | \`cd [directory]\` or \`cd -\` | Changes the current directory. With no operand, uses \`HOME\`; \`-\` changes to \`OLDPWD\` and prints the new directory. |
-| \`export\` | \`export [name[=value] ...]\` or \`export -p\` | Marks variables for export and optionally assigns values. With no operands or \`-p\`, lists exported variables. |
-| \`unset\` | \`unset name ...\` | Removes shell variables and their export attributes. |
-| \`pwd\` | \`pwd [-L|-P]\` | Prints the current working directory. The options are accepted; logical-versus-physical path semantics remain incomplete. |
-| \`true\` | \`true\` | Returns status 0. |
-| \`false\` | \`false\` | Returns status 1. |
-| \`eval\` | \`eval [argument ...]\` | Concatenates arguments with spaces and parses and executes the resulting command text in the current shell environment. |
-| \`break\` | \`break [n]\` | Exits the current loop or the requested number of enclosing loops. |
-| \`continue\` | \`continue [n]\` | Starts the next iteration of the current loop or the requested enclosing loop. |
-| \`exit\` | \`exit [status]\` | Exits Mysh with the requested numeric status. |
+| : | : | No-op; status 0. |
+| . | . file | Membaca dan menjalankan file shell di shell aktif. Argumen positional khusus untuk sourced file belum didukung lengkap. |
+| cd | cd [directory], cd - | Mengubah working directory; tanpa argumen memakai HOME; - memakai OLDPWD dan mencetak direktori baru. |
+| export | export [name[=value] ...], export -p | Mengatur export attribute/assignment dan menampilkan daftar exported variables. |
+| unset | unset name ... | Menghapus shell variable dan export attribute. |
+| pwd | pwd [-L|-P] | Mencetak current directory; perbedaan logical/physical belum lengkap. |
+| true, false | tanpa argumen | Menghasilkan status 0 dan 1. |
+| eval | eval [argument ...] | Menggabungkan argumen dengan spasi lalu mengeksekusi command text dalam shell aktif. |
+| break, continue | [n] | Mengontrol loop aktif; level harus integer positif. |
+| return | return [status] | Mengakhiri pemanggilan fungsi aktif; di luar fungsi ditolak. Return dari dot-sourced script belum lengkap. |
+| shift | shift [n] | Menggeser positional parameters aktif; default satu. |
+| exit | exit [status] | Mengakhiri shell dengan status yang diminta. |
 
-The built-in set is incomplete. Additional POSIX special and regular built-ins remain to be implemented. The current built-ins are not evidence of full POSIX conformance.
+Sebagian built-in ditangani pada dispatcher di shell.rs, bukan seluruhnya di builtins/mod.rs.
 
-## External Utilities
+## Shell grammar yang tersedia
 
-Utilities are not implemented as Mysh built-ins. The intended external provider is uutils Coreutils 0.12.0, pinned to commit \`dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69\` and built with the Android \`feat_os_unix_android\` feature set.
+- Command list: ;, &&, ||.
+- Pipeline: | dan pipeline negation dengan !.
+- Compound commands: { list; }, ( list ), if/then/elif/else/fi, case/in/esac, for, while, dan until.
+- Function definition: name() compound-command.
+- Redirection dasar: <, >, >>, 2>.
 
-Examples include \`ls\`, \`cat\`, \`cp\`, \`mv\`, \`rm\`, \`mkdir\`, \`rmdir\`, \`touch\`, \`echo\`, \`printf\`, \`sort\`, \`uniq\`, and \`wc\`. Utilities absent from the selected uutils feature set require a separate external-utility decision; they must not be added as shell built-ins merely because uutils does not provide them.
+Contoh fungsi:
 
-Mysh resolves an external command in this order:
+    greet() {
+        echo "Hello, $1"
+    }
+    greet world
 
-1. If the command name contains \`/\`, treat it as an explicit path.
-2. Otherwise search executable files in \`PATH\`, from left to right.
-3. If no standalone executable is found and the name belongs to the pinned uutils Android utility set, search for \`coreutils\` in \`PATH\` and invoke it as \`coreutils utility arguments...\`.
-4. If neither route succeeds, report command-not-found with status 127. A found but non-executable command returns status 126.
+Contoh control flow:
 
-The Android CI runtime archive contains `bin/mysh` and `bin/coreutils` for its matching ABI. Extract `mysh-android-bionic-<abi>-runtime.tar.gz` into the Android application's private files directory so that the layout becomes `<filesDir>/bin/`. Set `MYSH_PREFIX` to `<filesDir>` before launching Mysh; startup prepends `<filesDir>/bin` to `PATH`, allowing the multicall binary to be resolved. The archive is a runtime payload and does not install itself or bypass Android executable-file restrictions. Commands containing `/` are never redirected through the multicall fallback.
+    for item in one two three; do
+        echo "$item"
+    done
 
-External command availability also depends on ABI compatibility, dynamic linker availability, and Android application sandbox restrictions. Child-process exit codes are returned unchanged when the process exits normally. On Unix-like systems, a process terminated by signal N is represented as status 128 + N.
+    if test -n "$HOME"; then
+        echo "$HOME"
+    else
+        echo "HOME is empty"
+    fi
 
-## Parsing Rules
+Compound grammar belum diterima di semua posisi yang diizinkan POSIX. Case pattern mendukung subset *, ?, dan bracket patterns; quote-sensitive matching dan locale-sensitive behavior belum lengkap.
 
-- Unquoted whitespace separates arguments.
-- Single quotes preserve all characters until the next single quote and suppress variable expansion.
-- Double quotes group characters into one argument; basic variable expansion remains enabled inside them.
-- Adjacent quoted and unquoted fragments are combined into one word.
-- A backslash escapes the next character outside single quotes. Escaped dollar signs are not expanded.
-- A backslash-newline pair is treated as a line continuation.
-- An unquoted \`#\` at the beginning of a token starts a comment.
-- Empty quoted strings produce empty arguments.
-- The lexer recognizes POSIX operator forms including parentheses, `;;`, descriptor redirections, and here-document operators. Recognition is lexical only; descriptor/operator combinations without execution support are rejected by the parser rather than passed to commands as ordinary arguments. Quoted operator-looking text remains an ordinary word.
+## Expansion
 
-These rules are partial and do not yet implement the complete POSIX token-recognition and expansion model.
+| Expansion | Status |
+| --- | --- |
+| Named, positional, dan special parameters | Dukungan awal, termasuk $?, $#, $1..., $@, $*, $$, $-, dan $! bila tersedia |
+| Braced parameters | Subset multi-digit, length, default/alternate/assignment/required-value, prefix/suffix pattern removal |
+| Command substitution | $(...) dan backquoted form; state terisolasi, trailing newlines dihapus |
+| Arithmetic expansion | Integer expression dan subset operator/assignment |
+| Tilde expansion | Leading unquoted ~ dari HOME |
+| IFS field splitting | Subset POSIX; quoted/literal fragments dipertahankan |
+| Pathname expansion | *, ?, bracket ranges/negation, ASCII character classes; unmatched pattern tetap literal |
 
-## Command lists, pipelines, and redirections
-
-The command-list parser supports sequential commands separated by `;`, plus left-associative conditional lists using `&&` and `||`. Complete compound-command spans are parsed before list separators are split, so separators inside compound bodies are not mistaken for top-level separators. Implemented compound commands can also occupy pipeline stages on either side of a simple command. A leading unquoted `!` negates the resulting pipeline status; the same token elsewhere remains ordinary command text. The parser retains asynchronous-list (`&`) markers in the command-list AST, but the executor reports them as unsupported until Phase 6 job control is implemented. The Phase 2 parser milestone is complete for the command-list, pipeline, and compound-command grammar represented in the roadmap regression map. This does not claim overall POSIX conformance; unsupported redirection execution remains deferred to Phase 4. The implemented compound-command subset includes `{ list; }` brace groups, `( list )` subshells, `if`/`elif`/`else`, `case`/`in`/`esac`, and partial `for`, `while`, and `until` commands. A `case` command expands its subject word, checks pattern alternatives in source order, and executes only the body of the first matching arm; `*`, `?`, and basic bracket ranges are supported by the current matcher. POSIX quote-sensitive pattern interpretation, locale-sensitive bracket classes, and the full pattern grammar remain incomplete. Incremental input classification tracks nested brace-group delimiters and case pattern/arm boundaries: open constructs request more input, while unmatched closing delimiters are rejected. Brace words affect group nesting only in reserved-word command position, so ordinary arguments such as `echo {` and `echo }` remain arguments. Quoted brace characters remain ordinary word content. Brace groups execute in the current shell environment. Subshells execute with copied shell variables and export attributes, isolate loop-control state, and restore the parent working directory; the child exit status becomes the subshell command status. Parentheses must form a complete compound command. Reserved words are recognized only at command boundaries, including immediately after a brace-group or subshell opener; quoted and escaped keyword-looking words remain ordinary words.
-
-### Shell functions
-
-The parser accepts POSIX `name() compound-command` definitions, for example:
-
-```sh
-greet() {
-    echo "Hello, $1"
-}
-greet world
-```
-
-Definitions are stored in the current shell and can be invoked later in that shell. Function bodies execute in the current shell environment, so ordinary variable changes persist. Special built-ins retain precedence over functions; functions are checked before the remaining built-ins and external command lookup. During invocation, positional parameters `$1` onward and `$#` are temporarily set from the arguments and restored afterward, including across nested function calls. `shift [n]` removes the first `n` positional parameters (default one), updates `$#`, and fails when the requested count exceeds the available parameters. A quoted `"$@"` or `"${@}"` in a command word preserves each positional parameter as a separate argument, including empty arguments and arguments containing spaces; adjacent prefix and suffix text attaches to the first and last fields. With no positional parameters, a word consisting solely of quoted `"$@"` contributes no argument. Quoted `"$*"` joins positional parameters into one field using the first character of `IFS`, or a space when `IFS` is unset. Basic field splitting is applied to unquoted parameter-expansion results: unset `IFS` defaults to space, tab, and newline; empty `IFS` disables splitting; IFS whitespace runs are collapsed; non-whitespace delimiters can produce interior empty fields. Literal source characters and quoted expansions are not split. Unquoted `$@` retains separate positional-parameter fields before field splitting, while unquoted `$*` joins parameters using the first IFS character before splitting. Empty unquoted positional fields are subject to removal; complete POSIX positional expansion semantics remain incomplete. Initial pathname expansion supports `*`, `?`, bracket ranges, and `!` bracket negation after field splitting. Unmatched patterns remain literal, and names beginning with `.` are excluded unless the pattern component begins with `.`. Quoted and escaped wildcard characters remain literal, including when adjacent to active unquoted wildcard fragments. Wildcards produced by unquoted variable expansion remain active, while quoted variable results remain literal. Other POSIX pathname edge cases remain incomplete. The remaining expansion contexts are incomplete. A `for name; do ...; done` loop iterates over the active positional parameters. The `return [status]` special built-in exits the active function; without an operand it preserves the current status. `return` outside a function is rejected. Return-from-dot-script behavior and other function execution and error semantics remain incomplete.
-
-The current implementation supports sequential, buffered pipelines with simple-command stages and brace-group or subshell stages. Pipeline output is collected between stages rather than streamed through concurrently connected operating-system pipes. External utilities such as \`cat\` receive pipeline input through standard input.
-
-Basic redirection operators \`<\`, \`>\`, \`>>\`, and \`2>\` are recognized. Other descriptor forms, descriptor duplication/closure, \`>|\`, \`<>\`, and here-document operators are not implemented and are rejected during parsing. Redirection behavior inside multi-stage pipelines is not yet complete.
+Expansion order dan interaksi antar-ekspansi belum sepenuhnya sesuai POSIX. Parsing word pada parameter operators belum sepenuhnya quote/whitespace-aware. Locale collation dan beberapa pathname edge cases belum didukung.
 
 ## Variables and environment
 
-The shell tracks shell variables separately from exported variables. \`NAME=value\` creates or updates a persistent shell variable without exporting it. \`NAME=value command\` applies a temporary assignment to that command invocation. Assignments preceding implemented POSIX special built-ins persist in the current shell environment. External commands receive only exported variables.
+- Environment awal disalin dari proses induk.
+- Shell variables dan exported variables dilacak terpisah.
+- NAME=value adalah persistent shell assignment tanpa otomatis export.
+- NAME=value command adalah temporary command-prefix assignment.
+- External process hanya menerima exported variables.
+- Jika MYSH_PREFIX disetel dan $MYSH_PREFIX/bin tersedia, direktori tersebut diprioritaskan di awal PATH.
+- Fungsi sementara mengubah positional parameters; caller state dipulihkan setelah fungsi selesai.
 
-When \`MYSH_PREFIX\` is set and \`$MYSH_PREFIX/bin\` exists, Mysh prepends that directory to \`PATH\` at startup. Multi-stage pipeline stages use isolated snapshots, including brace-group and subshell stages. Pipeline execution remains sequential and buffered; compound stages currently support output into a following simple stage, but do not yet receive the preceding stage's input.
+## External utilities
 
-Environment-variable references such as \`$HOME\` and \`\${HOME}\` and the last-exit-status parameter \`$?\` / \`\${?}\` are currently substituted in unquoted and double-quoted fragments. Single-quoted and backslash-escaped text is preserved literally. Function calls expose positional parameters \`$1\` onward and \`$#\` inside the function body, restore the caller's positional values after return, and support \`shift [n]\` plus \`for name; do ...; done\` iteration. In a command word, quoted \`\"$@\"\` / \`\"\${@}\"\` preserves each positional argument as a separate field, including empty values; quoted \`\"$*\"\` / \`\"\${*}\"\` joins all positional values into one field using the first character of \`IFS\`, or a space when \`IFS\` is unset (an empty \`IFS\` joins without a separator). Unquoted named-parameter expansion supports the limited IFS field-splitting behavior described above. Unquoted `$@` preserves positional argument boundaries before field splitting, whereas unquoted `$*` first joins parameters with the first IFS character. Empty unquoted positional values are removed where they produce null fields. Initial pathname expansion supports `*`, `?`, and bracket expressions, with unmatched patterns retained literally. Per-character quoting metadata is preserved through field splitting: unquoted variable results can supply active wildcard characters, while quoted variable results and escaped wildcard characters remain literal. Other POSIX pathname edge cases remain incomplete. Core parameter expansion supports named and positional parameters (including braced multi-digit references), special parameters, `${#parameter}`, nested brace matching, default/alternate/assignment/required-value operators, and shortest/longest prefix/suffix pattern removal. Both `$(...)` and backquoted command substitution execute in an isolated shell state; trailing newlines are removed. Arithmetic expansion supports integer expressions, variables, precedence, parentheses, common operators, and basic assignment operators. Leading unquoted `~` expands from `HOME`. IFS field splitting preserves quoted/literal characters and positional boundaries. Pathname expansion supports `*`, `?`, bracket ranges, negation, literal leading `]`, and ASCII POSIX character classes; unmatched patterns remain literal and leading-dot names are excluded unless explicitly matched. Full POSIX coverage remains in progress: parameter-operator words still need quote/whitespace-aware parsing, arithmetic grammar and locale-sensitive bracket elements are incomplete, and nested expansion-order interactions need further conformance testing.
+Utility seperti ls, cat, cp, mv, rm, mkdir, rmdir, touch, echo, printf, sort, uniq, dan wc bukan built-ins Mysh. Ketersediaannya bergantung pada executable eksternal yang terpasang.
 
-## Limitations
+Android runtime CI membangun pinned uutils Coreutils dengan feature subset tertentu. Mysh dapat menjalankan utility melalui executable coreutils multicall ketika utility tersebut termasuk dalam daftar yang dikompilasi. Runtime archive per ABI berisi bin/mysh dan bin/coreutils; aplikasi Android harus mengekstrak arsip ke private files directory dan mengatur MYSH_PREFIX. Utility di luar feature set tidak otomatis tersedia.
 
-Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and reserved-word handling, POSIX expansion order, general positional-parameter semantics, complete function semantics and the \`return\` special built-in, complete quote-aware case-pattern semantics, here-documents, concurrent pipelines, complete redirection semantics, the remaining POSIX built-ins, traps, signal semantics, job control, and interactive-shell requirements. POSIX.1-2024 conformance must be established by dedicated tests, not inferred from the presence of individual commands.
+Command yang mengandung / diperlakukan sebagai explicit path. Nama command lainnya dicari pada PATH secara berurutan. Command tidak ditemukan menghasilkan status 127; command ditemukan tetapi tidak executable menghasilkan status 126. Exit code normal child dipertahankan; terminasi signal N pada Unix menjadi status 128 + N.
 
-## Command Ownership and Migration Status
+## Lexer notes
 
-- Mysh owns the POSIX shell language engine and commands that POSIX requires as shell built-ins.
-- uutils Coreutils owns external utilities that are included in the pinned Android feature set.
-- Duplicate filesystem utility implementations have been removed from the Mysh built-in module. Commands such as \`ls\`, \`mkdir\`, \`rmdir\`, \`touch\`, \`cp\`, \`mv\`, \`rm\`, \`cat\`, and \`echo\` now go through external command resolution.
-- The multicall fallback is covered by a shell test using a controlled `coreutils` executable. CI builds and packages the two runtime binaries for both supported Android ABIs; the consuming Android application remains responsible for extracting the archive into its private files directory and setting `MYSH_PREFIX`.
-- Utilities absent from uutils are separate external utilities, not shell built-ins.
-- Bash-only commands, syntax, and expansions are outside the supported language and command contract.
+- Unquoted whitespace memisahkan words.
+- Single quotes mempertahankan isi secara literal.
+- Double quotes mengelompokkan teks dan tetap mengizinkan ekspansi yang didukung.
+- Adjacent quoted/unquoted fragments menjadi satu word.
+- Backslash meng-escape karakter berikutnya di luar single quotes; backslash-newline adalah line continuation.
+- Unquoted # pada awal token memulai komentar.
+- Empty quoted strings menghasilkan argumen kosong.
+- Lexer mengenali lebih banyak operator POSIX daripada yang dapat dieksekusi. Descriptor redirection, here-document operators, dan bentuk yang belum didukung ditolak parser/executor; pengenalan token bukan dukungan fitur.
+
+## Pipeline and redirection limitations
+
+Pipeline saat ini sequential dan buffered, bukan concurrent OS pipes. Input/output antar-stage menggunakan buffer; compound stage belum menerima input dari stage sebelumnya. Background execution dengan & belum didukung dan ditolak executor.
+
+Hanya <, >, >>, dan 2> yang menjadi cakupan redirection dasar. Here-documents, descriptor duplication/closure, >|, <>, dan redirection lanjutan belum didukung.
+
+## Not implemented / incomplete
+
+- POSIX.1-2024 shell conformance secara keseluruhan.
+- Background jobs, job control, process groups, traps, dan interactive signal semantics.
+- Concurrent pipelines dan complete redirection semantics.
+- Here-documents dan descriptor duplication/closure.
+- Seluruh POSIX built-ins dan complete special-builtin error behavior.
+- Complete parameter/field/pathname expansion semantics, locale-sensitive pattern matching, dan semua compound grammar positions.
+- Interactive line editing dan persistent history.
