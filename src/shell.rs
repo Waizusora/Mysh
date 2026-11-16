@@ -3641,6 +3641,38 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn pipeline_child_output_is_drained_while_large_stdin_is_written() {
+        use std::os::unix::fs::PermissionsExt;
+
+        const TRANSFER_BYTES: usize = 2 * 1024 * 1024;
+        let script = std::env::temp_dir().join(format!(
+            "mysh-pipeline-backpressure-{}.sh",
+            std::process::id(),
+        ));
+        std::fs::write(
+            &script,
+            "#!/bin/sh\ndd if=/dev/zero bs=65536 count=32 2>/dev/null\ncat >/dev/null\n",
+        ).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!(
+            "dd if=/dev/zero bs=65536 count=32 2>/dev/null | {}",
+            script.display(),
+        );
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(output.len(), TRANSFER_BYTES);
+        assert!(output.iter().all(|byte| *byte == 0));
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+
+        std::fs::remove_file(script).unwrap();
+    }
+
     #[test]
     fn pipeline_prefix_assignments_are_temporary_to_the_stage() {
         let mut shell = Shell::new();
