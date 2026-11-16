@@ -24,7 +24,7 @@ fn validate_hostname(value: String) -> io::Result<String> {
 /// Android SELinux can deny procfs reads; libc exposes the kernel hostname via gethostname().
 #[cfg(target_os = "android")]
 fn hostname_from_libc() -> io::Result<String> {
-    use std::ffi::{c_char, CStr};
+    use std::ffi::c_char;
 
     const HOSTNAME_CAPACITY: usize = 256;
     let mut buffer = [0 as c_char; HOSTNAME_CAPACITY];
@@ -34,14 +34,20 @@ fn hostname_from_libc() -> io::Result<String> {
     }
 
     // SAFETY: the pointer references a writable buffer of the supplied length.
-    let result = unsafe { gethostname(buffer.as_mut_ptr(), buffer.len()) };
+    // Reserve the final byte for a NUL terminator. POSIX permits truncation
+    // without writing a terminator when the supplied buffer is too small.
+    let result = unsafe { gethostname(buffer.as_mut_ptr(), buffer.len() - 1) };
     if result != 0 {
         return Err(io::Error::last_os_error());
     }
 
-    // SAFETY: gethostname writes a NUL-terminated name when it fits in the buffer.
-    let bytes = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_bytes();
-    let value = std::str::from_utf8(bytes)
+    // The final byte was not exposed to gethostname, so the buffer always
+    // contains a terminator within its bounds. Avoid an unbounded CStr read.
+    let end = buffer.iter().position(|&byte| byte == 0).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "kernel hostname is not terminated")
+    })?;
+    let bytes: Vec<u8> = buffer[..end].iter().map(|&byte| byte as u8).collect();
+    let value = std::str::from_utf8(&bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     validate_hostname(value.to_owned())
 }
