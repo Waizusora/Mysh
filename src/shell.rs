@@ -4190,7 +4190,7 @@ mod tests {
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("cat | sh -c 'kill -TERM $'", &mut output, &mut errors));
+        assert!(shell.execute_line("printf data | sh -c 'kill -TERM $'", &mut output, &mut errors));
         assert_eq!(shell.last_status(), 143);
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
     }
