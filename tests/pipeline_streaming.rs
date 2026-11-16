@@ -100,9 +100,14 @@ fn mixed_pipeline_streams_large_final_external_stage_output() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    assert!(shell.execute_line("pwd | head -c 2097152 /dev/zero", &mut stdout, &mut stderr));
+    assert!(shell.execute_line(
+        "pwd | sh -c 'head -c 2097152 /dev/zero; head -c 2097152 /dev/zero >&2'",
+        &mut stdout,
+        &mut stderr,
+    ));
     assert_eq!(shell.last_status(), 0);
     assert_eq!(stdout.len(), 2 * 1024 * 1024);
     assert!(stdout.iter().all(|byte| *byte == 0));
-    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+    assert_eq!(stderr.len(), 2 * 1024 * 1024);
+    assert!(stderr.iter().all(|byte| *byte == 0));
 }
