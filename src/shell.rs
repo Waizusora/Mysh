@@ -338,6 +338,7 @@ impl Shell {
             executable: std::path::PathBuf,
             arguments: Vec<String>,
             environment: BTreeMap<String, String>,
+            exported: BTreeSet<String>,
             input: Option<String>,
             output: Option<(String, bool)>,
             error: Option<String>,
@@ -356,10 +357,12 @@ impl Shell {
                 }
             };
             let mut environment = self.variables.clone();
+            let mut exported = self.exported.clone();
             while command.first().is_some_and(|word| assignment(word).is_some()) {
                 let word = command.remove(0);
                 let (name, value) = assignment(&word).expect("assignment was checked");
                 environment.insert(name.to_owned(), value.to_owned());
+                exported.insert(name.to_owned());
             }
             if command.is_empty() || is_shell_builtin(&command[0]) || self.functions.contains_key(&command[0])
                 || matches!(command[0].as_str(), "." | "eval" | "shift" | "return")
@@ -396,6 +399,7 @@ impl Shell {
                 executable,
                 arguments,
                 environment,
+                exported,
                 input: redirects.input,
                 output: redirects.output.map(|path| (path, redirects.append)),
                 error: redirects.error,
@@ -411,7 +415,7 @@ impl Shell {
             let is_last = index + 1 == prepared.len();
             let mut process = Command::new(&stage.executable);
             process.args(&stage.arguments).env_clear()
-                .envs(self.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
+                .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
             if let Some(path) = stage.input.as_deref() {
                 match File::open(path) {
                     Ok(file) => { process.stdin(Stdio::from(file)); }
@@ -4101,6 +4105,34 @@ mod tests {
         let redirected = std::fs::read_to_string(&path).unwrap();
         assert!(redirected.contains("mysh-command-that-does-not-exist"));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_pipeline_streams_large_intermediate_output_through_os_pipes() {
+        const TRANSFER_BYTES: usize = 2 * 1024 * 1024;
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "dd if=/dev/zero bs=65536 count=32 2>/dev/null | wc -c";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output).trim().parse::<usize>().unwrap(), TRANSFER_BYTES);
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_pipeline_last_stage_status_is_preserved() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("sh -c 'exit 7' | cat", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 0);
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+
+        assert!(shell.execute_line("sh -c 'exit 7' | sh -c 'exit 9'", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 9);
     }
 
     #[test]
