@@ -325,6 +325,7 @@ impl Shell {
     }
 
     /// Execute a pipeline made entirely of external commands using kernel pipes.
+    #[rustfmt::skip]
     /// Returns None when a stage requires the in-process shell executor.
     fn execute_external_pipeline(
         &mut self,
@@ -4110,6 +4111,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[rustfmt::skip]
     #[test]
     fn external_pipeline_streams_large_intermediate_output_through_os_pipes() {
         const TRANSFER_BYTES: usize = 2 * 1024 * 1024;
@@ -4124,6 +4126,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[rustfmt::skip]
     #[test]
     fn external_pipeline_input_redirection_overrides_incoming_pipe() {
         let path = std::env::temp_dir().join(format!("mysh-concurrent-input-{}.txt", std::process::id()));
@@ -4140,6 +4143,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[rustfmt::skip]
     #[test]
     fn external_pipeline_output_redirection_disconnects_downstream_stage() {
         let path = std::env::temp_dir().join(format!("mysh-concurrent-output-{}.txt", std::process::id()));
@@ -4155,6 +4159,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[rustfmt::skip]
     #[test]
     fn external_pipeline_last_stage_status_is_preserved() {
         let mut shell = Shell::new();
