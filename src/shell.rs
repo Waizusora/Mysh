@@ -1054,8 +1054,8 @@ impl Shell {
         &mut self,
         command: &[String],
         input: Option<&[u8]>,
-        out: &mut Vec<u8>,
-        err: &mut Vec<u8>,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
     ) -> Option<StageOutcome> {
         let outcome = builtins::run(
             &command[0],
@@ -1097,7 +1097,7 @@ impl Shell {
         })
     }
 
-    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut Vec<u8>, err: &mut Vec<u8>) -> StageOutcome {
+    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<&[u8]>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
         if command[0] == "." {
             if command.len() < 2 {
@@ -1263,9 +1263,9 @@ impl Shell {
         }
         match process.spawn() {
             Ok(mut child) => {
-                // Drain stdout/stderr while feeding stdin. Writing a large input
-                // synchronously before wait_with_output can deadlock when the child
-                // fills its stdout pipe before it has consumed all of stdin.
+                // Feed stdin and drain both output pipes concurrently. A bounded
+                // channel prevents an in-process pipeline stage from accumulating
+                // an unbounded child output buffer.
                 let stdin_writer = child.stdin.take().map(|mut stdin| {
                     let input = input.map(<[u8]>::to_vec);
                     std::thread::spawn(move || {
@@ -1276,23 +1276,85 @@ impl Shell {
                         }
                     })
                 });
-                let result = child.wait_with_output();
-                let stdin_result = stdin_writer.map(|writer| {
-                    writer.join().unwrap_or_else(|_| {
-                        Err(io::Error::other("stdin writer thread panicked"))
+                let (sender, receiver) = std::sync::mpsc::sync_channel::<(bool, io::Result<Vec<u8>>)>(8);
+                let stdout_reader = child.stdout.take().map(|mut stream| {
+                    let sender = sender.clone();
+                    std::thread::spawn(move || {
+                        let mut buffer = [0u8; 8192];
+                        loop {
+                            match stream.read(&mut buffer) {
+                                Ok(0) => break,
+                                Ok(length) => {
+                                    if sender.send((false, Ok(buffer[..length].to_vec()))).is_err() { break; }
+                                }
+                                Err(error) => {
+                                    let _ = sender.send((false, Err(error)));
+                                    break;
+                                }
+                            }
+                        }
                     })
                 });
+                let stderr_reader = child.stderr.take().map(|mut stream| {
+                    let sender = sender.clone();
+                    std::thread::spawn(move || {
+                        let mut buffer = [0u8; 8192];
+                        loop {
+                            match stream.read(&mut buffer) {
+                                Ok(0) => break,
+                                Ok(length) => {
+                                    if sender.send((true, Ok(buffer[..length].to_vec()))).is_err() { break; }
+                                }
+                                Err(error) => {
+                                    let _ = sender.send((true, Err(error)));
+                                    break;
+                                }
+                            }
+                        }
+                    })
+                });
+                drop(sender);
+
+                let mut output_error = None;
+                let mut read_error = None;
+                while let Ok((is_stderr, chunk)) = receiver.recv() {
+                    match chunk {
+                        Ok(bytes) => {
+                            let writer = if is_stderr { &mut *err } else { &mut *out };
+                            if let Err(error) = writer.write_all(&bytes) {
+                                if output_error.is_none() { output_error = Some(error); }
+                            }
+                        }
+                        Err(error) => {
+                            if read_error.is_none() { read_error = Some(error); }
+                        }
+                    }
+                }
+                let stdout_join = stdout_reader.map(|reader| reader.join());
+                let stderr_join = stderr_reader.map(|reader| reader.join());
+                let stdin_result = stdin_writer.map(|writer| {
+                    writer.join().unwrap_or_else(|_| Err(io::Error::other("stdin writer thread panicked")))
+                });
+                let status = child.wait();
+                if stdout_join.is_some_and(|result| result.is_err()) || stderr_join.is_some_and(|result| result.is_err()) {
+                    let _ = writeln!(err, "mysh: {}: output reader thread panicked", command[0]);
+                    return StageOutcome::Continue(1);
+                }
                 if let Some(Err(error)) = stdin_result {
                     if error.kind() != io::ErrorKind::BrokenPipe {
                         let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
                     }
                 }
-                match result {
-                    Ok(result) => {
-                        out.extend_from_slice(&result.stdout);
-                        err.extend_from_slice(&result.stderr);
-                        StageOutcome::Continue(external_status_code(result.status))
-                    }
+                if let Some(error) = read_error {
+                    let _ = writeln!(err, "mysh: {}: output read: {error}", command[0]);
+                    return StageOutcome::Continue(1);
+                }
+                if let Some(error) = output_error {
+                    let _ = writeln!(err, "mysh: {}: output write: {error}", command[0]);
+                    return StageOutcome::Continue(1);
+                }
+                match status {
+                    Ok(status) => StageOutcome::Continue(external_status_code(status)),
                     Err(error) => {
                         let _ = writeln!(err, "mysh: {}: {error}", command[0]);
                         StageOutcome::Continue(126)
