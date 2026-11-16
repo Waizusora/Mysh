@@ -611,20 +611,21 @@ impl Shell {
                     loop_control: None,
                 };
                 let entries = vec![CompoundListEntry { command: compound.clone(), connector: None, asynchronous: false }];
-                let mut stage_output = Vec::new();
-                let mut stage_error = Vec::new();
-                let _ = child.execute_compound_list(&entries, &mut stage_output, &mut stage_error);
-                final_status = child.last_status;
+                if is_last {
+                    let _ = child.execute_compound_list(&entries, stdout, stderr);
+                    final_status = child.last_status;
+                } else {
+                    let mut stage_output = Vec::new();
+                    let mut stage_error = Vec::new();
+                    let _ = child.execute_compound_list(&entries, &mut stage_output, &mut stage_error);
+                    final_status = child.last_status;
+                    if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
+                    input = Some(stage_output);
+                }
                 if let Err(error) = std::env::set_current_dir(&original_directory) {
                     let _ = writeln!(stderr, "mysh: pipeline: cannot restore current directory: {error}");
                     self.last_status = 1;
                     return true;
-                }
-                if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
-                if is_last {
-                    if !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
-                } else {
-                    input = Some(stage_output);
                 }
                 continue;
             }
@@ -669,41 +670,83 @@ impl Shell {
             }
             let mut stage_output = Vec::new();
             let mut stage_error = Vec::new();
-            final_status = if stage_command.is_empty() {
-                0
-            } else {
-                match self.run_stage(&stage_command, &redirections, stage_input.as_deref(), &mut stage_output, &mut stage_error) {
-                    StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+            if is_last {
+                let mut output_file = match redirections.output.as_deref() {
+                    Some(path) => match open_output(path, redirections.append) {
+                        Ok(file) => Some(file),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {path}: {error}");
+                            final_status = 1;
+                            None
+                        }
+                    },
+                    None => None,
+                };
+                let mut error_file = match redirections.error.as_deref() {
+                    Some(path) => match open_output(path, false) {
+                        Ok(file) => Some(file),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {path}: {error}");
+                            final_status = 1;
+                            None
+                        }
+                    },
+                    None => None,
+                };
+                let output_failed = redirections.output.is_some() && output_file.is_none();
+                let error_failed = redirections.error.is_some() && error_file.is_none();
+                if !output_failed && !error_failed {
+                    let output_writer: &mut dyn Write = match output_file.as_mut() {
+                        Some(file) => file,
+                        None => stdout,
+                    };
+                    let error_writer: &mut dyn Write = match error_file.as_mut() {
+                        Some(file) => file,
+                        None => stderr,
+                    };
+                    final_status = if stage_command.is_empty() {
+                        0
+                    } else {
+                        match self.run_stage(&stage_command, &redirections, stage_input.as_deref(), output_writer, error_writer) {
+                            StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+                        }
+                    };
                 }
-            };
+            } else {
+                final_status = if stage_command.is_empty() {
+                    0
+                } else {
+                    match self.run_stage(&stage_command, &redirections, stage_input.as_deref(), &mut stage_output, &mut stage_error) {
+                        StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+                    }
+                };
+            }
             self.variables = saved_variables;
             self.exported = saved_exported;
             self.loop_control = saved_loop_control;
             if let Some(directory) = saved_directory {
                 let _ = std::env::set_current_dir(directory);
             }
-            let mut output_redirected = false;
-            if let Some(path) = redirections.output.as_deref() {
-                output_redirected = true;
-                match open_output(path, redirections.append).and_then(|mut file| file.write_all(&stage_output)) {
-                    Ok(()) => {}
-                    Err(error) => {
+            if !is_last {
+                let mut output_redirected = false;
+                if let Some(path) = redirections.output.as_deref() {
+                    output_redirected = true;
+                    match open_output(path, redirections.append).and_then(|mut file| file.write_all(&stage_output)) {
+                        Ok(()) => {}
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {path}: {error}");
+                            final_status = 1;
+                        }
+                    }
+                }
+                if let Some(path) = redirections.error.as_deref() {
+                    if let Err(error) = open_output(path, false).and_then(|mut file| file.write_all(&stage_error)) {
                         let _ = writeln!(stderr, "mysh: {path}: {error}");
                         final_status = 1;
                     }
+                } else if !stage_error.is_empty() {
+                    let _ = stderr.write_all(&stage_error);
                 }
-            }
-            if let Some(path) = redirections.error.as_deref() {
-                if let Err(error) = open_output(path, false).and_then(|mut file| file.write_all(&stage_error)) {
-                    let _ = writeln!(stderr, "mysh: {path}: {error}");
-                    final_status = 1;
-                }
-            } else if !stage_error.is_empty() {
-                let _ = stderr.write_all(&stage_error);
-            }
-            if is_last {
-                if !output_redirected && !stage_output.is_empty() { let _ = stdout.write_all(&stage_output); }
-            } else {
                 input = Some(if output_redirected { Vec::new() } else { stage_output });
             }
         }
