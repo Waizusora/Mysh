@@ -6,7 +6,6 @@ This repository owns the Mysh shell implementation and its platform-specific run
 - [Architecture](architecture.md)
 - [Development roadmap](roadmap.md)
 - [Command reference](command-reference.md)
-- [MYPK specification](mypk-specification.md)
 - [Changelog](../CHANGELOG.md)
 - [Security policy](../SECURITY.md)
 
