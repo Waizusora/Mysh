@@ -648,7 +648,7 @@ impl Shell {
                 self.variables.insert(name.to_owned(), value.to_owned());
                 self.exported.insert(name.to_owned());
             }
-            let mut stage_input = input.clone();
+            let mut stage_input = input.take();
             if let Some(path) = redirections.input.as_deref() {
                 let mut contents = Vec::new();
                 match File::open(path).and_then(|mut file| file.read_to_end(&mut contents)) {
