@@ -405,7 +405,6 @@ impl Shell {
         let mut final_stdout: Option<std::process::ChildStdout> = None;
 
         for (index, stage) in prepared.iter().enumerate() {
-            let is_last = index + 1 == prepared.len();
             let mut process = Command::new(&stage.executable);
             process.args(&stage.arguments).env_clear()
                 .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
@@ -440,8 +439,6 @@ impl Shell {
                         return Some(true);
                     }
                 }
-            } else if !is_last {
-                process.stdout(Stdio::piped());
             } else {
                 process.stdout(Stdio::piped());
             }
@@ -1234,7 +1231,7 @@ impl Shell {
                 let result = child.wait_with_output();
                 let stdin_result = stdin_writer.map(|writer| {
                     writer.join().unwrap_or_else(|_| {
-                        Err(io::Error::new(io::ErrorKind::Other, "stdin writer thread panicked"))
+                        Err(io::Error::other("stdin writer thread panicked"))
                     })
                 });
                 if let Some(Err(error)) = stdin_result {
