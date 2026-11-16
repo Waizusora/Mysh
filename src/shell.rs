@@ -4153,6 +4153,63 @@ mod tests {
     #[cfg(unix)]
     #[rustfmt::skip]
     #[test]
+    fn external_pipeline_append_redirection_preserves_existing_contents() {
+        let path = std::env::temp_dir().join(format!("mysh-concurrent-append-{}.txt", std::process::id()));
+        std::fs::write(&path, "first").unwrap();
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("printf second >> {} | wc -c", path.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output).trim(), "0");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "firstsecond");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[rustfmt::skip]
+    #[test]
+    fn external_pipeline_stderr_redirection_captures_child_stderr() {
+        let path = std::env::temp_dir().join(format!("mysh-concurrent-stderr-{}.txt", std::process::id()));
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("sh -c 'printf diagnostic >&2' 2> {} | wc -c", path.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output).trim(), "0");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "diagnostic");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[rustfmt::skip]
+    #[test]
+    fn external_pipeline_reports_last_stage_signal_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("cat | sh -c 'kill -TERM $'", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 143);
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[cfg(unix)]
+    #[rustfmt::skip]
+    #[test]
+    fn external_pipeline_negation_inverts_last_stage_status() {
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("! sh -c 'exit 7' | cat", &mut output, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+    }
+
+    #[cfg(unix)]
+    #[rustfmt::skip]
+    #[test]
     fn external_pipeline_last_stage_status_is_preserved() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
