@@ -118,13 +118,21 @@ Start an interactive session:
 Run a command from a script or another process:
 
 ```sh
-printf 'pwd\\necho "hello from Mysh"\\nexit\\n' | ./mysh
+printf 'pwd\
+echo "hello from Mysh"\
+exit\
+' | ./mysh
 ```
 
 External commands are resolved using the current `PATH`. Mysh does not provide root access or bypass Android application sandbox restrictions.
 
+## Wicofe integration status
+
+Wicofe is a planned additional target, not a currently supported platform. The required OS ABI, Rust runtime, process, terminal, and PTY integration are tracked in [the Wicofe integration checklist](docs/WICOFE_INTEGRATION.md).
+
 ## Documentation
 
+- [Documentation index](docs/INDEX.md)
 - [Architecture](docs/architecture.md)
 - [Development roadmap](docs/roadmap.md)
 - [Command reference](docs/command-reference.md)
