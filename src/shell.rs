@@ -980,14 +980,31 @@ impl Shell {
         }
         match process.spawn() {
             Ok(mut child) => {
-                if let Some(mut stdin) = child.stdin.take() {
-                    if let Some(input) = input {
-                        if let Err(error) = stdin.write_all(input) {
-                            let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
+                // Drain stdout/stderr while feeding stdin. Writing a large input
+                // synchronously before wait_with_output can deadlock when the child
+                // fills its stdout pipe before it has consumed all of stdin.
+                let stdin_writer = child.stdin.take().map(|mut stdin| {
+                    let input = input.map(<[u8]>::to_vec);
+                    std::thread::spawn(move || {
+                        if let Some(input) = input {
+                            stdin.write_all(&input)
+                        } else {
+                            Ok(())
                         }
+                    })
+                });
+                let result = child.wait_with_output();
+                let stdin_result = stdin_writer.map(|writer| {
+                    writer.join().unwrap_or_else(|_| {
+                        Err(io::Error::new(io::ErrorKind::Other, "stdin writer thread panicked"))
+                    })
+                });
+                if let Some(Err(error)) = stdin_result {
+                    if error.kind() != io::ErrorKind::BrokenPipe {
+                        let _ = writeln!(err, "mysh: {}: stdin: {error}", command[0]);
                     }
                 }
-                match child.wait_with_output() {
+                match result {
                     Ok(result) => {
                         out.extend_from_slice(&result.stdout);
                         err.extend_from_slice(&result.stderr);
