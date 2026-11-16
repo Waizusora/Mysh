@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Removed the experimental MYPK package-manager crate, executable, package-format specification, and CI/runtime packaging integration. Mysh is a shell and does not provide a package manager.
+
+
 All notable changes to Mysh are documented in this file.
 
 The format follows Keep a Changelog. Version numbers follow Semantic Versioning.
