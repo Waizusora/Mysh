@@ -3608,6 +3608,20 @@ mod tests {
 
     #[test]
     fn pipeline_parser_rejects_empty_stages() {
+        for input in ["| cat", "cat |", "cat | | cat", "!", "( echo incomplete"] {
+            let tokens = crate::lexer::lex(input).unwrap();
+            assert!(
+                crate::parser::split_pipeline(tokens).is_err(),
+                "pipeline should reject empty or incomplete stages: {input}",
+            );
+        }
+
+        for input in ["cat | wc", "echo value | cat"] {
+            let tokens = crate::lexer::lex(input).unwrap();
+            let pipeline = crate::parser::split_pipeline(tokens)
+                .unwrap_or_else(|error| panic!("valid pipeline rejected ({input}): {error}"));
+            assert_eq!(pipeline.stages.len(), 2, "{input}");
+        }
     }
 
     #[test]
