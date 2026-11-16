@@ -92,3 +92,17 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
 
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn mixed_pipeline_streams_large_final_external_stage_output() {
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line("pwd | head -c 2097152 /dev/zero", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout.len(), 2 * 1024 * 1024);
+    assert!(stdout.iter().all(|byte| *byte == 0));
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
