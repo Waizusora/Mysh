@@ -173,7 +173,7 @@ Exit criteria:
 
 - **External utilities:** maintain a separately documented inventory of POSIX utilities, uutils-provided commands, and utility gaps. Utility coverage does not determine shell-language conformance.
 - **Android / Bionic:** prioritize ARM64 (`aarch64-linux-android`) and x86-64 (`x86_64-linux-android`) builds and runtime validation against Android's Bionic libc.
-- **Linux / musl:** prioritize portable-core and runtime validation for musl-based Linux targets. CI builds Mysh and MYPK and runs the Mysh test suite for `x86_64-unknown-linux-musl` natively and `aarch64-unknown-linux-musl` through Cross/QEMU; confirm both matrix jobs pass before treating this coverage as validated.
+- **Linux / musl:** prioritize portable-core and runtime validation for musl-based Linux targets. CI builds Mysh and runs the Mysh test suite for `x86_64-unknown-linux-musl` natively and `aarch64-unknown-linux-musl` through Cross/QEMU; confirm both matrix jobs pass before treating this coverage as validated.
 
 ## Current implementation boundary
 
