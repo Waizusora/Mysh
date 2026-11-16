@@ -52,3 +52,43 @@ fn compound_pipeline_stage_runs_in_isolated_shell_state() {
     );
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 }
+
+
+#[test]
+fn builtin_pipeline_output_redirection_disconnects_downstream_input() {
+    let directory = std::env::temp_dir().join(format!("mysh-pipeline-redirect-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let output_path = directory.join("builtin-output.txt");
+    let command = format!("pwd > '{}' | cat", output_path.display());
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stdout.is_empty(), "downstream stage received redirected output");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+    let redirected = std::fs::read_to_string(&output_path).unwrap();
+    assert_eq!(redirected, format!("{}\\n", std::env::current_dir().unwrap().display()));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn builtin_pipeline_input_redirection_replaces_upstream_data() {
+    let directory = std::env::temp_dir().join(format!("mysh-pipeline-input-redirect-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input_path = directory.join("builtin-input.txt");
+    std::fs::write(&input_path, "redirected-input\\n").unwrap();
+    let command = format!("printf 'upstream-data\\n' | cat < '{}'", input_path.display());
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"redirected-input\\n");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
