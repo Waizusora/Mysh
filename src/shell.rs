@@ -379,21 +379,13 @@ impl Shell {
                     ),
                     Err(_) => match resolve_command(&command[0], &search_path) {
                         Ok(path) => (path, command[1..].to_vec()),
-                        Err(error) => {
-                            let _ = writeln!(stderr, "mysh: {}: {error}", command[0]);
-                            self.last_status = if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 };
-                            return Some(true);
-                        }
+                        Err(_) => return None,
                     },
                 }
             } else {
                 match resolve_command(&command[0], &search_path) {
                     Ok(path) => (path, command[1..].to_vec()),
-                    Err(error) => {
-                        let _ = writeln!(stderr, "mysh: {}: {error}", command[0]);
-                        self.last_status = if error.kind() == io::ErrorKind::NotFound { 127 } else { 126 };
-                        return Some(true);
-                    }
+                    Err(_) => return None,
                 }
             };
             prepared.push(PreparedStage {
