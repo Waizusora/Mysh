@@ -23,7 +23,7 @@ esac
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_directory="$repository_root/dist"
 staging_directory="$output_directory/runtime-$abi"
-archive="$output_directory/mysh-runtime-$abi.tar.gz"
+archive="$output_directory/mysh-android-bionic-$abi-runtime.tar.gz"
 
 mysh_binary="$repository_root/target/$rust_target/release/mysh"
 mypk_binary="$repository_root/target/$rust_target/release/mypk"

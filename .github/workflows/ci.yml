@@ -104,6 +104,10 @@ jobs:
         run: cargo build --manifest-path .build/uutils-coreutils/Cargo.toml --target "${{ matrix.rust_target }}" --release --no-default-features --features feat_common_core,df,du,env,kill,nohup,nproc,more,sync,tac,timeout,uptime,whoami,feat_require_unix_core
       - name: Build Mysh executable
         run: cargo build -p mysh --target "${{ matrix.rust_target }}" --release
+      - name: Stage platform-qualified Android binaries
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.rust_target }}/release/mysh" "dist/mysh-android-bionic-${{ matrix.abi }}"
       # Cache both the AVD state and its system image. The cache is immutable;
       # bump the key suffix when the emulator configuration changes.
       - name: Restore Android emulator AVD and system image cache
@@ -279,25 +283,25 @@ jobs:
       - name: Upload Android runtime package
         uses: actions/upload-artifact@v6
         with:
-          name: mysh-runtime-${{ matrix.abi }}
-          path: dist/mysh-runtime-${{ matrix.abi }}.tar.gz
+          name: mysh-android-bionic-${{ matrix.abi }}-runtime
+          path: dist/mysh-android-bionic-${{ matrix.abi }}-runtime.tar.gz
           if-no-files-found: error
       - name: Upload Mysh executable
         uses: actions/upload-artifact@v6
         with:
-          name: mysh-${{ matrix.abi }}
-          path: target/${{ matrix.rust_target }}/release/mysh
+          name: mysh-android-bionic-${{ matrix.abi }}
+          path: dist/mysh-android-bionic-${{ matrix.abi }}
           if-no-files-found: error
       - name: Upload uutils Coreutils executable
         uses: actions/upload-artifact@v6
         with:
-          name: uutils-coreutils-${{ matrix.abi }}
+          name: coreutils-android-bionic-${{ matrix.abi }}
           path: .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils
           if-no-files-found: error
       - name: Upload MYPK executable
         uses: actions/upload-artifact@v6
         with:
-          name: mypk-${{ matrix.abi }}
+          name: mypk-android-bionic-${{ matrix.abi }}
           path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
   musl:
@@ -354,15 +358,19 @@ jobs:
           else
             cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
           fi
+      - name: Stage platform-qualified Linux binaries
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.rust_target }}/release/mysh" "dist/mysh-linux-musl-${{ matrix.arch }}"
       - name: Upload Mysh musl executable
         uses: actions/upload-artifact@v6
         with:
-          name: mysh-musl-${{ matrix.arch }}
-          path: target/${{ matrix.rust_target }}/release/mysh
+          name: mysh-linux-musl-${{ matrix.arch }}
+          path: dist/mysh-linux-musl-${{ matrix.arch }}
           if-no-files-found: error
       - name: Upload MYPK musl executable
         uses: actions/upload-artifact@v6
         with:
-          name: mypk-musl-${{ matrix.arch }}
+          name: mypk-linux-musl-${{ matrix.arch }}
           path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
