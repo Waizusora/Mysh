@@ -486,7 +486,10 @@ impl Shell {
         let mut statuses = Vec::with_capacity(children.len());
         std::thread::scope(|scope| {
             let output_thread = final_stdout.map(|mut reader| {
-                scope.spawn(move || io::copy(&mut reader, stdout))
+                scope.spawn(move || {
+                    let mut bytes = Vec::new();
+                    reader.read_to_end(&mut bytes).map(|_| bytes)
+                })
             });
             let error_threads: Vec<_> = error_readers.into_iter().map(|mut reader| {
                 scope.spawn(move || {
@@ -499,8 +502,10 @@ impl Shell {
                 statuses.push(child.wait().map(external_status_code).unwrap_or(126));
             }
             if let Some(handle) = output_thread {
-                if let Err(error) = handle.join().unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::Other, "pipeline stdout reader panicked"))) {
-                    let _ = writeln!(stderr, "mysh: pipeline stdout: {error}");
+                match handle.join() {
+                    Ok(Ok(bytes)) => { let _ = stdout.write_all(&bytes); }
+                    Ok(Err(error)) => { let _ = writeln!(stderr, "mysh: pipeline stdout: {error}"); }
+                    Err(_) => { let _ = writeln!(stderr, "mysh: pipeline stdout reader panicked"); }
                 }
             }
             for handle in error_threads {
