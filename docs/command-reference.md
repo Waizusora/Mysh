@@ -34,7 +34,7 @@ Mysh resolves an external command in this order:
 3. If no standalone executable is found and the name belongs to the pinned uutils Android utility set, search for \`coreutils\` in \`PATH\` and invoke it as \`coreutils utility arguments...\`.
 4. If neither route succeeds, report command-not-found with status 127. A found but non-executable command returns status 126.
 
-The Android CI runtime archive contains `bin/mysh`, `bin/coreutils`, and `bin/mypk` for its matching ABI. Extract `mysh-runtime-<abi>.tar.gz` into the Android application's private files directory so that the layout becomes `<filesDir>/bin/`. Set `MYSH_PREFIX` to `<filesDir>` before launching Mysh; startup prepends `<filesDir>/bin` to `PATH`, allowing the multicall binary and MYPK to be resolved. The archive is a runtime payload and does not install itself or bypass Android executable-file restrictions. Commands containing `/` are never redirected through the multicall fallback.
+The Android CI runtime archive contains `bin/mysh` and `bin/coreutils` for its matching ABI. Extract `mysh-android-bionic-<abi>-runtime.tar.gz` into the Android application's private files directory so that the layout becomes `<filesDir>/bin/`. Set `MYSH_PREFIX` to `<filesDir>` before launching Mysh; startup prepends `<filesDir>/bin` to `PATH`, allowing the multicall binary to be resolved. The archive is a runtime payload and does not install itself or bypass Android executable-file restrictions. Commands containing `/` are never redirected through the multicall fallback.
 
 External command availability also depends on ABI compatibility, dynamic linker availability, and Android application sandbox restrictions. Child-process exit codes are returned unchanged when the process exits normally. On Unix-like systems, a process terminated by signal N is represented as status 128 + N.
 
@@ -90,6 +90,6 @@ Mysh is not yet POSIX-conformant. Remaining work includes complete grammar and r
 - Mysh owns the POSIX shell language engine and commands that POSIX requires as shell built-ins.
 - uutils Coreutils owns external utilities that are included in the pinned Android feature set.
 - Duplicate filesystem utility implementations have been removed from the Mysh built-in module. Commands such as \`ls\`, \`mkdir\`, \`rmdir\`, \`touch\`, \`cp\`, \`mv\`, \`rm\`, \`cat\`, and \`echo\` now go through external command resolution.
-- The multicall fallback is covered by a shell test using a controlled `coreutils` executable. CI builds and packages the three runtime binaries for both supported Android ABIs; the consuming Android application remains responsible for extracting the archive into its private files directory and setting `MYSH_PREFIX`.
+- The multicall fallback is covered by a shell test using a controlled `coreutils` executable. CI builds and packages the two runtime binaries for both supported Android ABIs; the consuming Android application remains responsible for extracting the archive into its private files directory and setting `MYSH_PREFIX`.
 - Utilities absent from uutils are separate external utilities, not shell built-ins.
 - Bash-only commands, syntax, and expansions are outside the supported language and command contract.
