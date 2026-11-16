@@ -1,139 +1,77 @@
 # Mysh
 
-Mysh (My Shell) is an independent, native command-line shell written in Rust for Android. It is distributed as a standalone executable and is not a wrapper around Bash, Zsh, BusyBox, or another shell.
+Mysh adalah shell command-line native yang ditulis dengan Rust. Mysh menjalankan lexer, parser, ekspansi, dan interpretasi shell sendiri; bukan wrapper Bash, Zsh, atau BusyBox.
 
-## Project status
+## Status
 
-The project is progressing toward a mature POSIX shell. The native execution foundation is established, but the shell-language implementation remains partial and is not yet POSIX-conformant. The seven-phase maturity plan, phase statuses, and exit criteria are maintained in the [development roadmap](docs/roadmap.md).
+Mysh masih dalam pengembangan dan **belum POSIX-conformant**. Source saat ini menyediakan fondasi shell, subset grammar dan ekspansi POSIX, built-in inti, serta eksekusi proses eksternal. Lihat [roadmap](docs/roadmap.md) untuk tahapan pengembangan.
 
-## Compatibility principles
+## Fitur saat ini
 
-- **POSIX is the shell-language compatibility baseline.** Mysh aims to implement the portable command language and behavior expected from a POSIX-conforming `sh`.
-- **Mysh is an independent implementation.** Its lexer, parser, expansion engine, execution model, and built-ins are implemented in Rust. It does not delegate shell-script interpretation to the host's `/bin/sh`, Bash, Zsh, or BusyBox.
-- **The host supplies operating-system services.** Mysh may use platform APIs and launch external executables available on the host; this does not make another shell its interpreter.
-- **Compatibility is not yet complete.** The current implementation is partial and must not be described as POSIX-conformant until the required behavior has been implemented and validated.
+- Mode interaktif, input standar, dan `mysh -c 'command'`.
+- Lexer dengan single/double quotes, escaping, komentar, dan metadata kutipan.
+- Shell variables, exported environment, assignments, positional parameters, dan status `$?`.
+- Ekspansi parameter, command substitution (`$(...)` dan backticks), arithmetic, tilde, IFS field splitting, dan pathname expansion dalam cakupan parsial.
+- Compound commands: `if/elif/else`, `case`, `for`, `while`, `until`, brace groups, dan subshell.
+- Fungsi shell; `return` dan `shift`.
+- Command list `;`, `&&`, `||`; pipeline sequential-buffered; redirection dasar `<`, `>`, `>>`, dan `2>`.
+- Built-ins: `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, `continue`, `return`, dan `shift`.
+- Resolusi executable melalui `PATH`, exit status child process, dan pemetaan signal status pada Unix.
+- Integrasi utilitas eksternal melalui uutils Coreutils pada runtime Android.
 
-POSIX shell compatibility is distinct from implementing every POSIX utility. Mysh's shell-language target does not by itself promise to bundle the complete POSIX utility suite.
+Rincian perilaku dan batas tiap fitur ada di [Command Reference](docs/command-reference.md). Operator yang dikenali lexer belum tentu didukung parser atau executor.
 
+## Batasan penting
 
-## Platform roadmap
+- Grammar, ekspansi, built-in, dan perilaku interaktif POSIX belum lengkap.
+- Pipeline masih sequential dan buffered, bukan concurrent OS pipes.
+- Background execution dan job control belum tersedia.
+- Here-documents, descriptor duplication/closure, dan redirection lanjutan belum didukung.
+- Pattern matching dan locale behavior masih parsial.
 
-Mysh follows this platform order:
+## Target build
 
-1. **POSIX compatibility:** implement and test the portable shell-language and utility behavior that forms the project's compatibility baseline.
-2. **Android:** complete and maintain the two Android runtime executables per ABI listed below.
-3. **Linux:** validate the shared implementation on mainstream Linux environments.
-4. **FreeBSD:** add and test a dedicated FreeBSD target after the POSIX foundation is stable.
-
-FreeBSD is the only BSD operating system currently planned as an explicit target. OpenBSD and NetBSD are not part of the committed roadmap. POSIX compatibility is a behavioral baseline, not a claim that every POSIX utility or shell feature is already implemented.
-
-## Supported Android build targets
-
-| Android ABI | Rust target |
+| Platform | Rust target |
 | --- | --- |
-| ARMv8-A (arm64-v8a) | `aarch64-linux-android` |
-| x86-64 (x86_64) | `x86_64-linux-android` |
+| Android ARM64 | `aarch64-linux-android` |
+| Android x86-64 | `x86_64-linux-android` |
+| Linux musl x86-64 | `x86_64-unknown-linux-musl` |
+| Linux musl ARM64 | `aarch64-unknown-linux-musl` |
 
-The Android NDK is required to produce Android executables. Host builds are supported for development and testing.
+Android menghasilkan executable ELF native yang terhubung ke Bionic. CI membangun runtime Android berisi `bin/mysh` dan `bin/coreutils` untuk masing-masing ABI. Arsip runtime bukan APK; aplikasi Android harus mengekstraknya ke direktori privat aplikasi dan mengatur `MYSH_PREFIX` ke direktori tersebut.
 
-## Current features
+## Build dan test (host)
 
-- Runtime platform identification via `mysh --platform`, formatted as `{hostname}-{c-library}-{arch}`; hostname is read from `/proc/sys/kernel/hostname`.
-- Interactive and non-interactive command input.
-- Quoted arguments and backslash escaping.
-- Implemented shell built-ins include `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, and `continue`.
-- External utilities are provided by the pinned uutils Coreutils Android multicall build where supported; they are not duplicated as Mysh built-ins.
-- Conventional child-process signal status mapping on Unix-like targets.
-- Explicit external executable lookup through `PATH`, including ordered search, explicit paths, and conventional 126/127 error statuses.
-- Command exit-status reporting.
-- Basic sequential pipelines with buffered input between stages; supported operators may be adjacent to words.
-- Basic input, output, append, and standard-error redirection.
-- Shell-managed environment variables initialized from the inherited process environment.
-- Persistent shell assignments (`NAME=value`) and temporary command-prefix assignments (`NAME=value command`).
-- Separate shell-variable and exported-variable tracking; external commands inherit exported values only.
-- `export` and `unset` built-ins.
-- Automatic priority for `$MYSH_PREFIX/bin` in command lookup when that directory exists.
-- Quote-aware preliminary environment-variable substitution (disabled in single-quoted and escaped fragments).
-- Initial `if` / `then` / `elif` / `else` / `fi` compound-command support, including nested and multiline forms.
-- Context-sensitive recognition of implemented `if` compound reserved words and incremental input classification.
-- Unit and integration tests.
-
-The current pipeline and redirection implementation is intentionally limited and is not yet POSIX-conformant. Basic IFS field splitting is now applied to unquoted parameter-expansion results while preserving literal and quoted text, with default, empty, whitespace, and non-whitespace IFS handling covered by focused regression tests. Unquoted `$@` now retains positional-parameter boundaries before field splitting, while unquoted `$*` joins parameters using the first IFS character before splitting. Initial pathname expansion for `*`, `?`, and bracket expressions is implemented across path components; bracket patterns support ranges and `!` negation, unmatched patterns remain literal, and hidden names require an explicit leading dot. Per-character quote metadata is preserved through field splitting, so quoted or escaped wildcard characters remain literal while unquoted wildcard fragments and unquoted variable results can participate in pathname expansion. Other POSIX pathname edge cases remain incomplete. Complete POSIX positional expansion semantics, parameter operators, command substitution, and arithmetic expansion remain incomplete. Concurrent pipeline execution, the remaining POSIX control-flow grammar, job control, and persistent history are also not implemented.
-
-## Build on a host
-
-Install the stable Rust toolchain, then run:
+Membutuhkan stable Rust:
 
 ```sh
-cargo fmt --check
+cargo fmt --all -- --check
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
-
 cargo build --release
 ```
 
-The resulting host executable is located at `target/release/mysh`.
+Executable host: `target/release/mysh`.
 
-## Build for Android
-
-Install the Android SDK and NDK. Add the Rust standard-library targets required by the Android ABIs:
-
-```sh
-rustup target add aarch64-linux-android x86_64-linux-android
-```
-
-Set the NDK toolchain location and build each standalone executable. The linker names below select Android API level 21:
-
-```sh
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-NDK_TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/aarch64-linux-android21-clang" \
-  cargo build --target aarch64-linux-android --release
-
-CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/x86_64-linux-android21-clang" \
-  cargo build --target x86_64-linux-android --release
-```
-
-Each executable is emitted under its Rust target directory in `target/<target-triple>/release/mysh`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
-
-The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils for each ABI and publishes a runtime archive named `mysh-android-bionic-<abi>-runtime.tar.gz`. The archive contains `bin/mysh` and `bin/coreutils`.
-
-Extract the archive into the Android application's private files directory (`<filesDir>`). Set `MYSH_PREFIX` to `<filesDir>` in the environment used to launch Mysh. Mysh then prepends `<MYSH_PREFIX>/bin` to `PATH`. The archive is not an APK; the Android application is responsible for extraction and must comply with platform executable-file policies.
-
-
-## Usage
-
-Start an interactive session:
+## Penggunaan
 
 ```sh
 ./mysh
+./mysh -c 'echo hello'
+printf 'pwd\\nexit\\n' | ./mysh
 ```
 
-Run a command from a script or another process:
+Opsi CLI: `--help`, `--version`, dan `--platform`. Opsi `--platform` mencetak `{hostname}-{c-library}-{arch}`.
 
-```sh
-printf 'pwd\
-echo "hello from Mysh"\
-exit\
-' | ./mysh
-```
+## Dokumentasi
 
-External commands are resolved using the current `PATH`. Mysh does not provide root access or bypass Android application sandbox restrictions.
-
-## Wicofe integration status
-
-Wicofe is a planned additional target, not a currently supported platform. The required OS ABI, Rust runtime, process, terminal, and PTY integration are tracked in [the Wicofe integration checklist](docs/WICOFE_INTEGRATION.md).
-
-## Documentation
-
-- [Documentation index](docs/INDEX.md)
-- [Architecture](docs/architecture.md)
-- [Development roadmap](docs/roadmap.md)
-- [Command reference](docs/command-reference.md)
+- [Arsitektur](docs/architecture.md)
+- [Referensi perintah dan sintaks](docs/command-reference.md)
+- [Roadmap](docs/roadmap.md)
+- [Indeks dokumentasi](docs/INDEX.md)
+- [Integrasi Wicofe](docs/WICOFE_INTEGRATION.md)
 - [Changelog](CHANGELOG.md)
-- [Security policy](SECURITY.md)
 
-## License
+## Lisensi
 
-Mysh is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE) for the complete license text.
+BSD 3-Clause. Lihat [LICENSE](LICENSE).
