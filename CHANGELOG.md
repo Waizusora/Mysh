@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added concurrent OS-pipe execution for pipelines made entirely of simple external commands; every child stderr stream and the final stdout stream are drained concurrently while child processes run.
+- Added regression coverage for large simultaneous stdout/stderr output, mixed pipeline final-stage output, built-in pipeline output/status, compound-stage shell-state isolation, and pipeline redirection boundaries. Mixed pipelines requiring in-process shell execution still use sequential buffered fallback.
 - Removed the experimental MYPK package-manager crate, executable, package-format specification, and CI/runtime packaging integration. Mysh is a shell and does not provide a package manager.
 
 
