@@ -3867,7 +3867,7 @@ mod tests {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert!(shell.execute_line(&command, &mut output, &mut errors));
-        assert_eq!(String::from_utf8_lossy(&output), "from-file\\n");
+        assert_eq!(String::from_utf8_lossy(&output), "from-file\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         std::fs::remove_file(path).unwrap();
     }
