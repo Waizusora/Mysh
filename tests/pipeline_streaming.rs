@@ -69,7 +69,7 @@ fn builtin_pipeline_output_redirection_disconnects_downstream_input() {
     assert!(stdout.is_empty(), "downstream stage received redirected output");
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
     let redirected = std::fs::read_to_string(&output_path).unwrap();
-    assert_eq!(redirected, format!("{}\\n", std::env::current_dir().unwrap().display()));
+    assert_eq!(redirected, format!("{}\n", std::env::current_dir().unwrap().display()));
 
     std::fs::remove_dir_all(directory).unwrap();
 }
