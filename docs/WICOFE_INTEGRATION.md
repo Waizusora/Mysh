@@ -36,11 +36,8 @@ Rust `std` support is not implied by a Rust kernel. It requires an explicit targ
 8. Run the Mysh test suite on the Wicofe target and add Wicofe-specific integration tests.
 9. Only after reproducible validation, consider Mysh for the default Wicofe image.
 
-## 4. Package-manager boundary
 
-Mysh's MYPK is the package manager for the Mysh environment and its standalone package format. It is not the Wicofe system package manager. WPM owns Wicofe OS package installation, repository metadata, dependency resolution, and system package transactions. Any future integration between the two must be explicit; neither package format nor repository protocol is assumed compatible.
-
-## 5. Required cross-repository contracts
+## 4. Required cross-repository contracts
 
 - [Wicofe-ABI](https://github.com/Waizusora/Wicofe-ABI): syscall and userspace-visible structures.
 - [Wicofe-Kernel](https://github.com/Waizusora/Wicofe-Kernel): process, terminal, VFS, and syscall implementation.
@@ -49,7 +46,7 @@ Mysh's MYPK is the package manager for the Mysh environment and its standalone p
 - [Wicofe-SDK](https://github.com/Waizusora/Wicofe-SDK): target, sysroot, compiler, and linker integration.
 - [Wicofe-Tests](https://github.com/Waizusora/Wicofe-Tests): cross-repository shell integration and PTY tests.
 
-## 6. Acceptance criteria
+## 5. Acceptance criteria
 
 Wicofe support must not be declared complete until:
 - The exact Wicofe target and toolchain are reproducible.
