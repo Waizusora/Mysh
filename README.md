@@ -1,35 +1,35 @@
 # Mysh
 
-Mysh adalah shell command-line native yang ditulis dengan Rust. Mysh menjalankan lexer, parser, ekspansi, dan interpretasi shell sendiri; bukan wrapper Bash, Zsh, atau BusyBox.
+Mysh is a standalone native command-line shell written in Rust. It implements its own lexer, parser, expansion, and shell interpreter; it is not a wrapper around Bash, Zsh, or BusyBox.
 
 ## Status
 
-Mysh masih dalam pengembangan dan **belum POSIX-conformant**. Source saat ini menyediakan fondasi shell, subset grammar dan ekspansi POSIX, built-in inti, serta eksekusi proses eksternal. Lihat [roadmap](docs/roadmap.md) untuk tahapan pengembangan.
+Mysh is under active development and is **not yet POSIX-conformant**. The current source provides the shell foundation, a partial POSIX grammar and expansion engine, core built-ins, and external process execution. See the [roadmap](docs/roadmap.md) for development phases.
 
-## Fitur saat ini
+## Current features
 
-- Mode interaktif, input standar, dan `mysh -c 'command'`.
-- Lexer dengan single/double quotes, escaping, komentar, dan metadata kutipan.
-- Shell variables, exported environment, assignments, positional parameters, dan status `$?`.
-- Ekspansi parameter, command substitution (`$(...)` dan backticks), arithmetic, tilde, IFS field splitting, dan pathname expansion dalam cakupan parsial.
-- Compound commands: `if/elif/else`, `case`, `for`, `while`, `until`, brace groups, dan subshell.
-- Fungsi shell; `return` dan `shift`.
-- Command list `;`, `&&`, `||`; pipeline sequential-buffered; redirection dasar `<`, `>`, `>>`, dan `2>`.
-- Built-ins: `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, `continue`, `return`, dan `shift`.
-- Resolusi executable melalui `PATH`, exit status child process, dan pemetaan signal status pada Unix.
-- Integrasi utilitas eksternal melalui uutils Coreutils pada runtime Android.
+- Interactive mode, standard-input mode, and `mysh -c 'command'`.
+- Lexer with single/double quotes, escaping, comments, and quote metadata.
+- Shell variables, exported environment, assignments, positional parameters, and `$?`.
+- Parameter expansion, command substitution (`$(...)` and backticks), arithmetic expansion, tilde expansion, IFS field splitting, and pathname expansion within a partial implementation.
+- Compound commands: `if/elif/else`, `case`, `for`, `while`, `until`, brace groups, and subshells.
+- Shell functions, `return`, and `shift`.
+- Command lists `;`, `&&`, `||`; sequential buffered pipelines; basic redirection `<`, `>`, `>>`, and `2>`.
+- Built-ins: `:`, `.`, `cd`, `export`, `unset`, `pwd`, `true`, `false`, `eval`, `exit`, `break`, `continue`, `return`, and `shift`.
+- Executable lookup through `PATH`, child-process exit status, and Unix signal-status mapping.
+- External utility integration through uutils Coreutils in the Android runtime.
 
-Rincian perilaku dan batas tiap fitur ada di [Command Reference](docs/command-reference.md). Operator yang dikenali lexer belum tentu didukung parser atau executor.
+See the [Command Reference](docs/command-reference.md) for supported behavior and limitations. An operator recognized by the lexer is not necessarily supported by the parser or executor.
 
-## Batasan penting
+## Important limitations
 
-- Grammar, ekspansi, built-in, dan perilaku interaktif POSIX belum lengkap.
-- Pipeline masih sequential dan buffered, bukan concurrent OS pipes.
-- Background execution dan job control belum tersedia.
-- Here-documents, descriptor duplication/closure, dan redirection lanjutan belum didukung.
-- Pattern matching dan locale behavior masih parsial.
+- POSIX grammar, expansions, built-ins, and interactive-shell behavior are incomplete.
+- Pipelines are sequential and buffered, not concurrent OS pipes.
+- Background execution and job control are not implemented.
+- Here-documents, descriptor duplication/closure, and advanced redirections are not supported.
+- Pattern matching and locale behavior are partial.
 
-## Target build
+## Build targets
 
 | Platform | Rust target |
 | --- | --- |
@@ -38,11 +38,11 @@ Rincian perilaku dan batas tiap fitur ada di [Command Reference](docs/command-re
 | Linux musl x86-64 | `x86_64-unknown-linux-musl` |
 | Linux musl ARM64 | `aarch64-unknown-linux-musl` |
 
-Android menghasilkan executable ELF native yang terhubung ke Bionic. CI membangun runtime Android berisi `bin/mysh` dan `bin/coreutils` untuk masing-masing ABI. Arsip runtime bukan APK; aplikasi Android harus mengekstraknya ke direktori privat aplikasi dan mengatur `MYSH_PREFIX` ke direktori tersebut.
+Android builds are standalone ELF executables linked against Bionic. CI builds an Android runtime containing `bin/mysh` and `bin/coreutils` for each ABI. The runtime archive is not an APK; the consuming Android application must extract it into its private files directory and set `MYSH_PREFIX` to that directory.
 
-## Build dan test (host)
+## Build and test (host)
 
-Membutuhkan stable Rust:
+Requires stable Rust:
 
 ```sh
 cargo fmt --all -- --check
@@ -51,9 +51,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo build --release
 ```
 
-Executable host: `target/release/mysh`.
+The host executable is `target/release/mysh`.
 
-## Penggunaan
+## Usage
 
 ```sh
 ./mysh
@@ -61,17 +61,17 @@ Executable host: `target/release/mysh`.
 printf 'pwd\\nexit\\n' | ./mysh
 ```
 
-Opsi CLI: `--help`, `--version`, dan `--platform`. Opsi `--platform` mencetak `{hostname}-{c-library}-{arch}`.
+CLI options: `--help`, `--version`, and `--platform`. The `--platform` option prints `{hostname}-{c-library}-{arch}`.
 
-## Dokumentasi
+## Documentation
 
-- [Arsitektur](docs/architecture.md)
-- [Referensi perintah dan sintaks](docs/command-reference.md)
+- [Architecture](docs/architecture.md)
+- [Command reference](docs/command-reference.md)
 - [Roadmap](docs/roadmap.md)
-- [Indeks dokumentasi](docs/INDEX.md)
-- [Integrasi Wicofe](docs/WICOFE_INTEGRATION.md)
+- [Documentation index](docs/INDEX.md)
+- [Wicofe integration](docs/WICOFE_INTEGRATION.md)
 - [Changelog](CHANGELOG.md)
 
-## Lisensi
+## License
 
-BSD 3-Clause. Lihat [LICENSE](LICENSE).
+BSD 3-Clause. See [LICENSE](LICENSE).
