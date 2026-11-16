@@ -1261,7 +1261,7 @@ impl Shell {
             };
         }
         if is_shell_builtin(&command[0]) {
-            if let Some(outcome) = self.dispatch_builtin(command, input, out, err) {
+            if let Some(outcome) = self.dispatch_builtin(command, input.as_deref(), out, err) {
                 return outcome;
             }
         }
