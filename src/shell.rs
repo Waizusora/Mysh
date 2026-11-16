@@ -417,6 +417,8 @@ impl Shell {
             process.args(&stage.arguments).env_clear()
                 .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
             if let Some(path) = stage.input.as_deref() {
+                // Explicit input redirection supersedes the incoming pipeline edge.
+                drop(previous_stdout.take());
                 match File::open(path) {
                     Ok(file) => { process.stdin(Stdio::from(file)); }
                     Err(error) => {
@@ -4119,6 +4121,37 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&output).trim().parse::<usize>().unwrap(), TRANSFER_BYTES);
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         assert_eq!(shell.last_status(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_pipeline_input_redirection_overrides_incoming_pipe() {
+        let path = std::env::temp_dir().join(format!("mysh-concurrent-input-{}.txt", std::process::id()));
+        std::fs::write(&path, "from-file\n").unwrap();
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("printf ignored | cat < {} | wc -c", path.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output).trim(), "10");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        assert_eq!(shell.last_status(), 0);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_pipeline_output_redirection_disconnects_downstream_stage() {
+        let path = std::env::temp_dir().join(format!("mysh-concurrent-output-{}.txt", std::process::id()));
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = format!("printf redirected > {} | wc -c", path.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output).trim(), "0");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[cfg(unix)]
