@@ -4187,12 +4187,18 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn external_pipeline_reports_last_stage_signal_status() {
+        use std::os::unix::fs::PermissionsExt;
+        let script = std::env::temp_dir().join(format!("mysh-signal-stage-{}.sh", std::process::id()));
+        std::fs::write(&script, format!("#!/bin/sh\nkill -TERM {}{}\n", '$', '$')).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let mut shell = Shell::new();
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        assert!(shell.execute_line("printf data | sh -c 'kill -TERM $'", &mut output, &mut errors));
+        let command = format!("printf data | {}", script.display());
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
         assert_eq!(shell.last_status(), 143);
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(script).unwrap();
     }
 
     #[cfg(unix)]
