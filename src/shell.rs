@@ -4231,6 +4231,23 @@ mod tests {
     #[cfg(unix)]
     #[rustfmt::skip]
     #[test]
+    fn external_pipeline_drains_large_stdout_and_stderr_concurrently() {
+        const TRANSFER_BYTES: usize = 2 * 1024 * 1024;
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let command = "sh -c 'dd if=/dev/zero bs=65536 count=32 2>/dev/null; dd if=/dev/zero bs=65536 count=32 1>&2 2>/dev/null' | cat";
+        assert!(shell.execute_line(command, &mut output, &mut errors));
+        assert_eq!(output.len(), TRANSFER_BYTES);
+        assert_eq!(errors.len(), TRANSFER_BYTES);
+        assert!(output.iter().all(|byte| *byte == 0));
+        assert!(errors.iter().all(|byte| *byte == 0));
+        assert_eq!(shell.last_status(), 0);
+    }
+
+    #[cfg(unix)]
+    #[rustfmt::skip]
+    #[test]
     fn external_pipeline_reports_last_stage_signal_status() {
         use std::os::unix::fs::PermissionsExt;
         let script = std::env::temp_dir().join(format!("mysh-signal-stage-{}.sh", std::process::id()));
