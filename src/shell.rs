@@ -3861,7 +3861,7 @@ mod tests {
     #[test]
     fn pipeline_stage_input_redirection_overrides_pipe_input() {
         let path = std::env::temp_dir().join(format!("mysh-pipeline-input-{}", std::process::id()));
-        std::fs::write(&path, "from-file\\n").unwrap();
+        std::fs::write(&path, "from-file\n").unwrap();
         let command = format!("echo from-pipe | cat < {} | cat", path.display());
         let mut shell = Shell::new();
         let mut output = Vec::new();
@@ -3881,7 +3881,7 @@ mod tests {
         let mut errors = Vec::new();
         assert!(shell.execute_line(&command, &mut output, &mut errors));
         assert!(output.is_empty());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\\n");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\n");
         assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
         std::fs::remove_file(path).unwrap();
     }
