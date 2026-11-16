@@ -3859,6 +3859,49 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_stage_input_redirection_overrides_pipe_input() {
+        let path = std::env::temp_dir().join(format!("mysh-pipeline-input-{}", std::process::id()));
+        std::fs::write(&path, "from-file\\n").unwrap();
+        let command = format!("echo from-pipe | cat < {} | cat", path.display());
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert_eq!(String::from_utf8_lossy(&output), "from-file\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pipeline_stage_output_redirection_removes_output_from_pipe() {
+        let path = std::env::temp_dir().join(format!("mysh-pipeline-output-{}", std::process::id()));
+        let command = format!("echo redirected > {} | cat", path.display());
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "redirected\\n");
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn pipeline_stage_error_redirection_captures_command_errors() {
+        let path = std::env::temp_dir().join(format!("mysh-pipeline-error-{}", std::process::id()));
+        let command = format!("mysh-command-that-does-not-exist 2> {} | cat", path.display());
+        let mut shell = Shell::new();
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line(&command, &mut output, &mut errors));
+        assert!(output.is_empty());
+        assert!(errors.is_empty(), "{}", String::from_utf8_lossy(&errors));
+        let redirected = std::fs::read_to_string(&path).unwrap();
+        assert!(redirected.contains("mysh-command-that-does-not-exist"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn pipeline_passes_external_cat_stdin() {
         let mut shell = Shell::new();
         let mut output = Vec::new();
