@@ -80,7 +80,7 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
     std::fs::create_dir_all(&directory).unwrap();
     let input_path = directory.join("builtin-input.txt");
     std::fs::write(&input_path, "redirected-input\\n").unwrap();
-    let command = format!("printf 'upstream-data\\n' | cat < '{}'", input_path.display());
+    let command = format!("pwd | cat < '{}'", input_path.display());
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
