@@ -35,8 +35,6 @@ jobs:
         run: cargo test --workspace --all-targets -- --test-threads=1
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Build MYPK for host
-        run: cargo build -p my-pkg-keeper --release
 
   android:
     name: Build Android (${{ matrix.abi }})
@@ -276,8 +274,6 @@ jobs:
             printf 'Bionic locale-class pathname expansion output: <%s>\\n' "$class_glob"
             test "$class_glob" = "/data/local/tmp/mysh-glob/alpha.txt"
           fi
-      - name: Build MYPK executable
-        run: cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
       - name: Package Android runtime
         run: bash scripts/package-android-runtime.sh "${{ matrix.abi }}"
       - name: Upload Android runtime package
@@ -297,12 +293,6 @@ jobs:
         with:
           name: coreutils-android-bionic-${{ matrix.abi }}
           path: .build/uutils-coreutils/target/${{ matrix.rust_target }}/release/coreutils
-          if-no-files-found: error
-      - name: Upload MYPK executable
-        uses: actions/upload-artifact@v6
-        with:
-          name: mypk-android-bionic-${{ matrix.abi }}
-          path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
   musl:
     name: Build Linux musl (${{ matrix.arch }})
@@ -351,13 +341,6 @@ jobs:
           else
             cargo test -p mysh --target "${{ matrix.rust_target }}" --release -- --test-threads=1
           fi
-      - name: Build MYPK for musl
-        run: |
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            cross build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
-          else
-            cargo build -p my-pkg-keeper --target "${{ matrix.rust_target }}" --release
-          fi
       - name: Stage platform-qualified Linux binaries
         run: |
           mkdir -p dist
@@ -367,10 +350,4 @@ jobs:
         with:
           name: mysh-linux-musl-${{ matrix.arch }}
           path: dist/mysh-linux-musl-${{ matrix.arch }}
-          if-no-files-found: error
-      - name: Upload MYPK musl executable
-        uses: actions/upload-artifact@v6
-        with:
-          name: mypk-linux-musl-${{ matrix.arch }}
-          path: target/${{ matrix.rust_target }}/release/mypk
           if-no-files-found: error
