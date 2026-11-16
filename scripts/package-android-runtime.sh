@@ -26,10 +26,9 @@ staging_directory="$output_directory/runtime-$abi"
 archive="$output_directory/mysh-android-bionic-$abi-runtime.tar.gz"
 
 mysh_binary="$repository_root/target/$rust_target/release/mysh"
-mypk_binary="$repository_root/target/$rust_target/release/mypk"
 coreutils_binary="$repository_root/.build/uutils-coreutils/target/$rust_target/release/coreutils"
 
-for binary in "$mysh_binary" "$mypk_binary" "$coreutils_binary"; do
+for binary in "$mysh_binary" "$coreutils_binary"; do
     if [[ ! -f "$binary" ]]; then
         printf 'Required runtime binary is missing: %s\n' "$binary" >&2
         exit 1
@@ -40,7 +39,6 @@ rm -rf "$staging_directory"
 mkdir -p "$staging_directory/bin"
 install -m 0755 "$mysh_binary" "$staging_directory/bin/mysh"
 install -m 0755 "$coreutils_binary" "$staging_directory/bin/coreutils"
-install -m 0755 "$mypk_binary" "$staging_directory/bin/mypk"
 
 mkdir -p "$output_directory"
 rm -f "$archive"
