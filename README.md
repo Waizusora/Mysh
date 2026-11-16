@@ -15,18 +15,13 @@ The project is progressing toward a mature POSIX shell. The native execution fou
 
 POSIX shell compatibility is distinct from implementing every POSIX utility. Mysh's shell-language target does not by itself promise to bundle the complete POSIX utility suite.
 
-## MYPK — My Package Keeper
-
-MYPK is the independent Rust package manager for the Mysh environment. It is built as a separate mypk executable and uses the native .mypk package format. Its commands, aliases, package format, repository model, runtime identifiers, and security requirements are specified in [the MYPK specification](docs/mypk-specification.md).
-
-Canonical commands are sync, upgrade, find, install, delete, reinstall, list, info, clean, and clear. Compatibility aliases are update for sync, search for find, and remove for delete. MYPK includes strict version 1 manifest parsing, bounded TAR archive reading, path and entry validation, and SHA-256 payload integrity checks. Repository operations, signature authentication, dependency resolution, and installation are not yet implemented.
 
 ## Platform roadmap
 
 Mysh follows this platform order:
 
 1. **POSIX compatibility:** implement and test the portable shell-language and utility behavior that forms the project's compatibility baseline.
-2. **Android:** complete and maintain the three Android executables per ABI listed below.
+2. **Android:** complete and maintain the two Android runtime executables per ABI listed below.
 3. **Linux:** validate the shared implementation on mainstream Linux environments.
 4. **FreeBSD:** add and test a dedicated FreeBSD target after the POSIX foundation is stable.
 
@@ -73,7 +68,7 @@ Install the stable Rust toolchain, then run:
 cargo fmt --check
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build -p my-pkg-keeper --release
+
 cargo build --release
 ```
 
@@ -102,7 +97,7 @@ CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_TOOLCHAIN/x86_64-linux-android21-
 
 Each executable is emitted under its Rust target directory in `target/<target-triple>/release/mysh`. The exact installation and execution location is subject to Android's application sandbox and executable-file policies.
 
-The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils and MYPK for each ABI and publishes a runtime archive named `mysh-runtime-<abi>.tar.gz`. The archive contains `bin/mysh`, `bin/coreutils`, and `bin/mypk`.
+The resulting executables are built for ARM64 and x86-64 only. CI also builds uutils Coreutils for each ABI and publishes a runtime archive named `mysh-android-bionic-<abi>-runtime.tar.gz`. The archive contains `bin/mysh` and `bin/coreutils`.
 
 Extract the archive into the Android application's private files directory (`<filesDir>`). Set `MYSH_PREFIX` to `<filesDir>` in the environment used to launch Mysh. Mysh then prepends `<MYSH_PREFIX>/bin` to `PATH`. The archive is not an APK; the Android application is responsible for extraction and must comply with platform executable-file policies.
 
@@ -136,7 +131,6 @@ Wicofe is a planned additional target, not a currently supported platform. The r
 - [Architecture](docs/architecture.md)
 - [Development roadmap](docs/roadmap.md)
 - [Command reference](docs/command-reference.md)
-- [MYPK specification](docs/mypk-specification.md)
 - [Changelog](CHANGELOG.md)
 - [Security policy](SECURITY.md)
 
