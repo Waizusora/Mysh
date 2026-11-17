@@ -186,3 +186,37 @@ fn negated_pipeline_inverts_the_final_stage_status() {
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 }
 
+#[test]
+fn external_pipeline_redirections_override_pipe_edges() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-external-pipeline-redirect-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let output_path = directory.join("upstream.txt");
+    let input_path = directory.join("replacement.txt");
+    std::fs::write(&input_path, b"replacement-input").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let command = format!("printf upstream > '{}' | cat", output_path.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stdout.is_empty(), "redirected upstream output reached downstream");
+    assert_eq!(std::fs::read(&output_path).unwrap(), b"upstream");
+
+    let command = format!("printf ignored | cat < '{}'", input_path.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"replacement-input");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
