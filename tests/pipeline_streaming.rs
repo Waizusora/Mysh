@@ -148,3 +148,41 @@ fn pipeline_input_redirection_streams_large_file_without_buffering() {
 
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn pipeline_status_uses_last_stage_and_drains_failed_upstream() {
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(
+        "sh -c 'printf upstream; exit 7' | cat",
+        &mut stdout,
+        &mut stderr,
+    ));
+    assert_eq!(stdout, b"upstream");
+    assert_eq!(shell.last_status(), 0);
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    assert!(shell.execute_line("true | false", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 1);
+
+    assert!(shell.execute_line("false | true", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
+
+#[test]
+fn negated_pipeline_inverts_the_final_stage_status() {
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line("! true | cat", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 1);
+
+    assert!(shell.execute_line("! false | cat", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
+
