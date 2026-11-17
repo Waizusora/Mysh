@@ -650,10 +650,13 @@ impl Shell {
                 self.exported.insert(name.to_owned());
             }
             let mut stage_input = input.take();
+            let mut stage_input_file = None;
             if let Some(path) = redirections.input.as_deref() {
-                let mut contents = Vec::new();
-                match File::open(path).and_then(|mut file| file.read_to_end(&mut contents)) {
-                    Ok(_) => stage_input = Some(contents),
+                match File::open(path) {
+                    Ok(file) => {
+                        stage_input = None;
+                        stage_input_file = Some(file);
+                    }
                     Err(error) => {
                         let _ = writeln!(stderr, "mysh: {path}: {error}");
                         final_status = 1;
@@ -707,7 +710,7 @@ impl Shell {
                     final_status = if stage_command.is_empty() {
                         0
                     } else {
-                        match self.run_stage(&stage_command, &redirections, stage_input, output_writer, error_writer) {
+                        match self.run_stage(&stage_command, &redirections, stage_input, stage_input_file, output_writer, error_writer) {
                             StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
                         }
                     };
@@ -716,7 +719,7 @@ impl Shell {
                 final_status = if stage_command.is_empty() {
                     0
                 } else {
-                    match self.run_stage(&stage_command, &redirections, stage_input, &mut stage_output, &mut stage_error) {
+                    match self.run_stage(&stage_command, &redirections, stage_input, stage_input_file, &mut stage_output, &mut stage_error) {
                         StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
                     }
                 };
@@ -1069,7 +1072,7 @@ impl Shell {
         }
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let outcome = self.run_stage(&command, &redirections, input, &mut output, &mut errors);
+        let outcome = self.run_stage(&command, &redirections, input, None, &mut output, &mut errors);
         if !assignments.is_empty() && !persist_assignments {
             self.variables = saved_variables;
             self.exported = saved_exported;
@@ -1140,7 +1143,7 @@ impl Shell {
         })
     }
 
-    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<Vec<u8>>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
+    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<Vec<u8>>, input_file: Option<File>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
         if command[0] == "." {
             if command.len() < 2 {
@@ -1301,7 +1304,9 @@ impl Shell {
         };
         let mut process = Command::new(executable);
         process.args(&process_args).env_clear().envs(self.exported.iter().map(|name| (name, self.variables.get(name).map(String::as_str).unwrap_or("")))).stdout(Stdio::piped()).stderr(Stdio::piped());
-        if redirections.input.is_some() || input.is_some() {
+        if let Some(file) = input_file {
+            process.stdin(Stdio::from(file));
+        } else if input.is_some() {
             process.stdin(Stdio::piped());
         }
         match process.spawn() {
