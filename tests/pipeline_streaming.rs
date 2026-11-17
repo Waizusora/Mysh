@@ -181,7 +181,7 @@ fn negated_pipeline_inverts_the_final_stage_status() {
     assert!(shell.execute_line("! true | cat", &mut stdout, &mut stderr));
     assert_eq!(shell.last_status(), 1);
 
-    assert!(shell.execute_line("! false | cat", &mut stdout, &mut stderr));
+    assert!(shell.execute_line("! false | false", &mut stdout, &mut stderr));
     assert_eq!(shell.last_status(), 0);
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 }
