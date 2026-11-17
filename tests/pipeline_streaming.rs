@@ -220,3 +220,42 @@ fn external_pipeline_redirections_override_pipe_edges() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
+#[test]
+fn external_pipeline_applies_repeated_redirections_in_source_order() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-ordered-redirect-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let first_output = directory.join("first-output.txt");
+    let final_output = directory.join("final-output.txt");
+    let first_error = directory.join("first-error.txt");
+    let final_error = directory.join("final-error.txt");
+
+    let command = format!(
+        "sh -c 'printf stdout; printf stderr >&2' > '{}' > '{}' 2> '{}' 2> '{}'",
+        first_output.display(),
+        final_output.display(),
+        first_error.display(),
+        final_error.display(),
+    );
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stdout.is_empty());
+    assert!(stderr.is_empty());
+    assert_eq!(std::fs::read(&first_output).unwrap(), b"");
+    assert_eq!(std::fs::read(&final_output).unwrap(), b"stdout");
+    assert_eq!(std::fs::read(&first_error).unwrap(), b"");
+    assert_eq!(std::fs::read(&final_error).unwrap(), b"stderr");
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
