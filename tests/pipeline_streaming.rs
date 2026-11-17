@@ -114,6 +114,22 @@ fn mixed_pipeline_streams_large_final_external_stage_output() {
 
 
 #[test]
+fn compound_pipeline_spools_large_intermediate_output_to_next_stage() {
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(
+        "{ head -c 8388608 /dev/zero; } | wc -c",
+        &mut stdout,
+        &mut stderr,
+    ));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(String::from_utf8_lossy(&stdout).trim(), "8388608");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
+
+#[test]
 fn pipeline_input_redirection_streams_large_file_without_buffering() {
     let directory = std::env::temp_dir().join(format!("mysh-pipeline-large-input-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
