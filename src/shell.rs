@@ -415,7 +415,7 @@ impl Shell {
             let mut process = Command::new(&stage.executable);
             process.args(&stage.arguments).env_clear()
                 .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
-            if let Some(path) = stage.input.as_deref() {
+            if stage.input.is_some() {
                 // Open every input redirection from left to right; only the last
                 // descriptor remains attached to stdin.
                 drop(previous_stdout.take());
