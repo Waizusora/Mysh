@@ -237,7 +237,7 @@ fn external_pipeline_applies_repeated_redirections_in_source_order() {
     let final_error = directory.join("final-error.txt");
 
     let command = format!(
-        "sh -c 'printf stdout; printf stderr >&2' > '{}' > '{}' 2> '{}' 2> '{}'",
+        "sh -c 'printf stdout; printf stderr >&2' > '{}' > '{}' 2> '{}' 2> '{}' | cat",
         first_output.display(),
         final_output.display(),
         first_error.display(),
