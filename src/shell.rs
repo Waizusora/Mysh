@@ -560,7 +560,7 @@ impl Shell {
                 statuses.push(child.wait().map(external_status_code).unwrap_or(126));
             }
         });
-        if let Some(error) = output_error {
+        if let Some(ref error) = output_error {
             let _ = writeln!(stderr, "mysh: pipeline output: {error}");
         }
 
