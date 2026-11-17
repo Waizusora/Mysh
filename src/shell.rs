@@ -488,6 +488,7 @@ impl Shell {
 
         let mut statuses = Vec::with_capacity(children.len());
         let mut output_error = None;
+        let mut read_error = false;
         std::thread::scope(|scope| {
             let (sender, receiver) = std::sync::mpsc::sync_channel(8);
             let mut readers = Vec::with_capacity(error_readers.len() + usize::from(final_stdout.is_some()));
@@ -540,6 +541,7 @@ impl Shell {
                     PipelineOutput::Stdout(bytes) => stdout.write_all(&bytes),
                     PipelineOutput::Stderr(bytes) => stderr.write_all(&bytes),
                     PipelineOutput::ReadError(stream, error) => {
+                        read_error = true;
                         let _ = writeln!(stderr, "mysh: pipeline {stream}: {error}");
                         continue;
                     }
@@ -562,7 +564,11 @@ impl Shell {
             let _ = writeln!(stderr, "mysh: pipeline output: {error}");
         }
 
-        let status = statuses.last().copied().unwrap_or(0);
+        let status = if read_error || output_error.is_some() {
+            1
+        } else {
+            statuses.last().copied().unwrap_or(0)
+        };
         self.last_status = if pipeline.negated { if status == 0 { 1 } else { 0 } } else { status };
         Some(true)
     }
@@ -4992,4 +4998,21 @@ mod tests {
         assert_eq!(expand(&explicit_hidden_pattern), [hidden]);
         std::fs::remove_dir_all(directory).unwrap();
     }
+    #[test]
+    fn external_pipeline_reports_output_writer_failure() {
+        struct FailingWriter;
+        impl std::io::Write for FailingWriter {
+            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "closed output"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+
+        let mut shell = Shell::new();
+        let mut errors = Vec::new();
+        assert!(shell.execute_line("echo pipeline-output | cat", &mut FailingWriter, &mut errors));
+        assert_eq!(shell.last_status(), 1);
+        assert!(String::from_utf8_lossy(&errors).contains("pipeline output:"));
+    }
+
 }
