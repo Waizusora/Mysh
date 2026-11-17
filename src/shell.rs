@@ -1143,7 +1143,7 @@ impl Shell {
         })
     }
 
-    fn run_stage(&mut self, command: &[String], redirections: &Redirections, input: Option<Vec<u8>>, input_file: Option<File>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
+    fn run_stage(&mut self, command: &[String], _redirections: &Redirections, input: Option<Vec<u8>>, input_file: Option<File>, out: &mut dyn Write, err: &mut dyn Write) -> StageOutcome {
         if command.is_empty() { return StageOutcome::Continue(0); }
         if command[0] == "." {
             if command.len() < 2 {
