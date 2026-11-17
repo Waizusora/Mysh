@@ -341,8 +341,11 @@ impl Shell {
             environment: BTreeMap<String, String>,
             exported: BTreeSet<String>,
             input: Option<String>,
+            input_order: Vec<String>,
             output: Option<(String, bool)>,
+            output_order: Vec<(String, bool)>,
             error: Option<String>,
+            error_order: Vec<String>,
         }
 
         let search_path = self.variables.get("PATH").map(std::ffi::OsString::from).unwrap_or_default();
@@ -394,8 +397,11 @@ impl Shell {
                 environment,
                 exported,
                 input: redirects.input,
+                input_order: redirects.input_order,
                 output: redirects.output.map(|path| (path, redirects.append)),
+                output_order: redirects.output_order,
                 error: redirects.error,
+                error_order: redirects.error_order,
             });
         }
 
@@ -410,18 +416,23 @@ impl Shell {
             process.args(&stage.arguments).env_clear()
                 .envs(stage.exported.iter().filter_map(|name| stage.environment.get(name).map(|value| (name, value))));
             if let Some(path) = stage.input.as_deref() {
-                // Explicit input redirection supersedes the incoming pipeline edge.
+                // Open every input redirection from left to right; only the last
+                // descriptor remains attached to stdin.
                 drop(previous_stdout.take());
-                match File::open(path) {
-                    Ok(file) => { process.stdin(Stdio::from(file)); }
-                    Err(error) => {
-                        let _ = writeln!(stderr, "mysh: {path}: {error}");
-                        for child in &mut children { let _ = child.kill(); }
-                        for mut child in children { let _ = child.wait(); }
-                        self.last_status = 1;
-                        return Some(true);
+                let mut selected = None;
+                for redirected_path in &stage.input_order {
+                    match File::open(redirected_path) {
+                        Ok(file) => selected = Some(file),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {redirected_path}: {error}");
+                            for child in &mut children { let _ = child.kill(); }
+                            for mut child in children { let _ = child.wait(); }
+                            self.last_status = 1;
+                            return Some(true);
+                        }
                     }
                 }
+                process.stdin(Stdio::from(selected.expect("input redirection list is non-empty")));
             } else if let Some(pipe) = previous_stdout.take() {
                 process.stdin(Stdio::from(pipe));
             } else if index > 0 {
@@ -429,32 +440,40 @@ impl Shell {
                 process.stdin(Stdio::null());
             }
 
-            if let Some((path, append)) = stage.output.as_ref() {
-                match open_output(path, *append) {
-                    Ok(file) => { process.stdout(Stdio::from(file)); }
-                    Err(error) => {
-                        let _ = writeln!(stderr, "mysh: {path}: {error}");
-                        for child in &mut children { let _ = child.kill(); }
-                        for mut child in children { let _ = child.wait(); }
-                        self.last_status = 1;
-                        return Some(true);
+            if stage.output.is_some() {
+                let mut selected = None;
+                for (redirected_path, append) in &stage.output_order {
+                    match open_output(redirected_path, *append) {
+                        Ok(file) => selected = Some(file),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {redirected_path}: {error}");
+                            for child in &mut children { let _ = child.kill(); }
+                            for mut child in children { let _ = child.wait(); }
+                            self.last_status = 1;
+                            return Some(true);
+                        }
                     }
                 }
+                process.stdout(Stdio::from(selected.expect("output redirection list is non-empty")));
             } else {
                 process.stdout(Stdio::piped());
             }
 
-            if let Some(path) = stage.error.as_deref() {
-                match open_output(path, false) {
-                    Ok(file) => { process.stderr(Stdio::from(file)); }
-                    Err(error) => {
-                        let _ = writeln!(stderr, "mysh: {path}: {error}");
-                        for child in &mut children { let _ = child.kill(); }
-                        for mut child in children { let _ = child.wait(); }
-                        self.last_status = 1;
-                        return Some(true);
+            if stage.error.is_some() {
+                let mut selected = None;
+                for redirected_path in &stage.error_order {
+                    match open_output(redirected_path, false) {
+                        Ok(file) => selected = Some(file),
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: {redirected_path}: {error}");
+                            for child in &mut children { let _ = child.kill(); }
+                            for mut child in children { let _ = child.wait(); }
+                            self.last_status = 1;
+                            return Some(true);
+                        }
                     }
                 }
+                process.stderr(Stdio::from(selected.expect("stderr redirection list is non-empty")));
             } else {
                 process.stderr(Stdio::piped());
             }
@@ -1040,10 +1059,10 @@ impl Shell {
                 let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
                 let target = self.expand_word_scalar_runtime(target, stderr);
                 match operator {
-                    "<" => redirects.input = Some(target),
-                    ">" => { redirects.output = Some(target); redirects.append = false; }
-                    ">>" => { redirects.output = Some(target); redirects.append = true; }
-                    "2>" => redirects.error = Some(target),
+                    "<" => { redirects.input = Some(target.clone()); redirects.input_order.push(target); },
+                    ">" => { redirects.output = Some(target.clone()); redirects.append = false; redirects.output_order.push((target, false)); }
+                    ">>" => { redirects.output = Some(target.clone()); redirects.append = true; redirects.output_order.push((target, true)); }
+                    "2>" => { redirects.error = Some(target.clone()); redirects.error_order.push(target); },
                     _ => unreachable!(),
                 }
                 index += 2;
@@ -1506,7 +1525,7 @@ fn requires_more_input(input: &str) -> bool {
 }
 
 #[derive(Default)]
-struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool }
+struct Redirections { input: Option<String>, output: Option<String>, error: Option<String>, append: bool, input_order: Vec<String>, output_order: Vec<(String, bool)>, error_order: Vec<String> }
 enum StageOutcome { Continue(i32), Exit(i32) }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2185,10 +2204,10 @@ fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, l
             let target = tokens.get(index + 1).ok_or("redirection requires a path")?;
             let target = expand_word(target, environment, last_status);
             match operator {
-                "<" => redirects.input = Some(target),
-                ">" => { redirects.output = Some(target); redirects.append = false; }
-                ">>" => { redirects.output = Some(target); redirects.append = true; }
-                "2>" => redirects.error = Some(target),
+                "<" => { redirects.input = Some(target.clone()); redirects.input_order.push(target); },
+                ">" => { redirects.output = Some(target.clone()); redirects.append = false; redirects.output_order.push((target, false)); }
+                ">>" => { redirects.output = Some(target.clone()); redirects.append = true; redirects.output_order.push((target, true)); }
+                "2>" => { redirects.error = Some(target.clone()); redirects.error_order.push(target); },
                 _ => unreachable!(),
             }
             index += 2;
