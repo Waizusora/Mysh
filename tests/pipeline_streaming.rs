@@ -111,3 +111,24 @@ fn mixed_pipeline_streams_large_final_external_stage_output() {
     assert_eq!(stderr.len(), 2 * 1024 * 1024);
     assert!(stderr.iter().all(|byte| *byte == 0));
 }
+
+
+#[test]
+fn pipeline_input_redirection_streams_large_file_without_buffering() {
+    let directory = std::env::temp_dir().join(format!("mysh-pipeline-large-input-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input_path = directory.join("large-input.bin");
+    let contents = vec![0x5au8; 8 * 1024 * 1024];
+    std::fs::write(&input_path, &contents).unwrap();
+    let command = format!("pwd | cat < '{}'", input_path.display());
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, contents);
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
