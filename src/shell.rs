@@ -4,7 +4,7 @@ use crate::command::{resolve_command, resolve_script};
 use crate::lexer::{self, Word};
 use crate::parser::{split_command_list, CompoundListEntry, ListOperator, Pipeline, PipelineStage};
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, Read, Seek, Write};
 use std::process::{Command, Stdio};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -592,7 +592,7 @@ impl Shell {
             return keep_running;
         }
 
-        let mut input: Option<Vec<u8>> = None;
+        let mut pipeline_input: Option<File> = None;
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
@@ -621,12 +621,24 @@ impl Shell {
                     let _ = child.execute_compound_list(&entries, stdout, stderr);
                     final_status = child.last_status;
                 } else {
-                    let mut stage_output = Vec::new();
-                    let mut stage_error = Vec::new();
-                    let _ = child.execute_compound_list(&entries, &mut stage_output, &mut stage_error);
-                    final_status = child.last_status;
-                    if !stage_error.is_empty() { let _ = stderr.write_all(&stage_error); }
-                    input = Some(stage_output);
+                    match create_pipeline_spool() {
+                        Ok(mut stage_output) => {
+                            let _ = child.execute_compound_list(&entries, &mut stage_output, stderr);
+                            final_status = child.last_status;
+                            if let Err(error) = stage_output.seek(std::io::SeekFrom::Start(0)) {
+                                let _ = writeln!(stderr, "mysh: pipeline: cannot rewind stage output: {error}");
+                                final_status = 1;
+                                pipeline_input = create_pipeline_spool().ok();
+                            } else {
+                                pipeline_input = Some(stage_output);
+                            }
+                        }
+                        Err(error) => {
+                            let _ = writeln!(stderr, "mysh: pipeline: cannot create stage spool: {error}");
+                            final_status = 1;
+                            pipeline_input = create_pipeline_spool().ok();
+                        }
+                    }
                 }
                 if let Err(error) = std::env::set_current_dir(&original_directory) {
                     let _ = writeln!(stderr, "mysh: pipeline: cannot restore current directory: {error}");
@@ -655,14 +667,11 @@ impl Shell {
                 self.variables.insert(name.to_owned(), value.to_owned());
                 self.exported.insert(name.to_owned());
             }
-            let mut stage_input = input.take();
-            let mut stage_input_file = None;
+
+            let mut stage_input_file = pipeline_input.take();
             if let Some(path) = redirections.input.as_deref() {
                 match File::open(path) {
-                    Ok(file) => {
-                        stage_input = None;
-                        stage_input_file = Some(file);
-                    }
+                    Ok(file) => stage_input_file = Some(file),
                     Err(error) => {
                         let _ = writeln!(stderr, "mysh: {path}: {error}");
                         final_status = 1;
@@ -672,13 +681,12 @@ impl Shell {
                         if let Some(directory) = saved_directory {
                             let _ = std::env::set_current_dir(directory);
                         }
-                        input = Some(Vec::new());
+                        pipeline_input = create_pipeline_spool().ok();
                         continue;
                     }
                 }
             }
-            let mut stage_output = Vec::new();
-            let mut stage_error = Vec::new();
+
             if is_last {
                 let mut output_file = match redirections.output.as_deref() {
                     Some(path) => match open_output(path, redirections.append) {
@@ -716,47 +724,67 @@ impl Shell {
                     final_status = if stage_command.is_empty() {
                         0
                     } else {
-                        match self.run_stage(&stage_command, &redirections, stage_input, stage_input_file, output_writer, error_writer) {
+                        match self.run_stage(&stage_command, &redirections, None, stage_input_file, output_writer, error_writer) {
                             StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
                         }
                     };
                 }
             } else {
-                final_status = if stage_command.is_empty() {
-                    0
-                } else {
-                    match self.run_stage(&stage_command, &redirections, stage_input, stage_input_file, &mut stage_output, &mut stage_error) {
-                        StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+                match create_pipeline_spool() {
+                    Ok(mut stage_output) => {
+                        let mut error_file = match redirections.error.as_deref() {
+                            Some(path) => match open_output(path, false) {
+                                Ok(file) => Some(file),
+                                Err(error) => {
+                                    let _ = writeln!(stderr, "mysh: {path}: {error}");
+                                    final_status = 1;
+                                    None
+                                }
+                            },
+                            None => None,
+                        };
+                        if redirections.error.is_none() || error_file.is_some() {
+                            let error_writer: &mut dyn Write = match error_file.as_mut() {
+                                Some(file) => file,
+                                None => stderr,
+                            };
+                            final_status = if stage_command.is_empty() {
+                                0
+                            } else {
+                                match self.run_stage(&stage_command, &redirections, None, stage_input_file, &mut stage_output, error_writer) {
+                                    StageOutcome::Continue(status) | StageOutcome::Exit(status) => status,
+                                }
+                            };
+                        }
+                        if let Err(error) = stage_output.flush().and_then(|()| stage_output.seek(std::io::SeekFrom::Start(0)).map(|_| ())) {
+                            let _ = writeln!(stderr, "mysh: pipeline: cannot rewind stage output: {error}");
+                            final_status = 1;
+                            pipeline_input = create_pipeline_spool().ok();
+                        } else if let Some(path) = redirections.output.as_deref() {
+                            match open_output(path, redirections.append).and_then(|mut file| std::io::copy(&mut stage_output, &mut file).map(|_| ())) {
+                                Ok(()) => pipeline_input = create_pipeline_spool().ok(),
+                                Err(error) => {
+                                    let _ = writeln!(stderr, "mysh: {path}: {error}");
+                                    final_status = 1;
+                                    pipeline_input = create_pipeline_spool().ok();
+                                }
+                            }
+                        } else {
+                            pipeline_input = Some(stage_output);
+                        }
                     }
-                };
+                    Err(error) => {
+                        let _ = writeln!(stderr, "mysh: pipeline: cannot create stage spool: {error}");
+                        final_status = 1;
+                        pipeline_input = create_pipeline_spool().ok();
+                    }
+                }
             }
             self.variables = saved_variables;
             self.exported = saved_exported;
             self.loop_control = saved_loop_control;
             if let Some(directory) = saved_directory {
                 let _ = std::env::set_current_dir(directory);
-            }
-            if !is_last {
-                let mut output_redirected = false;
-                if let Some(path) = redirections.output.as_deref() {
-                    output_redirected = true;
-                    match open_output(path, redirections.append).and_then(|mut file| file.write_all(&stage_output)) {
-                        Ok(()) => {}
-                        Err(error) => {
-                            let _ = writeln!(stderr, "mysh: {path}: {error}");
-                            final_status = 1;
-                        }
-                    }
-                }
-                if let Some(path) = redirections.error.as_deref() {
-                    if let Err(error) = open_output(path, false).and_then(|mut file| file.write_all(&stage_error)) {
-                        let _ = writeln!(stderr, "mysh: {path}: {error}");
-                        final_status = 1;
-                    }
-                } else if !stage_error.is_empty() {
-                    let _ = stderr.write_all(&stage_error);
-                }
-                input = Some(if output_redirected { Vec::new() } else { stage_output });
             }
         }
         self.last_status = if pipeline.negated {
@@ -2170,6 +2198,28 @@ fn parse_redirections(tokens: &[Word], environment: &BTreeMap<String, String>, l
         }
     }
     Ok((command, redirects))
+}
+
+fn create_pipeline_spool() -> io::Result<File> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_SPOOL_ID: AtomicU64 = AtomicU64::new(0);
+    let directory = std::env::temp_dir();
+    for _ in 0..128 {
+        let id = NEXT_SPOOL_ID.fetch_add(1, Ordering::Relaxed);
+        let path = directory.join(format!("mysh-pipeline-{}-{id}.tmp", std::process::id()));
+        match OpenOptions::new().read(true).write(true).create_new(true).open(&path) {
+            Ok(file) => {
+                // The target platforms are Unix: unlinking keeps the spool private
+                // to this open handle and guarantees cleanup on every return path.
+                std::fs::remove_file(path)?;
+                return Ok(file);
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::AlreadyExists, "could not allocate a unique pipeline spool"))
 }
 
 fn open_output(path: &str, append: bool) -> io::Result<File> {
