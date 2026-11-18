@@ -626,8 +626,6 @@ impl Shell {
                 return true;
             }
         };
-        let previous_stdin = self.stdin.take();
-        self.stdin = input_file.or_else(|| previous_stdin.as_ref().and_then(|file| file.try_clone().ok()));
         let mut output_file = match open_ordered_output(&redirections.output_order) {
             Ok(file) => file,
             Err((path, error)) => {
@@ -644,6 +642,8 @@ impl Shell {
                 return true;
             }
         };
+        let previous_stdin = self.stdin.take();
+        self.stdin = input_file.or_else(|| previous_stdin.as_ref().and_then(|file| file.try_clone().ok()));
         let output_writer: &mut dyn Write = match output_file.as_mut() {
             Some((_, file)) => file,
             None => stdout,
