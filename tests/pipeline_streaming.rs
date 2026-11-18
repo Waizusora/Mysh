@@ -450,3 +450,69 @@ fn mixed_builtin_pipeline_opens_every_repeated_input_redirection() {
 
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn compound_stdin_survives_inner_simple_command_redirection() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-compound-stdin-restore-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let outer_input = directory.join("outer.txt");
+    let inner_input = directory.join("inner.txt");
+    std::fs::write(&outer_input, b"outer-stdin\\n").unwrap();
+    std::fs::write(&inner_input, b"inner-redirect\\n").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!(
+        "{{ cat < '{}'; cat; }} < '{}'",
+        inner_input.display(),
+        outer_input.display(),
+    );
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"inner-redirect\\nouter-stdin\\n");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn compound_nested_pipeline_combines_input_and_output_redirections() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-compound-stdin-stdout-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("input.txt");
+    let output = directory.join("output.txt");
+    let contents = b"compound-io\\n";
+    std::fs::write(&input, contents).unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!(
+        "{{ cat | wc -c; }} < '{}' > '{}'",
+        input.display(),
+        output.display(),
+    );
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(std::fs::read_to_string(&output).unwrap().trim(), contents.len().to_string());
+    assert!(stdout.is_empty(), "compound output redirection leaked to caller");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
