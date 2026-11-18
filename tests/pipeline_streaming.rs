@@ -587,3 +587,63 @@ fn subshell_restores_parent_variables_and_working_directory() {
     assert_eq!(std::env::current_dir().unwrap(), original_directory);
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 }
+
+
+#[test]
+fn failed_nested_compound_input_redirection_preserves_parent_stdin() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-nested-redirection-failure-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("outer-input.txt");
+    let missing = directory.join("missing-input.txt");
+    std::fs::write(&input, b"parent-stdin\n").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("{{ {{ cat; }} < '{}'; cat; }} < '{}'", missing.display(), input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"parent-stdin\n");
+    assert!(String::from_utf8_lossy(&stderr).contains("missing-input.txt"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn nested_subshell_restores_inherited_stdin_after_inner_redirection() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-nested-subshell-stdin-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let outer_input = directory.join("outer-input.txt");
+    let inner_input = directory.join("inner-input.txt");
+    std::fs::write(&outer_input, b"outer-after-inner\n").unwrap();
+    std::fs::write(&inner_input, b"inner-only\n").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!(
+        "( {{ cat; }} < '{}'; cat; ) < '{}'",
+        inner_input.display(),
+        outer_input.display(),
+    );
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"inner-only\nouter-after-inner\n");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
