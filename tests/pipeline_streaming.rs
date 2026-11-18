@@ -118,6 +118,25 @@ fn compound_pipeline_stage_inherits_upstream_stdin() {
 }
 
 #[test]
+fn compound_input_redirection_reaches_nested_external_pipelines() {
+    let directory = std::env::temp_dir().join(format!("mysh-compound-nested-pipeline-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("nested-input.txt");
+    std::fs::write(&input, b"nested-input\\n").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("{{ cat | wc -c; }} < '{}'", input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(String::from_utf8_lossy(&stdout).trim(), "13");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn compound_stage_input_redirections_open_in_source_order() {
     let directory = std::env::temp_dir().join(format!("mysh-compound-ordered-input-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
