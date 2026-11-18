@@ -627,7 +627,7 @@ impl Shell {
             }
         };
         let previous_stdin = self.stdin.take();
-        self.stdin = input_file.or(previous_stdin);
+        self.stdin = input_file.or_else(|| previous_stdin.as_ref().and_then(|file| file.try_clone().ok()));
         let mut output_file = match open_ordered_output(&redirections.output_order) {
             Ok(file) => file,
             Err((path, error)) => {
