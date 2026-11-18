@@ -91,7 +91,7 @@ fn compound_stage_input_redirection_reaches_nested_external_commands() {
     ));
     std::fs::create_dir_all(&directory).unwrap();
     let input = directory.join("input.txt");
-    std::fs::write(&input, b"compound-input\\n").unwrap();
+    std::fs::write(&input, b"compound-input\n").unwrap();
 
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
@@ -99,7 +99,7 @@ fn compound_stage_input_redirection_reaches_nested_external_commands() {
     let command = format!("{{ cat; }} < '{}'", input.display());
     assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
     assert_eq!(shell.last_status(), 0);
-    assert_eq!(stdout, b"compound-input\\n");
+    assert_eq!(stdout, b"compound-input\n");
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 
     std::fs::remove_dir_all(directory).unwrap();
@@ -144,7 +144,7 @@ fn compound_pipeline_stage_runs_in_isolated_shell_state() {
     let mut stderr = Vec::new();
 
     assert!(shell.execute_line(
-        "PIPELINE_PARENT=parent; { PIPELINE_PARENT=child; printf 'compound:%s\\n' \"$PIPELINE_PARENT\"; } | cat; printf 'parent:%s\\n' \"$PIPELINE_PARENT\"",
+        "PIPELINE_PARENT=parent; { PIPELINE_PARENT=child; printf 'compound:%s\n' \"$PIPELINE_PARENT\"; } | cat; printf 'parent:%s\n' \"$PIPELINE_PARENT\"",
         &mut stdout,
         &mut stderr,
     ));
@@ -182,7 +182,7 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
     let directory = std::env::temp_dir().join(format!("mysh-pipeline-input-redirect-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let input_path = directory.join("builtin-input.txt");
-    std::fs::write(&input_path, "redirected-input\\n").unwrap();
+    std::fs::write(&input_path, "redirected-input\n").unwrap();
     let command = format!("pwd | cat < '{}'", input_path.display());
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
@@ -190,7 +190,7 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
 
     assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
     assert_eq!(shell.last_status(), 0);
-    assert_eq!(stdout, b"redirected-input\\n");
+    assert_eq!(stdout, b"redirected-input\n");
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 
     std::fs::remove_dir_all(directory).unwrap();
