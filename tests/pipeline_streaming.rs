@@ -138,13 +138,45 @@ fn compound_stage_input_redirections_open_in_source_order() {
 }
 
 #[test]
+fn compound_pipeline_stage_inherits_upstream_stdin() {
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line("printf pipeline-input | { cat; }", &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"pipeline-input");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
+
+#[test]
+fn compound_stage_input_redirections_open_in_source_order() {
+    let directory = std::env::temp_dir().join(format!("mysh-compound-ordered-input-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let missing = directory.join("missing.txt");
+    let final_input = directory.join("final.txt");
+    std::fs::write(&final_input, b"final-input").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("{{ cat; }} < '{}' < '{}'", missing.display(), final_input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8_lossy(&stderr).contains("missing.txt"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn compound_pipeline_stage_runs_in_isolated_shell_state() {
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
     assert!(shell.execute_line(
-        "PIPELINE_PARENT=parent; { PIPELINE_PARENT=child; printf 'compound:%s\n' \"$PIPELINE_PARENT\"; } | cat; printf 'parent:%s\n' \"$PIPELINE_PARENT\"",
+        "PIPELINE_PARENT=parent; { PIPELINE_PARENT=child; printf 'compound:%s\\n' \"$PIPELINE_PARENT\"; } | cat; printf 'parent:%s\\n' \"$PIPELINE_PARENT\"",
         &mut stdout,
         &mut stderr,
     ));
@@ -182,7 +214,7 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
     let directory = std::env::temp_dir().join(format!("mysh-pipeline-input-redirect-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let input_path = directory.join("builtin-input.txt");
-    std::fs::write(&input_path, "redirected-input\n").unwrap();
+    std::fs::write(&input_path, "redirected-input\\n").unwrap();
     let command = format!("pwd | cat < '{}'", input_path.display());
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
@@ -190,7 +222,7 @@ fn builtin_pipeline_input_redirection_replaces_upstream_data() {
 
     assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
     assert_eq!(shell.last_status(), 0);
-    assert_eq!(stdout, b"redirected-input\n");
+    assert_eq!(stdout, b"redirected-input\\n");
     assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
 
     std::fs::remove_dir_all(directory).unwrap();
