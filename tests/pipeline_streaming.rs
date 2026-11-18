@@ -122,7 +122,7 @@ fn compound_input_redirection_reaches_nested_external_pipelines() {
     let directory = std::env::temp_dir().join(format!("mysh-compound-nested-pipeline-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let input = directory.join("nested-input.txt");
-    std::fs::write(&input, b"nested-input\\n").unwrap();
+    std::fs::write(&input, b"nested-input\n").unwrap();
 
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
