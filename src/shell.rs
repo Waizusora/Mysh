@@ -18,6 +18,7 @@ pub struct Shell {
     function_return: Option<i32>,
     loop_depth: usize,
     loop_control: Option<LoopControl>,
+    stdin: Option<File>,
 }
 
 impl Default for Shell {
@@ -25,7 +26,7 @@ impl Default for Shell {
         let mut variables: BTreeMap<String, String> = std::env::vars().collect();
         let mut exported: BTreeSet<String> = variables.keys().cloned().collect();
         configure_prefix_path(&mut variables, &mut exported);
-        Self { history: Vec::new(), last_status: 0, variables, exported, functions: BTreeMap::new(), function_depth: 0, function_return: None, loop_depth: 0, loop_control: None }
+        Self { history: Vec::new(), last_status: 0, variables, exported, functions: BTreeMap::new(), function_depth: 0, function_return: None, loop_depth: 0, loop_control: None, stdin: None }
     }
 }
 
@@ -229,6 +230,7 @@ impl Shell {
             function_return: None,
             loop_depth: 0,
             loop_control: None,
+            stdin: self.stdin.as_ref().and_then(|file| file.try_clone().ok()),
         };
         let _ = child.execute_compound_list(body, stdout, stderr);
         let child_status = child.last_status;
@@ -616,12 +618,16 @@ impl Shell {
             self.last_status = 2;
             return true;
         }
-        if !redirections.input_order.is_empty() {
-            let _ = writeln!(stderr, "mysh: compound-command input redirection is not supported yet");
-            self.last_status = 2;
-            return true;
-        }
-
+        let input_file = match open_ordered_input(&redirections.input_order) {
+            Ok(file) => file,
+            Err((path, error)) => {
+                let _ = writeln!(stderr, "mysh: {path}: {error}");
+                self.last_status = 1;
+                return true;
+            }
+        };
+        let previous_stdin = self.stdin.take();
+        self.stdin = input_file.or(previous_stdin);
         let mut output_file = match open_ordered_output(&redirections.output_order) {
             Ok(file) => file,
             Err((path, error)) => {
@@ -651,7 +657,9 @@ impl Shell {
             connector: None,
             asynchronous: false,
         }];
-        self.execute_compound_list(&entries, output_writer, error_writer)
+        let keep_running = self.execute_compound_list(&entries, output_writer, error_writer);
+        self.stdin = previous_stdin;
+        keep_running
     }
 
     fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
@@ -704,6 +712,7 @@ impl Shell {
                     function_return: None,
                     loop_depth: 0,
                     loop_control: None,
+                    stdin: pipeline_input.take().or_else(|| self.stdin.as_ref().and_then(|file| file.try_clone().ok())),
                 };
                 let entries = vec![CompoundListEntry { command: compound.clone(), connector: None, asynchronous: false }];
                 if let Some(redirection_words) = redirection_words {
@@ -914,6 +923,7 @@ impl Shell {
             function_return: None,
             loop_depth: 0,
             loop_control: None,
+            stdin: self.stdin.as_ref().and_then(|file| file.try_clone().ok()),
         };
         let mut output = Vec::new();
         let mut errors = Vec::new();
@@ -1214,7 +1224,12 @@ impl Shell {
         }
         let mut output = Vec::new();
         let mut errors = Vec::new();
-        let outcome = self.run_stage(&command, &redirections, input, None, &mut output, &mut errors);
+        let inherited_input = if input.is_none() {
+            self.stdin.as_ref().and_then(|file| file.try_clone().ok())
+        } else {
+            None
+        };
+        let outcome = self.run_stage(&command, &redirections, input, inherited_input, &mut output, &mut errors);
         if !assignments.is_empty() && !persist_assignments {
             self.variables = saved_variables;
             self.exported = saved_exported;
