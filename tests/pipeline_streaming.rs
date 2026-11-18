@@ -35,6 +35,70 @@ fn builtin_pipeline_stage_preserves_output_and_status() {
 }
 
 #[test]
+fn compound_stage_output_redirections_apply_in_order_and_override_pipeline_output() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-compound-redirect-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let first = directory.join("first.txt");
+    let final_output = directory.join("final.txt");
+    std::fs::write(&first, b"old-first").unwrap();
+    std::fs::write(&final_output, b"old-final").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!(
+        "{{ printf compound-output; }} > '{}' >> '{}'",
+        first.display(),
+        final_output.display(),
+    );
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(std::fs::read(&first).unwrap(), b"");
+    assert_eq!(std::fs::read(&final_output).unwrap(), b"old-finalcompound-output");
+    assert!(stdout.is_empty());
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    let pipeline_output = directory.join("pipeline.txt");
+    let command = format!(
+        "{{ printf redirected-stage; }} > '{}' | cat",
+        pipeline_output.display(),
+    );
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(std::fs::read(&pipeline_output).unwrap(), b"redirected-stage");
+    assert!(stdout.is_empty(), "redirected compound output reached downstream");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn compound_stage_input_redirection_fails_explicitly_until_stdin_plumbing_exists() {
+    let directory = std::env::temp_dir().join(format!("mysh-compound-input-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("input.txt");
+    std::fs::write(&input, b"input").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("{{ cat; }} < '{}'", input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("input redirection is not supported"));
+    assert!(stdout.is_empty());
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn compound_pipeline_stage_runs_in_isolated_shell_state() {
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
