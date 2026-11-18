@@ -157,38 +157,6 @@ fn compound_stage_input_redirections_open_in_source_order() {
 }
 
 #[test]
-fn compound_pipeline_stage_inherits_upstream_stdin() {
-    let mut shell = Shell::new();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-
-    assert!(shell.execute_line("printf pipeline-input | { cat; }", &mut stdout, &mut stderr));
-    assert_eq!(shell.last_status(), 0);
-    assert_eq!(stdout, b"pipeline-input");
-    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
-}
-
-#[test]
-fn compound_stage_input_redirections_open_in_source_order() {
-    let directory = std::env::temp_dir().join(format!("mysh-compound-ordered-input-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let missing = directory.join("missing.txt");
-    let final_input = directory.join("final.txt");
-    std::fs::write(&final_input, b"final-input").unwrap();
-
-    let mut shell = Shell::new();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let command = format!("{{ cat; }} < '{}' < '{}'", missing.display(), final_input.display());
-    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
-    assert_eq!(shell.last_status(), 1);
-    assert!(stdout.is_empty());
-    assert!(String::from_utf8_lossy(&stderr).contains("missing.txt"));
-
-    std::fs::remove_dir_all(directory).unwrap();
-}
-
-#[test]
 fn compound_pipeline_stage_runs_in_isolated_shell_state() {
     let mut shell = Shell::new();
     let mut stdout = Vec::new();
