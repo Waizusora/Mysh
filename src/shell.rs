@@ -592,6 +592,68 @@ impl Shell {
         Some(true)
     }
 
+    fn execute_compound_stage(
+        &mut self,
+        command: &crate::parser::CompoundCommand,
+        redirection_words: &[Word],
+        stdout: &mut dyn Write,
+        stderr: &mut dyn Write,
+    ) -> bool {
+        let (remaining, redirections) = match parse_redirections(
+            redirection_words,
+            &self.variables,
+            self.last_status,
+        ) {
+            Ok(value) => value,
+            Err(message) => {
+                let _ = writeln!(stderr, "mysh: syntax error: {message}");
+                self.last_status = 2;
+                return true;
+            }
+        };
+        if !remaining.is_empty() {
+            let _ = writeln!(stderr, "mysh: syntax error: only redirections may follow a compound command");
+            self.last_status = 2;
+            return true;
+        }
+        if !redirections.input_order.is_empty() {
+            let _ = writeln!(stderr, "mysh: compound-command input redirection is not supported yet");
+            self.last_status = 2;
+            return true;
+        }
+
+        let mut output_file = match open_ordered_output(&redirections.output_order) {
+            Ok(file) => file,
+            Err((path, error)) => {
+                let _ = writeln!(stderr, "mysh: {path}: {error}");
+                self.last_status = 1;
+                return true;
+            }
+        };
+        let mut error_file = match open_ordered_error(&redirections.error_order) {
+            Ok(file) => file,
+            Err((path, error)) => {
+                let _ = writeln!(stderr, "mysh: {path}: {error}");
+                self.last_status = 1;
+                return true;
+            }
+        };
+        let output_writer: &mut dyn Write = match output_file.as_mut() {
+            Some((_, file)) => file,
+            None => stdout,
+        };
+        let error_writer: &mut dyn Write = match error_file.as_mut() {
+            Some((_, file)) => file,
+            None => stderr,
+        };
+        let entries = vec![CompoundListEntry {
+            command: command.clone(),
+            connector: None,
+            asynchronous: false,
+        }];
+        self.execute_compound_list(&entries, output_writer, error_writer)
+    }
+
     fn execute_pipeline(&mut self, pipeline: &Pipeline, stdout: &mut dyn Write, stderr: &mut dyn Write) -> bool {
         if let Some(result) = self.execute_external_pipeline(pipeline, stdout, stderr) {
             return result;
@@ -604,6 +666,9 @@ impl Shell {
                     let entries = vec![CompoundListEntry { command: command.clone(), connector: None, asynchronous: false }];
                     self.execute_compound_list(&entries, stdout, stderr)
                 }
+                PipelineStage::CompoundRedirected(command, redirections) => {
+                    self.execute_compound_stage(command, redirections, stdout, stderr)
+                }
             };
             if pipeline.negated {
                 self.last_status = if self.last_status == 0 { 1 } else { 0 };
@@ -615,7 +680,12 @@ impl Shell {
         let mut final_status = 0;
         for (index, stage) in stages.iter().enumerate() {
             let is_last = index + 1 == stages.len();
-            if let PipelineStage::Compound(compound) = stage {
+            let compound_stage = match stage {
+                PipelineStage::Compound(compound) => Some((compound, None)),
+                PipelineStage::CompoundRedirected(compound, redirections) => Some((compound, Some(redirections.as_slice()))),
+                PipelineStage::Simple(_) => None,
+            };
+            if let Some((compound, redirection_words)) = compound_stage {
                 let original_directory = match std::env::current_dir() {
                     Ok(directory) => directory,
                     Err(error) => {
@@ -636,7 +706,25 @@ impl Shell {
                     loop_control: None,
                 };
                 let entries = vec![CompoundListEntry { command: compound.clone(), connector: None, asynchronous: false }];
-                if is_last {
+                if let Some(redirection_words) = redirection_words {
+                    if is_last {
+                        let _ = child.execute_compound_stage(compound, redirection_words, stdout, stderr);
+                        final_status = child.last_status;
+                    } else {
+                        match create_pipeline_spool() {
+                            Ok(mut stage_output) => {
+                                let _ = child.execute_compound_stage(compound, redirection_words, &mut stage_output, stderr);
+                                final_status = child.last_status;
+                                pipeline_input = create_pipeline_spool().ok();
+                            }
+                            Err(error) => {
+                                let _ = writeln!(stderr, "mysh: pipeline: cannot create stage spool: {error}");
+                                final_status = 1;
+                                pipeline_input = create_pipeline_spool().ok();
+                            }
+                        }
+                    }
+                } else if is_last {
                     let _ = child.execute_compound_list(&entries, stdout, stderr);
                     final_status = child.last_status;
                 } else {
