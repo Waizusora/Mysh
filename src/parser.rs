@@ -451,6 +451,15 @@ mod command_structure_tests {
     }
 
     #[test]
+    fn compound_pipeline_stage_retains_trailing_redirections() {
+        let parsed = split_pipeline(lexer::lex("{ echo inside; } > output >> final").unwrap()).unwrap();
+        assert!(matches!(
+            &parsed.stages[0],
+            super::PipelineStage::CompoundRedirected(_, redirections) if redirections.len() == 4
+        ));
+    }
+
+    #[test]
     fn compound_group_stages_are_preserved_in_pipeline_ast() {
         use super::{CompoundCommand, PipelineStage};
         let left_group = split_pipeline(lexer::lex("{ echo one; echo two; } | wc -l").unwrap()).unwrap();
