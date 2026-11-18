@@ -688,10 +688,11 @@ impl Shell {
             }
 
             let mut stage_input_file = pipeline_input.take();
-            if let Some(path) = redirections.input.as_deref() {
-                match File::open(path) {
-                    Ok(file) => stage_input_file = Some(file),
-                    Err(error) => {
+            if !redirections.input_order.is_empty() {
+                match open_ordered_input(&redirections.input_order) {
+                    Ok(Some(file)) => stage_input_file = Some(file),
+                    Ok(None) => unreachable!("non-empty input redirection list must open a file"),
+                    Err((path, error)) => {
                         let _ = writeln!(stderr, "mysh: {path}: {error}");
                         final_status = 1;
                         self.variables = saved_variables;
@@ -707,37 +708,31 @@ impl Shell {
             }
 
             if is_last {
-                let mut output_file = match redirections.output.as_deref() {
-                    Some(path) => match open_output(path, redirections.append) {
-                        Ok(file) => Some(file),
-                        Err(error) => {
-                            let _ = writeln!(stderr, "mysh: {path}: {error}");
-                            final_status = 1;
-                            None
-                        }
-                    },
-                    None => None,
+                let mut output_file = match open_ordered_output(&redirections.output_order) {
+                    Ok(file) => file,
+                    Err((path, error)) => {
+                        let _ = writeln!(stderr, "mysh: {path}: {error}");
+                        final_status = 1;
+                        None
+                    }
                 };
-                let mut error_file = match redirections.error.as_deref() {
-                    Some(path) => match open_output(path, false) {
-                        Ok(file) => Some(file),
-                        Err(error) => {
-                            let _ = writeln!(stderr, "mysh: {path}: {error}");
-                            final_status = 1;
-                            None
-                        }
-                    },
-                    None => None,
+                let mut error_file = match open_ordered_error(&redirections.error_order) {
+                    Ok(file) => file,
+                    Err((path, error)) => {
+                        let _ = writeln!(stderr, "mysh: {path}: {error}");
+                        final_status = 1;
+                        None
+                    }
                 };
-                let output_failed = redirections.output.is_some() && output_file.is_none();
-                let error_failed = redirections.error.is_some() && error_file.is_none();
+                let output_failed = !redirections.output_order.is_empty() && output_file.is_none();
+                let error_failed = !redirections.error_order.is_empty() && error_file.is_none();
                 if !output_failed && !error_failed {
                     let output_writer: &mut dyn Write = match output_file.as_mut() {
-                        Some(file) => file,
+                        Some((_, file)) => file,
                         None => stdout,
                     };
                     let error_writer: &mut dyn Write = match error_file.as_mut() {
-                        Some(file) => file,
+                        Some((_, file)) => file,
                         None => stderr,
                     };
                     final_status = if stage_command.is_empty() {
@@ -751,20 +746,26 @@ impl Shell {
             } else {
                 match create_pipeline_spool() {
                     Ok(mut stage_output) => {
-                        let mut error_file = match redirections.error.as_deref() {
-                            Some(path) => match open_output(path, false) {
-                                Ok(file) => Some(file),
-                                Err(error) => {
-                                    let _ = writeln!(stderr, "mysh: {path}: {error}");
-                                    final_status = 1;
-                                    None
-                                }
-                            },
-                            None => None,
+                        let mut output_file = match open_ordered_output(&redirections.output_order) {
+                            Ok(file) => file,
+                            Err((path, error)) => {
+                                let _ = writeln!(stderr, "mysh: {path}: {error}");
+                                final_status = 1;
+                                None
+                            }
                         };
-                        if redirections.error.is_none() || error_file.is_some() {
+                        let mut error_file = match open_ordered_error(&redirections.error_order) {
+                            Ok(file) => file,
+                            Err((path, error)) => {
+                                let _ = writeln!(stderr, "mysh: {path}: {error}");
+                                final_status = 1;
+                                None
+                            }
+                        };
+                        let output_failed = !redirections.output_order.is_empty() && output_file.is_none();
+                        if !output_failed && (redirections.error_order.is_empty() || error_file.is_some()) {
                             let error_writer: &mut dyn Write = match error_file.as_mut() {
-                                Some(file) => file,
+                                Some((_, file)) => file,
                                 None => stderr,
                             };
                             final_status = if stage_command.is_empty() {
@@ -779,9 +780,9 @@ impl Shell {
                             let _ = writeln!(stderr, "mysh: pipeline: cannot rewind stage output: {error}");
                             final_status = 1;
                             pipeline_input = create_pipeline_spool().ok();
-                        } else if let Some(path) = redirections.output.as_deref() {
-                            match open_output(path, redirections.append).and_then(|mut file| std::io::copy(&mut stage_output, &mut file).map(|_| ())) {
-                                Ok(()) => pipeline_input = create_pipeline_spool().ok(),
+                        } else if let Some((path, mut file)) = output_file.take() {
+                            match std::io::copy(&mut stage_output, &mut file) {
+                                Ok(_) => pipeline_input = create_pipeline_spool().ok(),
                                 Err(error) => {
                                     let _ = writeln!(stderr, "mysh: {path}: {error}");
                                     final_status = 1;
@@ -2246,6 +2247,39 @@ fn open_output(path: &str, append: bool) -> io::Result<File> {
     options.create(true).write(true);
     if append { options.append(true); } else { options.truncate(true); }
     options.open(path)
+}
+
+fn open_ordered_input(paths: &[String]) -> Result<Option<File>, (String, io::Error)> {
+    let mut selected = None;
+    for path in paths {
+        match File::open(path) {
+            Ok(file) => selected = Some(file),
+            Err(error) => return Err((path.clone(), error)),
+        }
+    }
+    Ok(selected)
+}
+
+fn open_ordered_output(paths: &[(String, bool)]) -> Result<Option<(String, File)>, (String, io::Error)> {
+    let mut selected = None;
+    for (path, append) in paths {
+        match open_output(path, *append) {
+            Ok(file) => selected = Some((path.clone(), file)),
+            Err(error) => return Err((path.clone(), error)),
+        }
+    }
+    Ok(selected)
+}
+
+fn open_ordered_error(paths: &[String]) -> Result<Option<(String, File)>, (String, io::Error)> {
+    let mut selected = None;
+    for path in paths {
+        match open_output(path, false) {
+            Ok(file) => selected = Some((path.clone(), file)),
+            Err(error) => return Err((path.clone(), error)),
+        }
+    }
+    Ok(selected)
 }
 
 /// Expand the currently supported simple environment-variable references.
