@@ -516,3 +516,74 @@ fn compound_nested_pipeline_combines_input_and_output_redirections() {
 
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn redirected_subshell_inherits_compound_stdin() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-redirected-subshell-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("subshell-input.txt");
+    std::fs::write(&input, b"subshell-stdin\\n").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("( cat; ) < '{}'", input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"subshell-stdin\\n");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn redirected_subshell_input_overrides_upstream_pipeline_data() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-subshell-pipeline-input-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let input = directory.join("replacement-input.txt");
+    std::fs::write(&input, b"replacement-subshell-input").unwrap();
+
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let command = format!("printf upstream-data | ( cat; ) < '{}'", input.display());
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"replacement-subshell-input");
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn subshell_restores_parent_variables_and_working_directory() {
+    let original_directory = std::env::current_dir().unwrap();
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(
+        "SUBSHELL_SCOPE=parent; ( SUBSHELL_SCOPE=child; cd /; printf '%s' \"$SUBSHELL_SCOPE\" ); printf '%s' \"$SUBSHELL_SCOPE\"",
+        &mut stdout,
+        &mut stderr,
+    ));
+    assert_eq!(shell.last_status(), 0);
+    assert_eq!(stdout, b"childparent");
+    assert_eq!(std::env::current_dir().unwrap(), original_directory);
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+}
