@@ -276,7 +276,7 @@ fn mixed_builtin_pipeline_applies_repeated_output_redirections_in_order() {
     std::fs::write(&final_output, b"existing-final").unwrap();
 
     let command = format!(
-        "pwd > '{}' > '{}' | cat",
+        "pwd > '{}' >> '{}' | cat",
         first_output.display(),
         final_output.display(),
     );
@@ -291,7 +291,7 @@ fn mixed_builtin_pipeline_applies_repeated_output_redirections_in_order() {
     assert_eq!(std::fs::read(&first_output).unwrap(), b"");
     assert_eq!(
         std::fs::read_to_string(&final_output).unwrap(),
-        format!("{}\\n", std::env::current_dir().unwrap().display()),
+        format!("existing-final{}\n", std::env::current_dir().unwrap().display()),
     );
 
     std::fs::remove_dir_all(directory).unwrap();
