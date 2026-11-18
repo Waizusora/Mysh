@@ -437,7 +437,11 @@ impl Shell {
                 process.stdin(Stdio::from(selected.expect("input redirection list is non-empty")));
             } else if let Some(pipe) = previous_stdout.take() {
                 process.stdin(Stdio::from(pipe));
-            } else if index > 0 {
+            } else if index == 0 {
+                if let Some(input) = self.stdin.as_ref().and_then(|file| file.try_clone().ok()) {
+                    process.stdin(Stdio::from(input));
+                }
+            } else {
                 // An upstream explicit stdout redirection disconnects this stage.
                 process.stdin(Stdio::null());
             }
