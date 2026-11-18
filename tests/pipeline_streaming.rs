@@ -259,3 +259,72 @@ fn external_pipeline_applies_repeated_redirections_in_source_order() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
+#[test]
+fn mixed_builtin_pipeline_applies_repeated_output_redirections_in_order() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-mixed-ordered-output-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let first_output = directory.join("first.txt");
+    let final_output = directory.join("final.txt");
+    std::fs::write(&first_output, b"existing-first").unwrap();
+    std::fs::write(&final_output, b"existing-final").unwrap();
+
+    let command = format!(
+        "pwd > '{}' > '{}' | cat",
+        first_output.display(),
+        final_output.display(),
+    );
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 0);
+    assert!(stdout.is_empty());
+    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+    assert_eq!(std::fs::read(&first_output).unwrap(), b"");
+    assert_eq!(
+        std::fs::read_to_string(&final_output).unwrap(),
+        format!("{}\\n", std::env::current_dir().unwrap().display()),
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn mixed_builtin_pipeline_opens_every_repeated_input_redirection() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "mysh-mixed-ordered-input-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let missing_input = directory.join("missing.txt");
+    let final_input = directory.join("final.txt");
+    std::fs::write(&final_input, b"final-input").unwrap();
+
+    let command = format!(
+        "pwd | cat < '{}' < '{}'",
+        missing_input.display(),
+        final_input.display(),
+    );
+    let mut shell = Shell::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    assert!(shell.execute_line(&command, &mut stdout, &mut stderr));
+    assert_eq!(shell.last_status(), 1);
+    assert!(stdout.is_empty());
+    assert!(String::from_utf8_lossy(&stderr).contains("missing.txt"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
