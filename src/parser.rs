@@ -19,6 +19,8 @@ pub struct Pipeline {
 pub enum PipelineStage {
     Simple(Vec<Word>),
     Compound(CompoundCommand),
+    /// A compound command with redirections attached after its closing token.
+    CompoundRedirected(CompoundCommand, Vec<Word>),
 }
 
 /// One pipeline and the operator that controls whether it follows the previous entry.
@@ -235,11 +237,30 @@ pub fn split_pipeline(tokens: Vec<Word>) -> Result<Pipeline, &'static str> {
             || is_reserved_word(&stage, 0, "until")
             || is_function_definition_start(&stage, 0);
         if compound_start {
-            let parsed = parse_compound_list(&stage)?;
+            let compound_end = compound_command_end(&stage, 0)?;
+            let trailing = &stage[compound_end..];
+            let mut redirect_index = 0;
+            while redirect_index < trailing.len() {
+                if !["<", ">", ">>", "2>"].iter().any(|operator| trailing[redirect_index].is_unquoted_literal(operator)) {
+                    return Err("only redirections may follow a compound command");
+                }
+                if trailing.get(redirect_index + 1).is_none() {
+                    return Err("redirection requires a path");
+                }
+                redirect_index += 2;
+            }
+            let parsed = parse_compound_list(&stage[..compound_end])?;
             if parsed.len() != 1 || parsed[0].connector.is_some() {
                 return Err("pipeline compound stage must contain exactly one compound command");
             }
-            stages.push(PipelineStage::Compound(parsed[0].command.clone()));
+            if trailing.is_empty() {
+                stages.push(PipelineStage::Compound(parsed[0].command.clone()));
+            } else {
+                stages.push(PipelineStage::CompoundRedirected(
+                    parsed[0].command.clone(),
+                    trailing.to_vec(),
+                ));
+            }
         } else if stage.iter().any(|word| word.is_unquoted_literal("(")
             || word.is_unquoted_literal(")"))
         {
