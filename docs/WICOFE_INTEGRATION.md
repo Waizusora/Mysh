@@ -45,7 +45,7 @@ Rust `std` support is not implied by a Rust kernel. It requires an explicit targ
 - [Wicofe-Lib](https://github.com/Waizusora/Wicofe-Lib): optional safe Rust wrappers and shared APIs.
 - [Wlibc](https://github.com/Waizusora/WLibc): separate C runtime; not a required dependency for native Rust Mysh.
 - [Wicofe-SDK](https://github.com/Waizusora/Wicofe-SDK): target, sysroot, compiler, and linker integration.
-- [Wicofe-Tests](https://github.com/Waizusora/Wicofe-Tests): cross-repository shell integration and PTY tests.
+- [Wicofe-Test](https://github.com/Waizusora/Wicofe-Test): cross-repository shell integration and PTY tests.
 
 ## 5. Acceptance criteria
 
