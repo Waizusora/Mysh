@@ -15,4 +15,4 @@ This repository owns the Mysh shell implementation and its platform-specific run
 ## Ownership boundary
 Mysh owns shell-language parsing, expansion, execution policy, built-ins, and shell CLI behavior. Wicofe owns the kernel syscall ABI, process/terminal primitives, libc/runtime, and OS integration. A successful Android/Linux build does not imply Wicofe compatibility.
 
-- [Wicofe repository documentation map](https://github.com/Waizusora/Wicofe-Docs/blob/main/REPOSITORY_DOCUMENTATION_MAP.md)
+- [Wicofe repository documentation map](https://github.com/Waizusora/Wicofe-Doc/blob/main/REPOSITORY_DOCUMENTATION_MAP.md)
